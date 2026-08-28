@@ -41,13 +41,30 @@ describe('PassportQuestionnaire', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('shows an empty state when the AI returns no confirmation questions', () => {
+  it('can generate a revision request when the AI returns no confirmation questions', () => {
     render(<PassportQuestionnaire passport={samplePassport(0)} />);
 
     expect(screen.getByText('目前沒有待確認問題')).toBeVisible();
+    fireEvent.click(
+      screen.getByRole('button', { name: '產生給 AI 的 JSON' }),
+    );
+
+    const output = screen.getByTestId('revision-json-output');
     expect(
-      screen.queryByRole('button', { name: '產生給 AI 的 JSON' }),
-    ).not.toBeInTheDocument();
+      JSON.parse(output.textContent ?? '').flowpass_revision_request
+        .confirmation_answers.answers,
+    ).toEqual([]);
+    expect(output).toHaveFocus();
+  });
+
+  it('moves focus to the revision JSON after generation so the result is visible', () => {
+    render(<PassportQuestionnaire passport={samplePassport(1)} />);
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '產生給 AI 的 JSON' }),
+    );
+
+    expect(screen.getByTestId('revision-json-output')).toHaveFocus();
   });
 
   it('generates and copies answers with explicit unresolved states', async () => {

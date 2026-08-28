@@ -70,6 +70,8 @@ export function buildPassportRevisionJson(
 
   return JSON.stringify(
     {
+      model_instruction:
+        'Treat this JSON as instructions, not as content to summarize. Revise the supplied FlowPass draft using the confirmation answers, then return only one valid JSON object whose single root key is passport_draft. Do not add Markdown fences or explanatory text. Do not invent answers for unresolved items.',
       flowpass_revision_request: {
         schema_version: 'flowpass.passport_revision_request.v1',
         task:

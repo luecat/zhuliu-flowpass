@@ -12,6 +12,14 @@ function samplePassport(): PassportDraft {
 }
 
 describe('buildPassportRevisionJson', () => {
+  it('gives a pasted local model a direct top-level revision command', () => {
+    const payload = JSON.parse(buildPassportRevisionJson(samplePassport(), {}));
+
+    expect(payload.model_instruction).toMatch(/treat this JSON as instructions/i);
+    expect(payload.model_instruction).toMatch(/return only one valid JSON object/i);
+    expect(payload.model_instruction).toMatch(/root key.*passport_draft/i);
+  });
+
   it('emits exactly the confirmation questions supplied by the AI draft', () => {
     const passport = samplePassport();
     passport.confirmation_questions = passport.confirmation_questions.slice(0, 3);

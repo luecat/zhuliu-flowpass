@@ -95,7 +95,7 @@ describe('FlowPass JSON generator page', () => {
     const destination = screen.getByLabelText(
       '完成後要放哪裡／分享給誰？',
     );
-    const generate = screen.getByRole('button', { name: /產生護照 JSON/ });
+    const generate = screen.getByRole('button', { name: /產生提示詞 JSON/ });
 
     expect(materials).toHaveValue('');
     expect(intendedUse).toHaveValue('');
@@ -130,11 +130,24 @@ describe('FlowPass JSON generator page', () => {
     });
 
     expect(screen.getByTestId('json-output').textContent).toBe(before);
-    fireEvent.click(screen.getByRole('button', { name: /產生護照 JSON/ }));
+    fireEvent.click(screen.getByRole('button', { name: /產生提示詞 JSON/ }));
     expect(
       JSON.parse(screen.getByTestId('json-output').textContent ?? '').task
         .user_inputs.materials,
     ).toBe('尚未送出的新資料');
+  });
+
+  it('moves focus to the prompt JSON after generation so the result is visible', () => {
+    render(<Page />);
+
+    fireEvent.change(screen.getByLabelText('要處理什麼東西？'), {
+      target: { value: '剛更新的活動照片' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: /產生.*JSON/ }),
+    );
+
+    expect(screen.getByTestId('json-output')).toHaveFocus();
   });
 
   it('identifies required fields and associates every hint for assistive technology', () => {
@@ -174,7 +187,7 @@ describe('FlowPass JSON generator page', () => {
     fireEvent.click(copyButton);
     expect(writeText).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: /產生護照 JSON/ }));
+    fireEvent.click(screen.getByRole('button', { name: /產生提示詞 JSON/ }));
     expect(copyButton).toBeEnabled();
     fireEvent.click(copyButton);
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));

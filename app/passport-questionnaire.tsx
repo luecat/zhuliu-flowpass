@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ConfirmationQuestion,
   PassportDraft,
@@ -59,6 +59,7 @@ export function PassportQuestionnaire({
   const [output, setOutput] = useState('');
   const [isDirty, setIsDirty] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>('idle');
+  const revisionOutputRef = useRef<HTMLPreElement>(null);
   const questions = useMemo(
     () => sortedQuestions(passport.confirmation_questions),
     [passport.confirmation_questions],
@@ -67,6 +68,10 @@ export function PassportQuestionnaire({
   const resolvedCount = questions.filter((question) =>
     isResolved(answers[question.id]),
   ).length;
+
+  useEffect(() => {
+    if (output) revisionOutputRef.current?.focus();
+  }, [output]);
 
   function commitAnswers(
     update: (current: ConfirmationAnswerState) => ConfirmationAnswerState,
@@ -133,18 +138,6 @@ export function PassportQuestionnaire({
     }
   }
 
-  if (questions.length === 0) {
-    return (
-      <section className="confirmation-workbench confirmation-empty">
-        <span aria-hidden="true">✓</span>
-        <div>
-          <h2>目前沒有待確認問題</h2>
-          <p>這份 AI 回覆沒有提供 confirmation_questions。</p>
-        </div>
-      </section>
-    );
-  }
-
   const copyMessage =
     copyState === 'copied'
       ? '回覆 JSON 已複製'
@@ -153,6 +146,75 @@ export function PassportQuestionnaire({
         : isDirty
           ? '答案已變更，請重新產生 JSON。'
           : '可直接貼給 AI，生成更新後的 FlowPass 護照。';
+
+  if (questions.length === 0) {
+    return (
+      <section
+        className="confirmation-workbench"
+        aria-labelledby="confirmation-workbench-heading"
+      >
+        <div className="confirmation-empty">
+          <span aria-hidden="true">✓</span>
+          <div>
+            <h2 id="confirmation-workbench-heading">目前沒有待確認問題</h2>
+            <p>仍可產生零題回覆 JSON，請 AI 完成更新後的護照。</p>
+          </div>
+        </div>
+
+        <div className="revision-generate-row">
+          <p>這份 JSON 會明確帶入空的回答清單。</p>
+          <button
+            type="button"
+            className="generate-button"
+            onClick={generateRevisionJson}
+          >
+            <span aria-hidden="true">✦</span>
+            產生給 AI 的 JSON
+          </button>
+        </div>
+
+        {output && (
+          <section
+            className="revision-output-panel"
+            aria-labelledby="revision-output-heading"
+          >
+            <div className="revision-output-toolbar">
+              <div>
+                <span aria-hidden="true">{'{ }'}</span>
+                <strong id="revision-output-heading">
+                  passport-revision.json
+                </strong>
+              </div>
+              <button
+                type="button"
+                className="copy-button"
+                disabled={isDirty}
+                onClick={copyRevisionJson}
+              >
+                複製給 AI
+              </button>
+            </div>
+            <pre
+              ref={revisionOutputRef}
+              data-testid="revision-json-output"
+              tabIndex={0}
+            >
+              {output}
+            </pre>
+            <p
+              className={
+                copyState === 'error' ? 'copy-status error' : 'copy-status'
+              }
+              role="status"
+              aria-live="polite"
+            >
+              {copyMessage}
+            </p>
+          </section>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section
@@ -262,7 +324,13 @@ export function PassportQuestionnaire({
               複製給 AI
             </button>
           </div>
-          <pre data-testid="revision-json-output" tabIndex={0}>{output}</pre>
+          <pre
+            ref={revisionOutputRef}
+            data-testid="revision-json-output"
+            tabIndex={0}
+          >
+            {output}
+          </pre>
           <p
             className={
               copyState === 'error' ? 'copy-status error' : 'copy-status'

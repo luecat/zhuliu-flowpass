@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   buildPromptJson,
   presets,
@@ -206,6 +206,8 @@ export default function Home() {
   >([]);
   const [isDirty, setIsDirty] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>('idle');
+  const [generationMessage, setGenerationMessage] = useState('');
+  const promptOutputRef = useRef<HTMLPreElement>(null);
   const isIncomplete = useMemo(
     () => !inputs.materials.trim() || !inputs.intended_use.trim(),
     [inputs.intended_use, inputs.materials],
@@ -222,6 +224,7 @@ export default function Home() {
     setInputs({ ...preset.inputs });
     setIsDirty(true);
     setCopyState('idle');
+    setGenerationMessage('');
   }
 
   function chooseCustom() {
@@ -229,6 +232,7 @@ export default function Home() {
     setInputs({ ...emptyInputs });
     setIsDirty(true);
     setCopyState('idle');
+    setGenerationMessage('');
   }
 
   function updateInput(key: keyof FlowPassInputs, value: string) {
@@ -236,6 +240,7 @@ export default function Home() {
     setInputMode('custom');
     setIsDirty(true);
     setCopyState('idle');
+    setGenerationMessage('');
   }
 
   function generate() {
@@ -244,6 +249,10 @@ export default function Home() {
     setPromptResult(buildPromptJson(inputs));
     setIsDirty(false);
     setCopyState('idle');
+    setGenerationMessage(
+      '提示詞 JSON 已產生；請複製給 AI，再將 AI 回覆貼到「解析護照」。',
+    );
+    promptOutputRef.current?.focus();
   }
 
   async function copy() {
@@ -564,7 +573,7 @@ export default function Home() {
                   onClick={generate}
                 >
                   <span aria-hidden="true">✦</span>
-                  產生護照 JSON
+                  產生提示詞 JSON
                 </button>
               </div>
 
@@ -601,7 +610,7 @@ export default function Home() {
                     <div>
                       <label htmlFor="passport-json-input">AI 回傳 JSON</label>
                       <p id="passport-json-hint">
-                        可直接貼上純 JSON；完整的 ```json code fence 也能辨識並提醒。
+                        請貼上 AI 回傳、根節點為 passport_draft 的 JSON；不要貼回第一步的提示詞 JSON。
                       </p>
                     </div>
                     <div className="parser-utility-actions">
@@ -725,7 +734,7 @@ export default function Home() {
             </button>
           </div>
 
-          <pre data-testid="json-output" tabIndex={0}>
+          <pre ref={promptOutputRef} data-testid="json-output" tabIndex={0}>
             {promptResult}
           </pre>
           <p
@@ -737,7 +746,9 @@ export default function Home() {
           >
             {isDirty
               ? '內容已變更，請重新產生 JSON。'
-              : copyMessage || '可直接貼入支援 JSON 提示詞的 AI 工具。'}
+              : copyMessage ||
+                generationMessage ||
+                '這是給 AI 的提示詞；複製給 AI 後，再把 AI 回覆貼到「解析護照」。'}
           </p>
             </>
           ) : (

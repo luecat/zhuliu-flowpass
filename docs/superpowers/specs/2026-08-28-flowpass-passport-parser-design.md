@@ -49,7 +49,12 @@
 
 ```ts
 type FlowPassParseResult = {
-  status: 'invalid_json' | 'invalid_contract' | 'valid_with_warnings' | 'valid';
+  status:
+    | 'invalid_json'
+    | 'invalid_contract'
+    | 'invalid_graph'
+    | 'valid_with_warnings'
+    | 'valid';
   passport: PassportDraft | null;
   issues: ValidationIssue[];
   summary: PassportSummary | null;
@@ -57,6 +62,8 @@ type FlowPassParseResult = {
 ```
 
 所有狀態都代表解析品質，不代表補助核准、資料安全或法律合規。
+
+`invalid_json` 與 `invalid_contract` 不建立護照視圖；`invalid_graph` 代表 JSON 與 Schema 可讀，但引用關係包含錯誤，因此可顯示摘要並明確阻止使用者把它視為完整護照。
 
 ## 驗證規則
 

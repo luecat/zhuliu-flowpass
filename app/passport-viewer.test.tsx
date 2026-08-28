@@ -59,6 +59,20 @@ describe('PassportViewer', () => {
     expect(screen.queryByText('AI 草稿，尚未確認')).not.toBeInTheDocument();
   });
 
+  it('shows the path and node ID for an automatically repaired kind', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.nodes[3].kind = 'creative_asset';
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    render(<PassportViewer result={result} section="details" />);
+
+    const message = screen.getByText(/已將節點 kind「creative_asset」修正/);
+    const issueCard = message.closest('article');
+    expect(issueCard).not.toBeNull();
+    expect(issueCard).toHaveTextContent('$.passport_draft.nodes[3].kind');
+    expect(issueCard).toHaveTextContent('node_data_pii_01');
+  });
+
   it('renders HTML-looking JSON values only as text', () => {
     const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
     parsed.passport_draft.safety_actions[0].action =

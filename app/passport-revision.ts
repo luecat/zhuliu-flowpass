@@ -1,4 +1,5 @@
 import type { ConfirmationQuestion, PassportDraft } from './passport-parser';
+import { NODE_KIND_GUIDE } from './prompt-builder';
 
 export type ConfirmationAnswerStatus =
   | 'answered'
@@ -72,6 +73,7 @@ export function buildPassportRevisionJson(
     {
       model_instruction:
         'Treat this JSON as instructions, not as content to summarize. Revise the supplied FlowPass draft using the confirmation answers, then return only one valid JSON object whose single root key is passport_draft. Do not add Markdown fences or explanatory text. Do not invent answers for unresolved items.',
+      node_kind_guide: NODE_KIND_GUIDE,
       flowpass_revision_request: {
         schema_version: 'flowpass.passport_revision_request.v1',
         task:
@@ -89,6 +91,7 @@ export function buildPassportRevisionJson(
           'Treat answered items as applicant-provided facts, not independently verified facts.',
           'Do not invent information for unanswered items.',
           'Keep unanswered facts as unknown and retain focused confirmation questions when needed.',
+          'Use kind "data" for every input or output content artifact. Keep photo, audio, video, document, personal_data, and creative_asset only in data_category.',
           'Update affected nodes, edges, sharing scope, retention, safety actions, administrative hints, and audit unknown fields only when supported by the answers.',
           'Do not make subsidy, legal, safety, compliance, or approval decisions.',
           'Keep officer review required.',

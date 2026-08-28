@@ -20,6 +20,24 @@ describe('buildPassportRevisionJson', () => {
     expect(payload.model_instruction).toMatch(/root key.*passport_draft/i);
   });
 
+  it('keeps the node kind guide in the confirmation revision prompt', () => {
+    const payload = JSON.parse(buildPassportRevisionJson(samplePassport(), {}));
+
+    expect(payload.node_kind_guide.allowed_values).toEqual([
+      'data',
+      'ai_tool',
+      'plugin',
+      'storage',
+      'person',
+      'organization',
+      'destination',
+    ]);
+    expect(payload.node_kind_guide.content_artifact_kind).toBe('data');
+    expect(payload.node_kind_guide.category_only_values).toContain(
+      'creative_asset',
+    );
+  });
+
   it('emits exactly the confirmation questions supplied by the AI draft', () => {
     const passport = samplePassport();
     passport.confirmation_questions = passport.confirmation_questions.slice(0, 3);

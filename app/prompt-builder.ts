@@ -312,6 +312,31 @@ export type PromptPayload = {
   };
 };
 
+export const NODE_KIND_GUIDE = {
+  allowed_values: [
+    'data',
+    'ai_tool',
+    'plugin',
+    'storage',
+    'person',
+    'organization',
+    'destination',
+  ],
+  content_artifact_kind: 'data',
+  category_only_values: [
+    'photo',
+    'audio',
+    'video',
+    'document',
+    'code',
+    'personal_data',
+    'creative_asset',
+    'other',
+  ],
+  rule:
+    'For every input or output content artifact, including generated videos and creative assets, use kind "data". Put its format only in data_category. Never use a category_only_values entry as kind.',
+} as const;
+
 export const presets: Preset[] = [
   {
     id: 'recruitment_video',
@@ -361,30 +386,7 @@ const BASE_TEMPLATE = {
     'Build the FlowPass draft using output_contract.json_schema.',
     'Return the JSON object only. Do not add Markdown or explanatory text.',
   ],
-  node_kind_guide: {
-    allowed_values: [
-      'data',
-      'ai_tool',
-      'plugin',
-      'storage',
-      'person',
-      'organization',
-      'destination',
-    ],
-    content_artifact_kind: 'data',
-    category_only_values: [
-      'photo',
-      'audio',
-      'video',
-      'document',
-      'code',
-      'personal_data',
-      'creative_asset',
-      'other',
-    ],
-    rule:
-      'For every input or output content artifact, including generated videos and creative assets, use kind "data". Put its format only in data_category. Never use a category_only_values entry as kind.',
-  },
+  node_kind_guide: NODE_KIND_GUIDE,
   meta: {
     product: 'FlowPass',
     template_name: 'AI Usage Data-Flow Passport Interpreter',

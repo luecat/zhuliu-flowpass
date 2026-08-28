@@ -2,7 +2,7 @@ import Ajv2020, {
   type ErrorObject,
   type ValidateFunction,
 } from 'ajv/dist/2020.js';
-import { PASSPORT_JSON_SCHEMA } from './prompt-builder';
+import { NODE_KIND_GUIDE, PASSPORT_JSON_SCHEMA } from './prompt-builder';
 
 export type IssueSeverity = 'error' | 'warning' | 'info';
 export type IssueCategory = 'syntax' | 'schema' | 'graph' | 'readiness';
@@ -219,16 +219,9 @@ function schemaIssue(error: ErrorObject): ValidationIssue {
   };
 }
 
-const DATA_CATEGORY_VALUES = new Set([
-  'photo',
-  'audio',
-  'video',
-  'document',
-  'code',
-  'personal_data',
-  'creative_asset',
-  'other',
-]);
+const DATA_CATEGORY_VALUES = new Set<string>(
+  NODE_KIND_GUIDE.category_only_values,
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

@@ -196,6 +196,14 @@ function DetailsSection({
                 <code>{issue.path}</code>
               </div>
               <p>{issue.message}</p>
+              {issue.relatedIds && issue.relatedIds.length > 0 && (
+                <p className="issue-related-ids">
+                  <span>相關 ID：</span>{' '}
+                  {issue.relatedIds.map((id) => (
+                    <code key={id}>{id}</code>
+                  ))}
+                </p>
+              )}
             </article>
           ))}
         </div>

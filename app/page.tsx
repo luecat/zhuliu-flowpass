@@ -7,9 +7,18 @@ import {
   type FlowPassInputs,
   type Preset,
 } from './prompt-builder';
+import {
+  parseFlowPassJson,
+  type FlowPassParseResult,
+  type IssueCategory,
+} from './passport-parser';
+import { FLOWPASS_SAMPLE_JSON } from './passport-sample';
+import { PassportViewer } from './passport-viewer';
 
-type Mode = 'preset' | 'custom';
+type InputMode = 'preset' | 'custom';
+type WorkspaceMode = 'generate' | 'parse';
 type CopyState = 'idle' | 'copied' | 'error';
+type LayerStatus = 'idle' | 'pass' | 'warning' | 'error';
 
 const emptyInputs: FlowPassInputs = {
   materials: '',
@@ -73,16 +82,107 @@ const questions: Array<{
   },
 ];
 
+const layerStatusLabels: Record<LayerStatus, string> = {
+  idle: '等待解析',
+  pass: '通過',
+  warning: '待確認',
+  error: '有錯誤',
+};
+
+function getLayerStatus(
+  result: FlowPassParseResult | null,
+  category: IssueCategory,
+): LayerStatus {
+  if (!result) return 'idle';
+
+  if (category === 'syntax') {
+    if (result.status === 'invalid_json') return 'error';
+  } else if (category === 'schema') {
+    if (result.status === 'invalid_json') return 'idle';
+    if (result.status === 'invalid_contract') return 'error';
+  } else if (!result.passport) {
+    return 'idle';
+  } else if (category === 'graph' && result.status === 'invalid_graph') {
+    return 'error';
+  }
+
+  const issues = result.issues.filter((issue) => issue.category === category);
+  if (issues.some((issue) => issue.severity === 'error')) return 'error';
+  if (issues.length > 0) return 'warning';
+  return 'pass';
+}
+
+function ParserCheckLayers({
+  result,
+}: {
+  result: FlowPassParseResult | null;
+}) {
+  const layers: Array<{
+    category: IssueCategory;
+    number: string;
+    title: string;
+    description: string;
+  }> = [
+    {
+      category: 'syntax',
+      number: '01',
+      title: 'JSON 格式',
+      description: '括號、引號與純 JSON',
+    },
+    {
+      category: 'schema',
+      number: '02',
+      title: 'FlowPass 契約',
+      description: '必要欄位、型別與版本',
+    },
+    {
+      category: 'graph',
+      number: '03',
+      title: '節點連線',
+      description: '引用、孤立節點與回流',
+    },
+    {
+      category: 'readiness',
+      number: '04',
+      title: '待確認事項',
+      description: '未知欄位與人工作業',
+    },
+  ];
+
+  return (
+    <ol className="check-layer-list" aria-label="解析檢查層級">
+      {layers.map((layer) => {
+        const status = getLayerStatus(result, layer.category);
+        return (
+          <li className={`layer-status-${status}`} key={layer.category}>
+            <span>{layer.number}</span>
+            <div>
+              <strong>{layer.title}</strong>
+              <small>{layer.description}</small>
+            </div>
+            <b>{layerStatusLabels[status]}</b>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export default function Home() {
-  const [mode, setMode] = useState<Mode>('preset');
+  const [workspaceMode, setWorkspaceMode] =
+    useState<WorkspaceMode>('generate');
+  const [inputMode, setInputMode] = useState<InputMode>('preset');
   const [selectedPreset, setSelectedPreset] =
     useState<Preset['id']>('recruitment_video');
   const [inputs, setInputs] = useState<FlowPassInputs>({
     ...presets[0].inputs,
   });
-  const [result, setResult] = useState(() =>
+  const [promptResult, setPromptResult] = useState(() =>
     buildPromptJson(presets[0].inputs),
   );
+  const [parserInput, setParserInput] = useState(FLOWPASS_SAMPLE_JSON);
+  const [parseResult, setParseResult] =
+    useState<FlowPassParseResult | null>(null);
   const [isDirty, setIsDirty] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>('idle');
   const isIncomplete = useMemo(
@@ -90,13 +190,13 @@ export default function Home() {
     [inputs.intended_use, inputs.materials],
   );
   const activeFlow =
-    mode === 'custom' ? flowStages.custom : flowStages[selectedPreset];
+    inputMode === 'custom' ? flowStages.custom : flowStages[selectedPreset];
 
   function choosePreset(id: Preset['id']) {
     const preset = presets.find((item) => item.id === id);
     if (!preset) return;
 
-    setMode('preset');
+    setInputMode('preset');
     setSelectedPreset(id);
     setInputs({ ...preset.inputs });
     setIsDirty(true);
@@ -104,7 +204,7 @@ export default function Home() {
   }
 
   function chooseCustom() {
-    setMode('custom');
+    setInputMode('custom');
     setInputs({ ...emptyInputs });
     setIsDirty(true);
     setCopyState('idle');
@@ -112,7 +212,7 @@ export default function Home() {
 
   function updateInput(key: keyof FlowPassInputs, value: string) {
     setInputs((current) => ({ ...current, [key]: value }));
-    setMode('custom');
+    setInputMode('custom');
     setIsDirty(true);
     setCopyState('idle');
   }
@@ -120,7 +220,7 @@ export default function Home() {
   function generate() {
     if (isIncomplete) return;
 
-    setResult(buildPromptJson(inputs));
+    setPromptResult(buildPromptJson(inputs));
     setIsDirty(false);
     setCopyState('idle');
   }
@@ -129,12 +229,31 @@ export default function Home() {
     if (isDirty) return;
 
     try {
-      await navigator.clipboard.writeText(result);
+      await navigator.clipboard.writeText(promptResult);
       setCopyState('copied');
       window.setTimeout(() => setCopyState('idle'), 2200);
     } catch {
       setCopyState('error');
     }
+  }
+
+  function updateParserInput(value: string) {
+    setParserInput(value);
+    setParseResult(null);
+  }
+
+  function parsePassport() {
+    setParseResult(parseFlowPassJson(parserInput));
+  }
+
+  function clearParser() {
+    setParserInput('');
+    setParseResult(null);
+  }
+
+  function loadParserSample() {
+    setParserInput(FLOWPASS_SAMPLE_JSON);
+    setParseResult(null);
   }
 
   const copyMessage =
@@ -159,16 +278,60 @@ export default function Home() {
         <div className="file-trail" aria-label="目前檔案">
           <span>黑客松 MVP</span>
           <b aria-hidden="true">/</b>
-          <strong>Passport prompt.json</strong>
+          <strong>
+            {workspaceMode === 'generate'
+              ? 'Passport prompt.json'
+              : 'Passport viewer.json'}
+          </strong>
         </div>
         <div className="topbar-status">
           <span className="status-dot" aria-hidden="true" />
-          本機草稿
+          {workspaceMode === 'generate' ? '本機草稿' : '本機解析'}
         </div>
       </header>
 
-      <main className="editor-shell">
-        <aside className="left-panel" aria-label="情境與護照圖層">
+      <nav className="workspace-nav" aria-label="FlowPass 工作區">
+        <div className="workspace-switch" role="group" aria-label="工作模式">
+          <button
+            type="button"
+            className={workspaceMode === 'generate' ? 'active' : ''}
+            aria-pressed={workspaceMode === 'generate'}
+            onClick={() => setWorkspaceMode('generate')}
+          >
+            <span aria-hidden="true">01</span>
+            產生提示詞
+          </button>
+          <button
+            type="button"
+            className={workspaceMode === 'parse' ? 'active' : ''}
+            aria-pressed={workspaceMode === 'parse'}
+            onClick={() => setWorkspaceMode('parse')}
+          >
+            <span aria-hidden="true">02</span>
+            解析護照
+          </button>
+        </div>
+        <p>
+          <span aria-hidden="true">●</span>
+          測試版 · 不上傳內容
+        </p>
+      </nav>
+
+      <main
+        className={
+          workspaceMode === 'parse'
+            ? 'editor-shell parser-shell'
+            : 'editor-shell'
+        }
+      >
+        <aside
+          className="left-panel"
+          aria-label={
+            workspaceMode === 'generate' ? '情境與護照圖層' : '解析檢查層級'
+          }
+        >
+          {workspaceMode === 'generate' ? (
+            <>
           <div className="sidebar-heading">
             <span>FLOW TEMPLATES</span>
             <span className="sidebar-count">3 PRESETS</span>
@@ -180,12 +343,12 @@ export default function Home() {
                 key={preset.id}
                 type="button"
                 className={
-                  mode === 'preset' && selectedPreset === preset.id
+                  inputMode === 'preset' && selectedPreset === preset.id
                     ? 'preset-row selected'
                     : 'preset-row'
                 }
                 aria-pressed={
-                  mode === 'preset' && selectedPreset === preset.id
+                  inputMode === 'preset' && selectedPreset === preset.id
                 }
                 onClick={() => choosePreset(preset.id)}
               >
@@ -234,9 +397,35 @@ export default function Home() {
               <p>只填資料類型，不要貼上照片、錄音或文件內容。</p>
             </div>
           </div>
+            </>
+          ) : (
+            <>
+              <div className="sidebar-heading">
+                <span>JSON CHECKS</span>
+                <span className="sidebar-count">4 LAYERS</span>
+              </div>
+              <ParserCheckLayers result={parseResult} />
+              <div className="parser-sidebar-note">
+                <span aria-hidden="true">⌁</span>
+                <div>
+                  <strong>只在瀏覽器解析</strong>
+                  <p>不會上傳、儲存或自動修正你貼上的內容。</p>
+                </div>
+              </div>
+              <div className="privacy-card parser-privacy-card">
+                <span aria-hidden="true">!</span>
+                <div>
+                  <strong>不要貼原始素材</strong>
+                  <p>只貼 AI 回傳的資料類型與流向 JSON。</p>
+                </div>
+              </div>
+            </>
+          )}
         </aside>
 
         <section className="canvas-area" aria-labelledby="page-title">
+          {workspaceMode === 'generate' ? (
+            <>
           <div className="canvas-intro">
             <div>
               <span className="prototype-label">PROTOTYPE · 02</span>
@@ -258,9 +447,9 @@ export default function Home() {
                 <button
                   type="button"
                   className={
-                    mode === 'preset' ? 'mode-button active' : 'mode-button'
+                    inputMode === 'preset' ? 'mode-button active' : 'mode-button'
                   }
-                  aria-pressed={mode === 'preset'}
+                  aria-pressed={inputMode === 'preset'}
                   onClick={() => choosePreset(selectedPreset)}
                 >
                   使用範例
@@ -268,9 +457,9 @@ export default function Home() {
                 <button
                   type="button"
                   className={
-                    mode === 'custom' ? 'mode-button active' : 'mode-button'
+                    inputMode === 'custom' ? 'mode-button active' : 'mode-button'
                   }
-                  aria-pressed={mode === 'custom'}
+                  aria-pressed={inputMode === 'custom'}
                   onClick={chooseCustom}
                 >
                   自行填寫
@@ -349,9 +538,100 @@ export default function Home() {
               </div>
             </article>
           </div>
+            </>
+          ) : (
+            <>
+              <div className="canvas-intro parser-intro">
+                <div>
+                  <span className="prototype-label">PROTOTYPE · 03</span>
+                  <h1 id="page-title">
+                    貼上 AI 回傳 JSON，查看資料去了哪裡。
+                  </h1>
+                  <p>
+                    先檢查格式與節點引用，再把安全措施和待確認問題整理成可讀護照。
+                  </p>
+                </div>
+              </div>
+
+              <div className="canvas-stage parser-canvas-stage">
+                <article className="prompt-frame parser-input-frame">
+                  <div className="frame-label">
+                    <span>FlowPass / Passport Parser</span>
+                    <span>LOCAL ONLY</span>
+                  </div>
+
+                  <div className="parser-input-heading">
+                    <div>
+                      <label htmlFor="passport-json-input">AI 回傳 JSON</label>
+                      <p id="passport-json-hint">
+                        可直接貼上純 JSON；完整的 ```json code fence 也能辨識並提醒。
+                      </p>
+                    </div>
+                    <div className="parser-utility-actions">
+                      <button type="button" onClick={loadParserSample}>
+                        載入範例 JSON
+                      </button>
+                      <button type="button" onClick={clearParser}>
+                        清除 JSON
+                      </button>
+                    </div>
+                  </div>
+
+                  <textarea
+                    id="passport-json-input"
+                    className="parser-textarea"
+                    aria-label="AI 回傳 JSON"
+                    aria-describedby="passport-json-hint"
+                    spellCheck={false}
+                    value={parserInput}
+                    onChange={(event) => updateParserInput(event.target.value)}
+                  />
+
+                  <div className="parser-submit-row">
+                    <p>
+                      <span aria-hidden="true">✓</span>
+                      只解析結構，不判定補助、合規或安全。
+                    </p>
+                    <button
+                      type="button"
+                      className="generate-button parser-submit-button"
+                      onClick={parsePassport}
+                    >
+                      <span aria-hidden="true">⌁</span>
+                      開始解析護照
+                    </button>
+                  </div>
+                </article>
+
+                {parseResult?.passport ? (
+                  <PassportViewer result={parseResult} section="flow" />
+                ) : (
+                  <section className="parser-placeholder" aria-live="polite">
+                    <div className="placeholder-mark" aria-hidden="true">
+                      {'{ }'}
+                    </div>
+                    <div>
+                      <strong>
+                        {parseResult
+                          ? 'JSON 尚未通過格式檢查'
+                          : '解析後會在這裡顯示資料流'}
+                      </strong>
+                      <p>
+                        {parseResult
+                          ? '請依右側錯誤路徑修正後，再重新解析。'
+                          : '你會看到案例摘要、節點連線與孤立節點提示。'}
+                      </p>
+                    </div>
+                  </section>
+                )}
+              </div>
+            </>
+          )}
         </section>
 
         <aside className="inspector-panel" aria-labelledby="inspector-heading">
+          {workspaceMode === 'generate' ? (
+            <>
           <div className="inspector-title">
             <div>
               <span>OUTPUT</span>
@@ -387,7 +667,7 @@ export default function Home() {
           </div>
 
           <pre data-testid="json-output" tabIndex={0}>
-            {result}
+            {promptResult}
           </pre>
           <p
             className={
@@ -400,6 +680,35 @@ export default function Home() {
               ? '內容已變更，請重新產生 JSON。'
               : copyMessage || '可直接貼入支援 JSON 提示詞的 AI 工具。'}
           </p>
+            </>
+          ) : (
+            <>
+              <div className="inspector-title parser-inspector-title">
+                <div>
+                  <span>PARSED OUTPUT</span>
+                  <h2 id="inspector-heading">Passport Viewer</h2>
+                </div>
+                <span className="schema-pill">flowpass_passport_draft</span>
+              </div>
+              {parseResult ? (
+                <PassportViewer result={parseResult} section="details" />
+              ) : (
+                <div className="inspector-empty-state">
+                  <span aria-hidden="true">⌁</span>
+                  <strong>等待解析</strong>
+                  <p>
+                    按下「開始解析護照」後，這裡會顯示檢查結果、安全措施與待確認問題。
+                  </p>
+                  <ol>
+                    <li>檢查 JSON 格式</li>
+                    <li>驗證 FlowPass 欄位</li>
+                    <li>核對節點與連線</li>
+                    <li>整理人工待辦</li>
+                  </ol>
+                </div>
+              )}
+            </>
+          )}
         </aside>
       </main>
     </div>

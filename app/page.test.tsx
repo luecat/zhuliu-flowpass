@@ -204,4 +204,104 @@ describe('FlowPass JSON generator page', () => {
       ),
     );
   });
+
+  it('switches workspaces without losing either draft', () => {
+    render(<Page />);
+
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.change(screen.getByLabelText('要處理什麼東西？'), {
+      target: { value: '尚未送出的活動照片' },
+    });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+
+    const parserInput = screen.getByLabelText(
+      'AI 回傳 JSON',
+    ) as HTMLTextAreaElement;
+    expect(parserInput.value).toContain('passport_draft');
+    fireEvent.change(parserInput, { target: { value: '{"draft":"保留我"}' } });
+
+    fireEvent.click(
+      within(workspace).getByRole('button', { name: '產生提示詞' }),
+    );
+    expect(screen.getByLabelText('要處理什麼東西？')).toHaveValue(
+      '尚未送出的活動照片',
+    );
+
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+    expect(screen.getByLabelText('AI 回傳 JSON')).toHaveValue(
+      '{"draft":"保留我"}',
+    );
+  });
+
+  it('parses the supplied sample into the hackathon passport summary', () => {
+    render(<Page />);
+
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+
+    expect(
+      screen.getByRole('heading', { name: '社團招生影片製作與發布' }),
+    ).toBeVisible();
+    const metrics = screen.getByLabelText('護照數量摘要');
+    expect(within(metrics).getByText('8')).toBeVisible();
+    expect(within(metrics).getByText('4 條連線')).toBeVisible();
+    expect(within(metrics).getByText('4 項措施')).toBeVisible();
+    expect(within(metrics).getByText('8 個問題')).toBeVisible();
+  });
+
+  it('keeps invalid JSON editable and announces the error', () => {
+    render(<Page />);
+
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+    const parserInput = screen.getByLabelText('AI 回傳 JSON');
+    fireEvent.change(parserInput, { target: { value: '{"passport_draft":' } });
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('JSON 格式無法解析');
+    expect(parserInput).toHaveValue('{"passport_draft":');
+  });
+
+  it('shows the exact schema path for a missing use case', () => {
+    render(<Page />);
+
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+    const parserInput = screen.getByLabelText('AI 回傳 JSON');
+    const parsed = JSON.parse((parserInput as HTMLTextAreaElement).value);
+    delete parsed.passport_draft.use_case;
+    fireEvent.change(parserInput, {
+      target: { value: JSON.stringify(parsed) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '$.passport_draft.use_case',
+    );
+  });
+
+  it('clears and reloads only the parser sample', () => {
+    render(<Page />);
+
+    const originalMaterials = (
+      screen.getByLabelText('要處理什麼東西？') as HTMLTextAreaElement
+    ).value;
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+
+    fireEvent.click(screen.getByRole('button', { name: '清除 JSON' }));
+    expect(screen.getByLabelText('AI 回傳 JSON')).toHaveValue('');
+    fireEvent.click(screen.getByRole('button', { name: '載入範例 JSON' }));
+    expect(
+      (screen.getByLabelText('AI 回傳 JSON') as HTMLTextAreaElement).value,
+    ).toContain('社團招生影片製作與發布');
+
+    fireEvent.click(
+      within(workspace).getByRole('button', { name: '產生提示詞' }),
+    );
+    expect(screen.getByLabelText('要處理什麼東西？')).toHaveValue(
+      originalMaterials,
+    );
+  });
 });

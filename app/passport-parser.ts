@@ -1,4 +1,7 @@
-import Ajv2020, { type ErrorObject } from 'ajv/dist/2020.js';
+import Ajv2020, {
+  type ErrorObject,
+  type ValidateFunction,
+} from 'ajv/dist/2020.js';
 import { PASSPORT_JSON_SCHEMA } from './prompt-builder';
 
 export type IssueSeverity = 'error' | 'warning' | 'info';
@@ -150,10 +153,17 @@ export type FlowPassParseResult = {
   summary: PassportSummary | null;
 };
 
-const ajv = new Ajv2020({ allErrors: true, strict: false });
-const validatePassport = ajv.compile(
-  structuredClone(PASSPORT_JSON_SCHEMA) as object,
-);
+let passportValidator: ValidateFunction | null = null;
+
+function getPassportValidator(): ValidateFunction {
+  if (passportValidator) return passportValidator;
+
+  const ajv = new Ajv2020({ allErrors: true, strict: false });
+  passportValidator = ajv.compile(
+    structuredClone(PASSPORT_JSON_SCHEMA) as object,
+  );
+  return passportValidator;
+}
 
 function pointerToPath(pointer: string): string {
   if (!pointer) return '$';
@@ -652,6 +662,7 @@ export function parseFlowPassJson(raw: string): FlowPassParseResult {
     };
   }
 
+  const validatePassport = getPassportValidator();
   if (!validatePassport(value)) {
     return {
       status: 'invalid_contract',

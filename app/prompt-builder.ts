@@ -27,7 +27,7 @@ const SOURCE_FIELDS = [
   'destination_and_audience',
 ] as const;
 
-const PASSPORT_JSON_SCHEMA = {
+export const PASSPORT_JSON_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   type: 'object',
   additionalProperties: false,

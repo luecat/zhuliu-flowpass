@@ -118,6 +118,16 @@ function getLayerStatus(
   return 'pass';
 }
 
+function hasUnsafeQuestionIds(result: FlowPassParseResult | null): boolean {
+  return Boolean(
+    result?.issues.some(
+      (issue) =>
+        issue.code === 'blank_question_id' ||
+        issue.code === 'duplicate_question_id',
+    ),
+  );
+}
+
 function ParserCheckLayers({
   result,
 }: {
@@ -256,16 +266,14 @@ export default function Home() {
   function parsePassport() {
     const result = parseFlowPassJson(parserInput);
     setParseResult(result);
-    setQuestionAnswers((current) =>
-      result.passport
-        ? reconcileConfirmationAnswers(
+    if (result.passport && !hasUnsafeQuestionIds(result)) {
+      setQuestionAnswers((current) =>
+        reconcileConfirmationAnswers(
             result.passport.confirmation_questions,
             current,
             lastParsedQuestions,
-          )
-        : current,
-    );
-    if (result.passport) {
+          ),
+      );
       setLastParsedQuestions(result.passport.confirmation_questions);
     }
   }
@@ -290,13 +298,7 @@ export default function Home() {
       : copyState === 'error'
         ? '無法自動複製，請直接選取 JSON。'
         : '';
-  const hasUnsafeQuestionIds = Boolean(
-    parseResult?.issues.some(
-      (issue) =>
-        issue.code === 'blank_question_id' ||
-        issue.code === 'duplicate_question_id',
-    ),
-  );
+  const questionIdsAreUnsafe = hasUnsafeQuestionIds(parseResult);
 
   return (
     <div className="app-shell">
@@ -641,7 +643,7 @@ export default function Home() {
                 {parseResult?.passport ? (
                   <>
                     <PassportViewer result={parseResult} section="flow" />
-                    {hasUnsafeQuestionIds ? (
+                    {questionIdsAreUnsafe ? (
                       <section
                         className="confirmation-workbench confirmation-empty confirmation-blocked"
                         role="alert"

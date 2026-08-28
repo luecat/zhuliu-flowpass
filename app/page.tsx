@@ -9,6 +9,7 @@ import {
 } from './prompt-builder';
 import {
   parseFlowPassJson,
+  type ConfirmationQuestion,
   type FlowPassParseResult,
   type IssueCategory,
 } from './passport-parser';
@@ -190,6 +191,9 @@ export default function Home() {
     useState<FlowPassParseResult | null>(null);
   const [questionAnswers, setQuestionAnswers] =
     useState<ConfirmationAnswerState>({});
+  const [lastParsedQuestions, setLastParsedQuestions] = useState<
+    ConfirmationQuestion[]
+  >([]);
   const [isDirty, setIsDirty] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>('idle');
   const isIncomplete = useMemo(
@@ -247,7 +251,6 @@ export default function Home() {
   function updateParserInput(value: string) {
     setParserInput(value);
     setParseResult(null);
-    setQuestionAnswers({});
   }
 
   function parsePassport() {
@@ -258,21 +261,27 @@ export default function Home() {
         ? reconcileConfirmationAnswers(
             result.passport.confirmation_questions,
             current,
+            lastParsedQuestions,
           )
-        : {},
+        : current,
     );
+    if (result.passport) {
+      setLastParsedQuestions(result.passport.confirmation_questions);
+    }
   }
 
   function clearParser() {
     setParserInput('');
     setParseResult(null);
     setQuestionAnswers({});
+    setLastParsedQuestions([]);
   }
 
   function loadParserSample() {
     setParserInput(FLOWPASS_SAMPLE_JSON);
     setParseResult(null);
     setQuestionAnswers({});
+    setLastParsedQuestions([]);
   }
 
   const copyMessage =
@@ -281,6 +290,13 @@ export default function Home() {
       : copyState === 'error'
         ? '無法自動複製，請直接選取 JSON。'
         : '';
+  const hasUnsafeQuestionIds = Boolean(
+    parseResult?.issues.some(
+      (issue) =>
+        issue.code === 'blank_question_id' ||
+        issue.code === 'duplicate_question_id',
+    ),
+  );
 
   return (
     <div className="app-shell">
@@ -625,11 +641,26 @@ export default function Home() {
                 {parseResult?.passport ? (
                   <>
                     <PassportViewer result={parseResult} section="flow" />
-                    <PassportQuestionnaire
-                      passport={parseResult.passport}
-                      answerState={questionAnswers}
-                      onAnswerStateChange={setQuestionAnswers}
-                    />
+                    {hasUnsafeQuestionIds ? (
+                      <section
+                        className="confirmation-workbench confirmation-empty confirmation-blocked"
+                        role="alert"
+                      >
+                        <span aria-hidden="true">!</span>
+                        <div>
+                          <h2>問題 ID 無法安全對應</h2>
+                          <p>
+                            confirmation_questions 含有空白或重複 ID，請先請 AI 修正後再回答。
+                          </p>
+                        </div>
+                      </section>
+                    ) : (
+                      <PassportQuestionnaire
+                        passport={parseResult.passport}
+                        answerState={questionAnswers}
+                        onAnswerStateChange={setQuestionAnswers}
+                      />
+                    )}
                   </>
                 ) : (
                   <section className="parser-placeholder" aria-live="polite">

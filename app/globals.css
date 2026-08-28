@@ -2050,6 +2050,20 @@ textarea::placeholder {
   gap: 4px;
 }
 
+.confirmation-blocked {
+  border-color: #efc5ca;
+  background: #fff7f8;
+}
+
+.confirmation-blocked > span {
+  color: white;
+  background: #d45461;
+}
+
+.confirmation-blocked p {
+  color: #8b5359;
+}
+
 @media (max-width: 1220px) {
   .topbar {
     grid-template-columns: 230px minmax(0, 1fr) auto;

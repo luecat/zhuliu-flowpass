@@ -278,6 +278,65 @@ describe('FlowPass JSON generator page', () => {
     ).toHaveValue('使用 Runway 生成影片。');
   });
 
+  it('preserves matching answers while the pasted JSON is corrected and reparsed', () => {
+    render(<Page />);
+
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+
+    const firstAnswer = screen.getByRole('textbox', {
+      name: /請指定具體使用的「AI 影片生成工具」名稱與供應商？/,
+    });
+    fireEvent.change(firstAnswer, {
+      target: { value: '使用 Runway 生成影片。' },
+    });
+
+    const parserInput = screen.getByLabelText(
+      'AI 回傳 JSON',
+    ) as HTMLTextAreaElement;
+    const validJson = parserInput.value;
+    fireEvent.change(parserInput, {
+      target: { value: '{"passport_draft":' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('JSON 格式無法解析');
+
+    fireEvent.change(parserInput, {
+      target: { value: `\n${validJson}\n` },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+
+    expect(
+      screen.getByRole('textbox', {
+        name: /請指定具體使用的「AI 影片生成工具」名稱與供應商？/,
+      }),
+    ).toHaveValue('使用 Runway 生成影片。');
+  });
+
+  it('blocks answer collection when AI question IDs are duplicated', () => {
+    render(<Page />);
+
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+    const parserInput = screen.getByLabelText(
+      'AI 回傳 JSON',
+    ) as HTMLTextAreaElement;
+    const parsed = JSON.parse(parserInput.value);
+    parsed.passport_draft.confirmation_questions[1].id =
+      parsed.passport_draft.confirmation_questions[0].id;
+    fireEvent.change(parserInput, {
+      target: { value: JSON.stringify(parsed) },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+
+    expect(screen.queryAllByTestId('answer-question')).toHaveLength(0);
+    expect(screen.getByText('問題 ID 無法安全對應')).toBeVisible();
+    expect(
+      screen.queryByRole('button', { name: '產生給 AI 的 JSON' }),
+    ).not.toBeInTheDocument();
+  });
+
   it('keeps invalid JSON editable and announces the error', () => {
     render(<Page />);
 

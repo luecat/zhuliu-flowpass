@@ -16,12 +16,27 @@ export type ConfirmationAnswerState = Record<
 export function reconcileConfirmationAnswers(
   questions: ConfirmationQuestion[],
   current: ConfirmationAnswerState,
+  previousQuestions?: ConfirmationQuestion[],
 ): ConfirmationAnswerState {
+  const previousById = previousQuestions
+    ? new Map(
+        previousQuestions.map((question) => [question.id, question.question]),
+      )
+    : null;
+
   return Object.fromEntries(
-    questions.map((question) => [
-      question.id,
-      current[question.id] ?? { status: 'unanswered', answerText: '' },
-    ]),
+    questions.map((question) => {
+      const canReuse =
+        current[question.id] &&
+        (!previousById || previousById.get(question.id) === question.question);
+
+      return [
+        question.id,
+        canReuse
+          ? current[question.id]
+          : { status: 'unanswered', answerText: '' },
+      ];
+    }),
   );
 }
 

@@ -82,4 +82,30 @@ describe('reconcileConfirmationAnswers', () => {
       q_02: { status: 'unanswered', answerText: '' },
     });
   });
+
+  it('drops an answer when a reused ID now refers to different question text', () => {
+    const previousQuestions = samplePassport().confirmation_questions.slice(
+      0,
+      1,
+    );
+    const nextQuestions = [
+      {
+        ...previousQuestions[0],
+        question: '這是另一份草稿中完全不同的問題？',
+      },
+    ];
+    const current: ConfirmationAnswerState = {
+      q_01: { status: 'answered', answerText: '不應套用到新問題' },
+    };
+
+    expect(
+      reconcileConfirmationAnswers(
+        nextQuestions,
+        current,
+        previousQuestions,
+      ),
+    ).toEqual({
+      q_01: { status: 'unanswered', answerText: '' },
+    });
+  });
 });

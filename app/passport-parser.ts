@@ -243,6 +243,373 @@ function buildSummary(passport: PassportDraft): PassportSummary {
   };
 }
 
+function idIssues(
+  items: Array<{ id: string }>,
+  label: 'node' | 'edge' | 'action' | 'question',
+  path: string,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const seen = new Set<string>();
+
+  items.forEach((item, index) => {
+    if (!item.id.trim()) {
+      issues.push({
+        code: `blank_${label}_id`,
+        category: 'graph',
+        severity: 'error',
+        path: `${path}[${index}].id`,
+        message: `${label} 的 id 不可為空白。`,
+      });
+      return;
+    }
+
+    if (seen.has(item.id)) {
+      issues.push({
+        code: `duplicate_${label}_id`,
+        category: 'graph',
+        severity: 'error',
+        path: `${path}[${index}].id`,
+        message: `id「${item.id}」重複出現。`,
+        relatedIds: [item.id],
+      });
+      return;
+    }
+
+    seen.add(item.id);
+  });
+
+  return issues;
+}
+
+function cycleIssues(
+  passport: PassportDraft,
+  nodeById: Map<string, PassportNode>,
+): ValidationIssue[] {
+  const adjacency = new Map<string, string[]>();
+  for (const node of passport.nodes) adjacency.set(node.id, []);
+  for (const edge of passport.edges) {
+    if (
+      edge.from_node_id !== edge.to_node_id &&
+      nodeById.has(edge.from_node_id) &&
+      nodeById.has(edge.to_node_id)
+    ) {
+      adjacency.get(edge.from_node_id)?.push(edge.to_node_id);
+    }
+  }
+
+  const state = new Map<string, 0 | 1 | 2>();
+  const stack: string[] = [];
+  const signatures = new Set<string>();
+  const issues: ValidationIssue[] = [];
+
+  function visit(nodeId: string) {
+    state.set(nodeId, 1);
+    stack.push(nodeId);
+
+    for (const nextId of adjacency.get(nodeId) ?? []) {
+      const nextState = state.get(nextId) ?? 0;
+      if (nextState === 0) {
+        visit(nextId);
+        continue;
+      }
+      if (nextState !== 1) continue;
+
+      const cycleStart = stack.lastIndexOf(nextId);
+      const cycle = [...stack.slice(cycleStart), nextId];
+      const signature = [...new Set(cycle)].sort().join('|');
+      if (signatures.has(signature)) continue;
+
+      signatures.add(signature);
+      issues.push({
+        code: 'graph_cycle',
+        category: 'graph',
+        severity: 'warning',
+        path: '$.passport_draft.edges',
+        message: `資料流形成循環：${cycle.join(' → ')}。請確認是否為真實回流。`,
+        relatedIds: cycle,
+      });
+    }
+
+    stack.pop();
+    state.set(nodeId, 2);
+  }
+
+  for (const nodeId of adjacency.keys()) {
+    if ((state.get(nodeId) ?? 0) === 0) visit(nodeId);
+  }
+
+  return issues;
+}
+
+function graphIssues(passport: PassportDraft): ValidationIssue[] {
+  const issues: ValidationIssue[] = [
+    ...idIssues(passport.nodes, 'node', '$.passport_draft.nodes'),
+    ...idIssues(passport.edges, 'edge', '$.passport_draft.edges'),
+    ...idIssues(
+      passport.safety_actions,
+      'action',
+      '$.passport_draft.safety_actions',
+    ),
+    ...idIssues(
+      passport.confirmation_questions,
+      'question',
+      '$.passport_draft.confirmation_questions',
+    ),
+  ];
+  const nodeById = new Map(passport.nodes.map((node) => [node.id, node]));
+  const participatingNodeIds = new Set<string>();
+  const transferKeys = new Set<string>();
+
+  passport.edges.forEach((edge, index) => {
+    const fromExists = nodeById.has(edge.from_node_id);
+    const toExists = nodeById.has(edge.to_node_id);
+
+    if (!fromExists) {
+      issues.push({
+        code: 'invalid_edge_reference',
+        category: 'graph',
+        severity: 'error',
+        path: `$.passport_draft.edges[${index}].from_node_id`,
+        message: `連線來源「${edge.from_node_id}」不存在。`,
+        relatedIds: [edge.from_node_id],
+      });
+    } else {
+      participatingNodeIds.add(edge.from_node_id);
+    }
+
+    if (!toExists) {
+      issues.push({
+        code: 'invalid_edge_reference',
+        category: 'graph',
+        severity: 'error',
+        path: `$.passport_draft.edges[${index}].to_node_id`,
+        message: `連線目的地「${edge.to_node_id}」不存在。`,
+        relatedIds: [edge.to_node_id],
+      });
+    } else {
+      participatingNodeIds.add(edge.to_node_id);
+    }
+
+    if (edge.from_node_id === edge.to_node_id) {
+      issues.push({
+        code: 'self_loop',
+        category: 'graph',
+        severity: 'error',
+        path: `$.passport_draft.edges[${index}]`,
+        message: `連線「${edge.id}」的起點與終點相同。`,
+        relatedIds: [edge.from_node_id],
+      });
+    }
+
+    const transferKey = `${edge.from_node_id}|${edge.to_node_id}|${edge.purpose}`;
+    if (transferKeys.has(transferKey)) {
+      issues.push({
+        code: 'duplicate_edge',
+        category: 'graph',
+        severity: 'warning',
+        path: `$.passport_draft.edges[${index}]`,
+        message: `相同用途的資料傳遞重複出現：${edge.purpose}。`,
+        relatedIds: [edge.from_node_id, edge.to_node_id],
+      });
+    } else {
+      transferKeys.add(transferKey);
+    }
+  });
+
+  passport.safety_actions.forEach((action, actionIndex) => {
+    action.applies_to_node_ids.forEach((nodeId, referenceIndex) => {
+      if (nodeById.has(nodeId)) return;
+      issues.push({
+        code: 'invalid_action_reference',
+        category: 'graph',
+        severity: 'error',
+        path: `$.passport_draft.safety_actions[${actionIndex}].applies_to_node_ids[${referenceIndex}]`,
+        message: `安全措施引用了不存在的節點「${nodeId}」。`,
+        relatedIds: [nodeId],
+      });
+    });
+  });
+
+  passport.confirmation_questions.forEach((question, questionIndex) => {
+    question.related_node_ids.forEach((nodeId, referenceIndex) => {
+      if (nodeById.has(nodeId)) return;
+      issues.push({
+        code: 'invalid_question_reference',
+        category: 'graph',
+        severity: 'error',
+        path: `$.passport_draft.confirmation_questions[${questionIndex}].related_node_ids[${referenceIndex}]`,
+        message: `確認問題引用了不存在的節點「${nodeId}」。`,
+        relatedIds: [nodeId],
+      });
+    });
+  });
+
+  passport.nodes.forEach((node, index) => {
+    if (participatingNodeIds.has(node.id)) return;
+    const informational = node.kind === 'person' || node.kind === 'organization';
+    issues.push({
+      code: 'orphan_node',
+      category: 'graph',
+      severity: informational ? 'info' : 'warning',
+      path: `$.passport_draft.nodes[${index}]`,
+      message: `節點「${node.label}」沒有連到任何資料流。`,
+      relatedIds: [node.id],
+    });
+  });
+
+  const storageLocation = passport.retention.storage_location;
+  if (nodeById.has(storageLocation) || storageLocation.startsWith('node_')) {
+    const storageNode = nodeById.get(storageLocation);
+    if (!storageNode || storageNode.kind !== 'storage') {
+      issues.push({
+        code: 'invalid_retention_storage',
+        category: 'graph',
+        severity: 'error',
+        path: '$.passport_draft.retention.storage_location',
+        message: `保存位置「${storageLocation}」不是有效的 storage 節點。`,
+        relatedIds: [storageLocation],
+      });
+    }
+  }
+
+  if (passport.sharing_scope.audience === 'public') {
+    const hasConnectedDestination = passport.nodes.some(
+      (node) =>
+        node.kind === 'destination' && participatingNodeIds.has(node.id),
+    );
+    if (!hasConnectedDestination) {
+      issues.push({
+        code: 'public_without_destination_flow',
+        category: 'graph',
+        severity: 'warning',
+        path: '$.passport_draft.sharing_scope.audience',
+        message: '分享範圍是公開，但沒有連入資料流的公開目的地節點。',
+      });
+    }
+  }
+
+  issues.push(...cycleIssues(passport, nodeById));
+  return issues;
+}
+
+function readinessIssues(passport: PassportDraft): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const confirmableIds = [
+    ...passport.nodes
+      .filter((node) => node.needs_confirmation)
+      .map((node) => node.id),
+    ...passport.edges
+      .filter((edge) => edge.needs_confirmation)
+      .map((edge) => edge.id),
+  ];
+
+  if (
+    passport.sharing_scope.needs_confirmation ||
+    passport.retention.needs_confirmation ||
+    confirmableIds.length > 0
+  ) {
+    issues.push({
+      code: 'confirmation_required',
+      category: 'readiness',
+      severity: 'info',
+      path: '$.passport_draft',
+      message: '這份護照包含尚待本人確認的節點、連線、分享或保存資訊。',
+      relatedIds: confirmableIds,
+    });
+  }
+
+  if (passport.audit.unknown_fields.length > 0) {
+    issues.push({
+      code: 'unknown_fields',
+      category: 'readiness',
+      severity: 'warning',
+      path: '$.passport_draft.audit.unknown_fields',
+      message: `仍有 ${passport.audit.unknown_fields.length} 個未知欄位。`,
+    });
+  }
+
+  const highSensitivityIds = passport.nodes
+    .filter((node) => node.sensitivity === 'high')
+    .map((node) => node.id);
+  if (highSensitivityIds.length > 0) {
+    issues.push({
+      code: 'high_sensitivity_present',
+      category: 'readiness',
+      severity: 'info',
+      path: '$.passport_draft.nodes',
+      message: `護照中有 ${highSensitivityIds.length} 個高敏感節點，需逐項確認處理方式。`,
+      relatedIds: highSensitivityIds,
+    });
+  }
+
+  if (passport.sharing_scope.audience === 'public') {
+    issues.push({
+      code: 'public_sharing',
+      category: 'readiness',
+      severity: 'info',
+      path: '$.passport_draft.sharing_scope.audience',
+      message: '預計分享範圍包含公開發布。',
+    });
+  }
+
+  if (
+    !passport.retention.duration.trim() ||
+    passport.retention.duration === 'unknown' ||
+    !passport.retention.deletion_plan.trim() ||
+    passport.retention.deletion_plan === 'unknown'
+  ) {
+    issues.push({
+      code: 'unknown_retention',
+      category: 'readiness',
+      severity: 'warning',
+      path: '$.passport_draft.retention',
+      message: '保存期限或刪除計畫尚未確認。',
+    });
+  }
+
+  const requestedTool = passport.administrative_hints.requested_tool;
+  if (!requestedTool.trim() || requestedTool === 'unknown') {
+    issues.push({
+      code: 'unknown_tool',
+      category: 'readiness',
+      severity: 'warning',
+      path: '$.passport_draft.administrative_hints.requested_tool',
+      message: '申請使用的 AI 工具尚未指定。',
+    });
+  }
+
+  if (passport.administrative_hints.requires_officer_review) {
+    issues.push({
+      code: 'officer_review_required',
+      category: 'readiness',
+      severity: 'info',
+      path: '$.passport_draft.administrative_hints.requires_officer_review',
+      message: '此草稿仍需要承辦人員複核。',
+    });
+  }
+
+  return issues;
+}
+
+function stripJsonFence(raw: string): {
+  json: string;
+  issue: ValidationIssue | null;
+} {
+  const match = raw.match(/^```json\s*\n([\s\S]*?)\n```$/i);
+  if (!match) return { json: raw, issue: null };
+
+  return {
+    json: match[1].trim(),
+    issue: {
+      code: 'markdown_fence',
+      category: 'syntax',
+      severity: 'warning',
+      path: '$',
+      message: '已移除 Markdown code fence；正式回傳應只包含 JSON。',
+    },
+  };
+}
+
 export function parseFlowPassJson(raw: string): FlowPassParseResult {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -262,15 +629,18 @@ export function parseFlowPassJson(raw: string): FlowPassParseResult {
     };
   }
 
+  const fenced = stripJsonFence(trimmed);
+  const initialIssues = fenced.issue ? [fenced.issue] : [];
   let value: unknown;
   try {
-    value = JSON.parse(trimmed);
+    value = JSON.parse(fenced.json);
   } catch {
     return {
       status: 'invalid_json',
       passport: null,
       summary: null,
       issues: [
+        ...initialIssues,
         {
           code: 'invalid_json',
           category: 'syntax',
@@ -287,17 +657,32 @@ export function parseFlowPassJson(raw: string): FlowPassParseResult {
       status: 'invalid_contract',
       passport: null,
       summary: null,
-      issues: (validatePassport.errors ?? []).map(schemaIssue),
+      issues: [
+        ...initialIssues,
+        ...(validatePassport.errors ?? []).map(schemaIssue),
+      ],
     };
   }
 
   const passport = (value as { passport_draft: PassportDraft })
     .passport_draft;
+  const issues = [
+    ...initialIssues,
+    ...graphIssues(passport),
+    ...readinessIssues(passport),
+  ];
+  const hasGraphError = issues.some(
+    (issue) => issue.category === 'graph' && issue.severity === 'error',
+  );
 
   return {
-    status: 'valid',
+    status: hasGraphError
+      ? 'invalid_graph'
+      : issues.length > 0
+        ? 'valid_with_warnings'
+        : 'valid',
     passport,
-    issues: [],
+    issues,
     summary: buildSummary(passport),
   };
 }

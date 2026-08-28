@@ -43,4 +43,138 @@ describe('parseFlowPassJson', () => {
       ),
     ).toBe(true);
   });
+
+  it('counts sensitivity, unknown fields, and orphan nodes independently', () => {
+    const result = parseFlowPassJson(FLOWPASS_SAMPLE_JSON);
+
+    expect(result.status).toBe('valid_with_warnings');
+    expect(result.summary?.sensitivityCounts).toEqual({
+      low: 2,
+      medium: 2,
+      high: 4,
+      unknown: 0,
+    });
+    expect(result.summary?.unknownFields).toEqual([
+      '$.retention.duration',
+      '$.retention.deletion_plan',
+      '$.administrative_hints.requested_tool',
+    ]);
+    expect(
+      result.issues.filter((issue) => issue.code === 'orphan_node'),
+    ).toHaveLength(3);
+  });
+
+  it('rejects an edge that points to a missing node', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.edges[0].to_node_id = 'node_missing';
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.status).toBe('invalid_graph');
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        code: 'invalid_edge_reference',
+        severity: 'error',
+        path: '$.passport_draft.edges[0].to_node_id',
+        relatedIds: ['node_missing'],
+      }),
+    );
+  });
+
+  it('rejects duplicate and blank IDs in graph collections', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.nodes[1].id = parsed.passport_draft.nodes[0].id;
+    parsed.passport_draft.safety_actions[0].id = '';
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.status).toBe('invalid_graph');
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(['duplicate_node_id', 'blank_action_id']),
+    );
+  });
+
+  it('rejects self-loops and warns about repeated transfers', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.edges[0].to_node_id = 'node_mat_01';
+    parsed.passport_draft.edges.push({
+      ...parsed.passport_draft.edges[1],
+      id: 'edge_duplicate',
+    });
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.status).toBe('invalid_graph');
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining(['self_loop', 'duplicate_edge']),
+    );
+  });
+
+  it('warns when a valid graph contains a directed cycle', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.edges.push({
+      ...parsed.passport_draft.edges[0],
+      id: 'edge_cycle',
+      from_node_id: 'node_dest_01',
+      to_node_id: 'node_mat_01',
+      purpose: '測試回流',
+    });
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.status).toBe('valid_with_warnings');
+    expect(result.issues.some((issue) => issue.code === 'graph_cycle')).toBe(
+      true,
+    );
+  });
+
+  it('rejects missing references from actions and questions', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.safety_actions[0].applies_to_node_ids = [
+      'node_missing_action',
+    ];
+    parsed.passport_draft.confirmation_questions[0].related_node_ids = [
+      'node_missing_question',
+    ];
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.status).toBe('invalid_graph');
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        'invalid_action_reference',
+        'invalid_question_reference',
+      ]),
+    );
+  });
+
+  it('checks retention and public destination graph semantics', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.retention.storage_location = 'node_dest_01';
+    parsed.passport_draft.edges = parsed.passport_draft.edges.filter(
+      (edge: { to_node_id: string }) => edge.to_node_id !== 'node_dest_01',
+    );
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.status).toBe('invalid_graph');
+    expect(result.issues.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        'invalid_retention_storage',
+        'public_without_destination_flow',
+      ]),
+    );
+  });
+
+  it('accepts one complete Markdown JSON fence with a warning', () => {
+    const result = parseFlowPassJson(
+      `\`\`\`json\n${FLOWPASS_SAMPLE_JSON}\n\`\`\``,
+    );
+
+    expect(result.status).toBe('valid_with_warnings');
+    expect(result.summary?.nodeCount).toBe(8);
+    expect(result.issues.some((issue) => issue.code === 'markdown_fence')).toBe(
+      true,
+    );
+  });
 });

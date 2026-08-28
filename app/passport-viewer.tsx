@@ -82,12 +82,15 @@ function FlowSection({ result }: { result: FlowPassParseResult }) {
               data-testid="readable-flow"
               key={flow.id}
             >
-              <div className="flow-route">
+              <span className="sr-only">
+                {flow.fromLabel} 傳送到 {flow.toLabel}：{flow.purpose}
+              </span>
+              <div className="flow-route" aria-hidden="true">
                 <span>{flow.fromLabel}</span>
-                <i aria-hidden="true">→</i>
+                <i>→</i>
                 <span>{flow.toLabel}</span>
               </div>
-              <p>{flow.purpose}</p>
+              <p aria-hidden="true">{flow.purpose}</p>
               {flow.needsConfirmation && <small>待本人確認</small>}
             </article>
           ))}

@@ -17,6 +17,11 @@ describe('PassportViewer', () => {
     expect(screen.getByText('提供照片素材供 AI 生成影片')).toBeVisible();
     expect(screen.getByText('社員照片與錄音原始檔')).toBeVisible();
     expect(screen.getAllByText('AI 影片生成工具')).toHaveLength(3);
+    expect(
+      screen.getByText(
+        '社員照片與錄音原始檔 傳送到 AI 影片生成工具：提供照片素材供 AI 生成影片',
+      ),
+    ).toBeInTheDocument();
   });
 
   it('renders draft status, counts, actions, priorities, and unknown fields', () => {

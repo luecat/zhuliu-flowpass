@@ -177,4 +177,17 @@ describe('parseFlowPassJson', () => {
       true,
     );
   });
+
+  it('accepts a complete Markdown JSON fence with Windows line endings', () => {
+    const windowsJson = FLOWPASS_SAMPLE_JSON.replaceAll('\n', '\r\n');
+    const result = parseFlowPassJson(
+      `\`\`\`json\r\n${windowsJson}\r\n\`\`\``,
+    );
+
+    expect(result.status).toBe('valid_with_warnings');
+    expect(result.summary?.nodeCount).toBe(8);
+    expect(result.issues.some((issue) => issue.code === 'markdown_fence')).toBe(
+      true,
+    );
+  });
 });

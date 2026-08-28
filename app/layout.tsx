@@ -1,9 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-const title = '竹流 FlowPass｜AI 使用流向護照 JSON 生成器';
+const title = '竹流 FlowPass｜JSON 提示詞與護照解析器';
 const description =
-  '分開填寫資料、AI 用途、可能個資與分享去向，一鍵產生符合 FlowPass 黑客松架構的英文 JSON 提示詞。';
+  '產生 FlowPass 英文 JSON 提示詞，並在同一頁解析 AI 回傳的資料流、待確認問題與安全措施。';
 
 export const metadata: Metadata = {
   title,

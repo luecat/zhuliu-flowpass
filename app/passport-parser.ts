@@ -195,13 +195,68 @@ function schemaErrorPath(error: ErrorObject): string {
 }
 
 function schemaIssue(error: ErrorObject): ValidationIssue {
+  const path = schemaErrorPath(error);
+  if (
+    error.keyword === 'enum' &&
+    /\.nodes\[\d+\]\.kind$/.test(path) &&
+    Array.isArray(error.params.allowedValues)
+  ) {
+    return {
+      code: 'schema_enum',
+      category: 'schema',
+      severity: 'error',
+      path,
+      message: `節點 kind 只允許：${error.params.allowedValues.join('、')}。照片、音訊、影片或創作成品應使用 kind「data」，並把格式放在 data_category。`,
+    };
+  }
+
   return {
     code: `schema_${error.keyword}`,
     category: 'schema',
     severity: 'error',
-    path: schemaErrorPath(error),
+    path,
     message: `欄位不符合 FlowPass 格式：${error.message ?? error.keyword}`,
   };
+}
+
+const DATA_CATEGORY_VALUES = new Set([
+  'photo',
+  'audio',
+  'video',
+  'document',
+  'code',
+  'personal_data',
+  'creative_asset',
+  'other',
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function normalizeCategoryLikeNodeKinds(value: unknown): ValidationIssue[] {
+  if (!isRecord(value) || !isRecord(value.passport_draft)) return [];
+  const nodes = value.passport_draft.nodes;
+  if (!Array.isArray(nodes)) return [];
+
+  const issues: ValidationIssue[] = [];
+  nodes.forEach((node, index) => {
+    if (!isRecord(node) || typeof node.kind !== 'string') return;
+    if (!DATA_CATEGORY_VALUES.has(node.kind)) return;
+
+    const returnedKind = node.kind;
+    node.kind = 'data';
+    issues.push({
+      code: 'normalized_node_kind',
+      category: 'schema',
+      severity: 'warning',
+      path: `$.passport_draft.nodes[${index}].kind`,
+      message: `已將節點 kind「${returnedKind}」修正為「data」；內容格式應放在 data_category。`,
+      relatedIds: typeof node.id === 'string' ? [node.id] : undefined,
+    });
+  });
+
+  return issues;
 }
 
 function buildSummary(passport: PassportDraft): PassportSummary {
@@ -662,6 +717,8 @@ export function parseFlowPassJson(raw: string): FlowPassParseResult {
     };
   }
 
+  const normalizationIssues = normalizeCategoryLikeNodeKinds(value);
+
   const validatePassport = getPassportValidator();
   if (!validatePassport(value)) {
     return {
@@ -670,6 +727,7 @@ export function parseFlowPassJson(raw: string): FlowPassParseResult {
       summary: null,
       issues: [
         ...initialIssues,
+        ...normalizationIssues,
         ...(validatePassport.errors ?? []).map(schemaIssue),
       ],
     };
@@ -679,6 +737,7 @@ export function parseFlowPassJson(raw: string): FlowPassParseResult {
     .passport_draft;
   const issues = [
     ...initialIssues,
+    ...normalizationIssues,
     ...graphIssues(passport),
     ...readinessIssues(passport),
   ];

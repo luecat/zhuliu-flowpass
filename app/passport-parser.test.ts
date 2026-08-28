@@ -44,6 +44,46 @@ describe('parseFlowPassJson', () => {
     ).toBe(true);
   });
 
+  it('repairs a data category mistakenly returned as a node kind', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.nodes[3].kind = 'creative_asset';
+    parsed.passport_draft.nodes[3].data_category = 'video';
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.status).toBe('valid_with_warnings');
+    expect(result.passport?.nodes[3]).toMatchObject({
+      id: 'node_data_pii_01',
+      kind: 'data',
+      data_category: 'video',
+    });
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({
+        code: 'normalized_node_kind',
+        category: 'schema',
+        severity: 'warning',
+        path: '$.passport_draft.nodes[3].kind',
+        relatedIds: ['node_data_pii_01'],
+      }),
+    );
+  });
+
+  it('lists valid node kinds when an unknown kind cannot be repaired', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.nodes[3].kind = 'creative_output';
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+    const issue = result.issues.find(
+      (item) => item.path === '$.passport_draft.nodes[3].kind',
+    );
+
+    expect(result.status).toBe('invalid_contract');
+    expect(issue?.message).toContain(
+      'data、ai_tool、plugin、storage、person、organization、destination',
+    );
+    expect(issue?.message).toContain('data_category');
+  });
+
   it('counts sensitivity, unknown fields, and orphan nodes independently', () => {
     const result = parseFlowPassJson(FLOWPASS_SAMPLE_JSON);
 

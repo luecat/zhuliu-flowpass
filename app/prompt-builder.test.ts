@@ -27,6 +27,24 @@ describe('FlowPass prompt builder', () => {
     ]);
   });
 
+  it('separates node kinds from content data categories for local models', () => {
+    const payload = createPromptPayload(completeInputs);
+
+    expect(payload.node_kind_guide.allowed_values).toEqual([
+      'data',
+      'ai_tool',
+      'plugin',
+      'storage',
+      'person',
+      'organization',
+      'destination',
+    ]);
+    expect(payload.node_kind_guide.content_artifact_kind).toBe('data');
+    expect(payload.node_kind_guide.category_only_values).toContain(
+      'creative_asset',
+    );
+  });
+
   it('keeps the four citizen answers separate in the prompt contract', () => {
     const payload = createPromptPayload(completeInputs);
 

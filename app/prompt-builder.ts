@@ -279,6 +279,12 @@ export type PromptPayload = {
   schema_version: 'flowpass.prompt.v1';
   model_instruction: string;
   response_steps: string[];
+  node_kind_guide: {
+    allowed_values: string[];
+    content_artifact_kind: 'data';
+    category_only_values: string[];
+    rule: string;
+  };
   meta: {
     product: 'FlowPass';
     template_name: 'AI Usage Data-Flow Passport Interpreter';
@@ -355,6 +361,30 @@ const BASE_TEMPLATE = {
     'Build the FlowPass draft using output_contract.json_schema.',
     'Return the JSON object only. Do not add Markdown or explanatory text.',
   ],
+  node_kind_guide: {
+    allowed_values: [
+      'data',
+      'ai_tool',
+      'plugin',
+      'storage',
+      'person',
+      'organization',
+      'destination',
+    ],
+    content_artifact_kind: 'data',
+    category_only_values: [
+      'photo',
+      'audio',
+      'video',
+      'document',
+      'code',
+      'personal_data',
+      'creative_asset',
+      'other',
+    ],
+    rule:
+      'For every input or output content artifact, including generated videos and creative assets, use kind "data". Put its format only in data_category. Never use a category_only_values entry as kind.',
+  },
   meta: {
     product: 'FlowPass',
     template_name: 'AI Usage Data-Flow Passport Interpreter',
@@ -379,6 +409,7 @@ const BASE_TEMPLATE = {
     interpretation_rules: [
       'Treat task.user_inputs as four separate answers. Do not merge them into a new narrative or silently add details.',
       'Identify data, AI tool, plugin, storage, person, organization, and publication destination nodes explicitly stated in the corresponding input field.',
+      'Use kind data for every input or output content artifact. Values such as photo, audio, video, document, personal_data, and creative_asset belong only in data_category and must never be used as kind.',
       'When an optional input is null, preserve it as unknown and generate a focused confirmation question. Never invent the missing answer.',
       'Connect nodes only when the four input fields support a transfer or access relationship. Record the source field and exact supporting excerpt for every node and edge.',
       'Use confidence from 0 to 1 and set needs_confirmation to true for inferred, ambiguous, or missing details.',
@@ -437,6 +468,13 @@ export function createPromptPayload(inputs: FlowPassInputs): PromptPayload {
     schema_version: BASE_TEMPLATE.schema_version,
     model_instruction: BASE_TEMPLATE.model_instruction,
     response_steps: [...BASE_TEMPLATE.response_steps],
+    node_kind_guide: {
+      ...BASE_TEMPLATE.node_kind_guide,
+      allowed_values: [...BASE_TEMPLATE.node_kind_guide.allowed_values],
+      category_only_values: [
+        ...BASE_TEMPLATE.node_kind_guide.category_only_values,
+      ],
+    },
     meta: { ...BASE_TEMPLATE.meta },
     system: {
       ...BASE_TEMPLATE.system,

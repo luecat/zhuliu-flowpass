@@ -868,6 +868,494 @@ textarea::placeholder {
   color: #ffb4be;
 }
 
+.passport-flow-view {
+  display: grid;
+  gap: 14px;
+}
+
+.result-kicker {
+  color: var(--blue-dark);
+  font: 800 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+}
+
+.use-case-card,
+.parsed-section,
+.passport-invalid {
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: white;
+  box-shadow: 0 10px 30px rgba(31, 31, 35, 0.08);
+}
+
+.use-case-card {
+  padding: 18px;
+}
+
+.use-case-card h2,
+.passport-invalid h2 {
+  margin: 7px 0 8px;
+  font-size: 22px;
+  letter-spacing: -0.03em;
+}
+
+.use-case-card > p,
+.passport-invalid > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.use-case-card > div {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.use-case-card > div span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.use-case-card > div strong {
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.parsed-section {
+  padding: 16px;
+}
+
+.section-heading,
+.detail-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-heading > div {
+  display: grid;
+  gap: 3px;
+}
+
+.section-heading > div > span {
+  color: var(--muted);
+  font: 750 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.1em;
+}
+
+.section-heading h3,
+.detail-heading h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.section-heading > b,
+.detail-heading > span {
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: var(--blue-dark);
+  background: #e8f5ff;
+  font-size: 9px;
+}
+
+.readable-flow-list,
+.detail-card-list,
+.issue-stack {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.readable-flow-card {
+  padding: 12px;
+  border: 1px solid #dde7ee;
+  border-radius: 7px;
+  background: #f8fbfd;
+}
+
+.flow-route {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  overflow-x: auto;
+}
+
+.flow-route span {
+  min-width: max-content;
+  padding: 6px 8px;
+  border: 1px solid #cfe3f0;
+  border-radius: 5px;
+  color: #30424e;
+  background: white;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.flow-route span:last-child {
+  border-color: #ddd6ff;
+  color: #5944c5;
+  background: #f7f5ff;
+}
+
+.flow-route i {
+  color: #9a9aa3;
+  font-style: normal;
+}
+
+.readable-flow-card p {
+  margin: 9px 0 0;
+  color: #5f6670;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.readable-flow-card small {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 3px 5px;
+  border-radius: 4px;
+  color: #8b5a00;
+  background: #fff4d7;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.compact-issue-list,
+.passport-invalid ul,
+.unknown-field-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.compact-issue-list {
+  display: grid;
+  gap: 6px;
+}
+
+.compact-issue-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fafafa;
+  font-size: 9px;
+}
+
+.compact-issue-list li strong {
+  grid-row: 1 / 3;
+  align-self: start;
+  padding: 3px 5px;
+  border-radius: 4px;
+  font-size: 8px;
+}
+
+.compact-issue-list li span {
+  line-height: 1.5;
+}
+
+.compact-issue-list li code {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.passport-details {
+  min-height: 0;
+  overflow-y: auto;
+  background: #fbfbfc;
+}
+
+.draft-banner {
+  display: flex;
+  gap: 10px;
+  margin: 12px;
+  padding: 12px;
+  border: 1px solid #e6dba8;
+  border-radius: 8px;
+  background: #fffbed;
+}
+
+.draft-banner.invalid {
+  border-color: #f0c7cd;
+  background: #fff5f6;
+}
+
+.draft-banner > span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: white;
+  background: var(--orange);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.draft-banner.invalid > span {
+  background: #d45461;
+}
+
+.draft-banner strong {
+  display: block;
+  font-size: 11px;
+}
+
+.draft-banner p {
+  margin: 4px 0 0;
+  color: #756b47;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.draft-banner.invalid p {
+  color: #8b5359;
+}
+
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0 12px 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--line);
+}
+
+.metric-grid > div {
+  display: grid;
+  gap: 2px;
+  min-height: 62px;
+  align-content: center;
+  padding: 10px;
+  background: white;
+}
+
+.metric-grid strong {
+  font-size: 14px;
+}
+
+.metric-grid span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.detail-block {
+  padding: 14px;
+  border-top: 1px solid var(--line);
+  background: white;
+}
+
+.issue-card,
+.detail-card-list > article {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fafafa;
+}
+
+.issue-card > div,
+.card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.issue-card > div strong,
+.card-meta span {
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: #eef1f3;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.issue-card code,
+.card-meta code {
+  overflow: hidden;
+  color: var(--muted);
+  font: 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.issue-card p,
+.detail-card-list article p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.detail-card-list article > strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.issue-error {
+  border-color: #efc5ca !important;
+  background: #fff7f8 !important;
+}
+
+.issue-error > div strong,
+.issue-error > strong {
+  color: #a93240;
+  background: #ffe2e6 !important;
+}
+
+.issue-warning {
+  border-color: #eadcae !important;
+  background: #fffdf5 !important;
+}
+
+.issue-warning > div strong,
+.issue-warning > strong {
+  color: #8b5a00;
+  background: #fff0c3 !important;
+}
+
+.issue-info > div strong,
+.issue-info > strong {
+  color: #276e62;
+  background: #dff4ef !important;
+}
+
+.sensitivity-row,
+.priority-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.sensitivity-row {
+  margin-top: 10px;
+}
+
+.sensitivity-row span,
+.priority-summary span {
+  padding: 4px 6px;
+  border-radius: 5px;
+  color: #5d5d66;
+  background: #f0f0f2;
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.sensitivity-high,
+.priority-high {
+  color: #a93240 !important;
+  background: #ffe2e6 !important;
+}
+
+.sensitivity-medium,
+.priority-medium {
+  color: #8b5a00 !important;
+  background: #fff0c3 !important;
+}
+
+.sensitivity-low,
+.priority-low {
+  color: #276e62 !important;
+  background: #dff4ef !important;
+}
+
+.question-list article.priority-high {
+  border-left: 3px solid #d45461;
+}
+
+.question-list article.priority-medium {
+  border-left: 3px solid #d49a24;
+}
+
+.question-list article.priority-low {
+  border-left: 3px solid #3a9b83;
+}
+
+.passport-properties {
+  display: grid;
+  gap: 1px;
+  margin: 10px 0 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--line);
+}
+
+.passport-properties > div {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px;
+  background: #fafafa;
+  font-size: 9px;
+}
+
+.passport-properties dt {
+  color: var(--muted);
+}
+
+.passport-properties dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+.unknown-field-list {
+  display: grid;
+  gap: 5px;
+}
+
+.unknown-field-list li {
+  overflow-wrap: anywhere;
+  padding: 7px;
+  border-radius: 5px;
+  color: #6e5b22;
+  background: #fff8df;
+  font: 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.passport-invalid {
+  margin: 14px;
+  padding: 18px;
+  border-color: #efc5ca;
+}
+
+.passport-invalid ul {
+  display: grid;
+  gap: 7px;
+}
+
+.passport-invalid li {
+  display: grid;
+  gap: 5px;
+  padding: 9px;
+  border-radius: 6px;
+  color: #813f47;
+  background: #fff0f2;
+  font-size: 9px;
+}
+
+.passport-invalid code {
+  overflow-wrap: anywhere;
+  color: #a93240;
+  font-size: 8px;
+}
+
 @media (max-width: 1220px) {
   .topbar {
     grid-template-columns: 230px minmax(0, 1fr) auto;

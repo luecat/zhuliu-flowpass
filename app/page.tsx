@@ -13,6 +13,11 @@ import {
   type IssueCategory,
 } from './passport-parser';
 import { FLOWPASS_SAMPLE_JSON } from './passport-sample';
+import { PassportQuestionnaire } from './passport-questionnaire';
+import {
+  reconcileConfirmationAnswers,
+  type ConfirmationAnswerState,
+} from './passport-revision';
 import { PassportViewer } from './passport-viewer';
 
 type InputMode = 'preset' | 'custom';
@@ -183,6 +188,8 @@ export default function Home() {
   const [parserInput, setParserInput] = useState(FLOWPASS_SAMPLE_JSON);
   const [parseResult, setParseResult] =
     useState<FlowPassParseResult | null>(null);
+  const [questionAnswers, setQuestionAnswers] =
+    useState<ConfirmationAnswerState>({});
   const [isDirty, setIsDirty] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>('idle');
   const isIncomplete = useMemo(
@@ -240,20 +247,32 @@ export default function Home() {
   function updateParserInput(value: string) {
     setParserInput(value);
     setParseResult(null);
+    setQuestionAnswers({});
   }
 
   function parsePassport() {
-    setParseResult(parseFlowPassJson(parserInput));
+    const result = parseFlowPassJson(parserInput);
+    setParseResult(result);
+    setQuestionAnswers((current) =>
+      result.passport
+        ? reconcileConfirmationAnswers(
+            result.passport.confirmation_questions,
+            current,
+          )
+        : {},
+    );
   }
 
   function clearParser() {
     setParserInput('');
     setParseResult(null);
+    setQuestionAnswers({});
   }
 
   function loadParserSample() {
     setParserInput(FLOWPASS_SAMPLE_JSON);
     setParseResult(null);
+    setQuestionAnswers({});
   }
 
   const copyMessage =
@@ -604,7 +623,14 @@ export default function Home() {
                 </article>
 
                 {parseResult?.passport ? (
-                  <PassportViewer result={parseResult} section="flow" />
+                  <>
+                    <PassportViewer result={parseResult} section="flow" />
+                    <PassportQuestionnaire
+                      passport={parseResult.passport}
+                      answerState={questionAnswers}
+                      onAnswerStateChange={setQuestionAnswers}
+                    />
+                  </>
                 ) : (
                   <section className="parser-placeholder" aria-live="polite">
                     <div className="placeholder-mark" aria-hidden="true">
@@ -691,7 +717,11 @@ export default function Home() {
                 <span className="schema-pill">flowpass_passport_draft</span>
               </div>
               {parseResult ? (
-                <PassportViewer result={parseResult} section="details" />
+                <PassportViewer
+                  result={parseResult}
+                  section="details"
+                  showQuestions={false}
+                />
               ) : (
                 <div className="inspector-empty-state">
                   <span aria-hidden="true">⌁</span>

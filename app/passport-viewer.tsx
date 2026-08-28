@@ -133,7 +133,13 @@ function sortedQuestions(
   );
 }
 
-function DetailsSection({ result }: { result: FlowPassParseResult }) {
+function DetailsSection({
+  result,
+  showQuestions,
+}: {
+  result: FlowPassParseResult;
+  showQuestions: boolean;
+}) {
   if (!result.passport || !result.summary) return <InvalidResult result={result} />;
 
   const isGraphInvalid = result.status === 'invalid_graph';
@@ -232,40 +238,42 @@ function DetailsSection({ result }: { result: FlowPassParseResult }) {
         </div>
       </section>
 
-      <section className="detail-block" aria-labelledby="question-heading">
-        <div className="detail-heading">
-          <h3 id="question-heading">待確認問題</h3>
-          <div className="priority-summary" aria-label="問題優先度摘要">
-            <span className="priority-high">
-              高 {result.summary.priorityCounts.high}
-            </span>
-            <span className="priority-medium">
-              中 {result.summary.priorityCounts.medium}
-            </span>
-            <span className="priority-low">
-              低 {result.summary.priorityCounts.low}
-            </span>
+      {showQuestions && (
+        <section className="detail-block" aria-labelledby="question-heading">
+          <div className="detail-heading">
+            <h3 id="question-heading">待確認問題</h3>
+            <div className="priority-summary" aria-label="問題優先度摘要">
+              <span className="priority-high">
+                高 {result.summary.priorityCounts.high}
+              </span>
+              <span className="priority-medium">
+                中 {result.summary.priorityCounts.medium}
+              </span>
+              <span className="priority-low">
+                低 {result.summary.priorityCounts.low}
+              </span>
+            </div>
           </div>
-        </div>
-        <div className="detail-card-list question-list">
-          {sortedQuestions(result.passport.confirmation_questions).map(
-            (question) => (
-              <article
-                className={`priority-${question.priority}`}
-                data-testid="confirmation-question"
-                key={question.id}
-              >
-                <div className="card-meta">
-                  <span>{priorityLabels[question.priority]}優先</span>
-                  <code>{question.id}</code>
-                </div>
-                <strong>{question.question}</strong>
-                <p>{question.reason}</p>
-              </article>
-            ),
-          )}
-        </div>
-      </section>
+          <div className="detail-card-list question-list">
+            {sortedQuestions(result.passport.confirmation_questions).map(
+              (question) => (
+                <article
+                  className={`priority-${question.priority}`}
+                  data-testid="confirmation-question"
+                  key={question.id}
+                >
+                  <div className="card-meta">
+                    <span>{priorityLabels[question.priority]}優先</span>
+                    <code>{question.id}</code>
+                  </div>
+                  <strong>{question.question}</strong>
+                  <p>{question.reason}</p>
+                </article>
+              ),
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="detail-block" aria-labelledby="record-heading">
         <div className="detail-heading">
@@ -321,13 +329,15 @@ function DetailsSection({ result }: { result: FlowPassParseResult }) {
 export function PassportViewer({
   result,
   section,
+  showQuestions = true,
 }: {
   result: FlowPassParseResult;
   section: 'flow' | 'details';
+  showQuestions?: boolean;
 }) {
   return section === 'flow' ? (
     <FlowSection result={result} />
   ) : (
-    <DetailsSection result={result} />
+    <DetailsSection result={result} showQuestions={showQuestions} />
   );
 }

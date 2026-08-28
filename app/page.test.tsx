@@ -250,6 +250,34 @@ describe('FlowPass JSON generator page', () => {
     expect(within(metrics).getByText('8 個問題')).toBeVisible();
   });
 
+  it('creates one answer field per AI question and preserves answers across workspaces', () => {
+    render(<Page />);
+
+    const workspace = screen.getByRole('group', { name: '工作模式' });
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+    fireEvent.click(screen.getByRole('button', { name: '開始解析護照' }));
+
+    const answerFields = screen.getAllByRole('textbox', {
+      name: /^回答：/,
+    });
+    expect(answerFields).toHaveLength(8);
+    expect(screen.queryAllByTestId('confirmation-question')).toHaveLength(0);
+    fireEvent.change(answerFields[0], {
+      target: { value: '使用 Runway 生成影片。' },
+    });
+
+    fireEvent.click(
+      within(workspace).getByRole('button', { name: '產生提示詞' }),
+    );
+    fireEvent.click(within(workspace).getByRole('button', { name: '解析護照' }));
+
+    expect(
+      screen.getByRole('textbox', {
+        name: /請指定具體使用的「AI 影片生成工具」名稱與供應商？/,
+      }),
+    ).toHaveValue('使用 Runway 生成影片。');
+  });
+
   it('keeps invalid JSON editable and announces the error', () => {
     render(<Page />);
 

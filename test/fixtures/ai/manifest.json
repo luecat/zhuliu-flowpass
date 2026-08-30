@@ -1,0 +1,10 @@
+{
+  "version": "flowpass-ai-fixtures-v1",
+  "fixtures": [
+    "no-sensitive-data", "personal-data", "health-data", "student-data", "public-sharing",
+    "plugin-use", "multiple-tools", "ambiguous-destination", "missing-retention", "contradictory-answers",
+    "long-chinese-answer", "unknown-kind", "known-category-in-kind", "dangling-edge", "empty-purpose",
+    "external-recipient", "local-only-tool", "cloud-storage", "raw-source-excerpt", "malformed-output"
+  ],
+  "liveBenchmark": "deployment-gated; this fixture manifest is de-identified and does not call LM Studio"
+}

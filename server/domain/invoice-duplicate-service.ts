@@ -1,0 +1,4 @@
+import type { FieldCrypto } from '../crypto/field-crypto';
+import type { FlowPassDatabase } from '../db/connection';
+export function invoiceFingerprint(crypto: FieldCrypto, value: string): string { if (!value.trim()) throw new Error('invoice value is blank'); return crypto.hmacLookup(value.trim(), 'invoice-fingerprint'); }
+export function findDuplicateInvoice(database: FlowPassDatabase, crypto: FieldCrypto, input: { invoiceNumber: string; excludeDocumentId?: string }): { outcome: 'pass' | 'needs_review' } { const fingerprint = invoiceFingerprint(crypto, input.invoiceNumber); const row = database.prepare(`SELECT EXISTS(SELECT 1 FROM invoice_fingerprints WHERE fingerprint_hmac = ? AND (? IS NULL OR document_id <> ?)) AS duplicate`).get(fingerprint, input.excludeDocumentId ?? null, input.excludeDocumentId ?? null) as { duplicate: number }; return { outcome: row.duplicate === 1 ? 'needs_review' : 'pass' }; }

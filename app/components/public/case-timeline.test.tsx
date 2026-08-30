@@ -1,0 +1,2 @@
+import { render, screen } from '@testing-library/react'; import { describe, expect, it } from 'vitest'; import { CaseTimeline } from './case-timeline';
+describe('CaseTimeline', () => { it('renders public summaries without internal metadata', () => { render(<CaseTimeline caseId="case" initial={[{ id: 'e', eventType: 'submitted', publicSummary: '已送出', createdAt: '2026-01-01T00:00:00Z' }]} />); expect(screen.getByText('已送出')).toBeInTheDocument(); expect(screen.queryByText(/admin/i)).not.toBeInTheDocument(); }); });

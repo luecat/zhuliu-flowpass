@@ -117,6 +117,7 @@ describe('FlowPass prompt builder', () => {
     const passport = schema.properties.passport_draft;
     const node = passport.properties.nodes.items;
     const safetyAction = passport.properties.safety_actions.items;
+    const followUp = passport.properties.follow_up_questions;
 
     expect(schema).toEqual(
       expect.objectContaining({
@@ -133,7 +134,7 @@ describe('FlowPass prompt builder', () => {
       'sharing_scope',
       'retention',
       'safety_actions',
-      'confirmation_questions',
+      'follow_up_questions',
       'administrative_hints',
       'audit',
     ]);
@@ -146,6 +147,12 @@ describe('FlowPass prompt builder', () => {
       maximum: 1,
     });
     expect(node.properties.needs_confirmation.type).toBe('boolean');
+    expect(node.properties.source_excerpt).toEqual({
+      const: '[not retained]',
+    });
+    expect(passport.properties.nodes.maxItems).toBe(80);
+    expect(passport.properties.edges.maxItems).toBe(160);
+    expect(followUp.maxItems).toBe(12);
     expect(safetyAction.properties.applies_to_node_ids.type).toBe('array');
     expect(safetyAction.properties.evidence_type.enum).toContain(
       'applicant_confirmation',

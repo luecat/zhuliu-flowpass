@@ -1,0 +1,3 @@
+'use client';
+import { useEffect, useState } from 'react'; import { PublicApiClient } from '../../lib/public-api';
+export function CaseTimeline({ caseId, initial = [] }: { caseId: string; initial?: Array<{ id: string; eventType: string; publicSummary: string; createdAt: string }> }) { const [events, setEvents] = useState(initial); useEffect(() => { void new PublicApiClient().read<{ events: typeof initial }>(`/api/v1/cases/${encodeURIComponent(caseId)}/timeline`).then((value) => setEvents(value.events)).catch(() => undefined); }, [caseId]); return <ol aria-label="申請進度">{events.map((event) => <li key={event.id}><time dateTime={event.createdAt}>{event.createdAt}</time> · <strong>{event.publicSummary}</strong><small>（{event.eventType}）</small></li>)}</ol>; }

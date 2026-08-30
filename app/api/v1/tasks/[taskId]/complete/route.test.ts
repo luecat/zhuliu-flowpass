@@ -1,0 +1,2 @@
+import { describe, expect, it } from 'vitest'; import { clearPublicRuntime } from '../../../../../../server/public/runtime'; import { POST } from './route';
+describe('task completion route boundary', () => { it('fails closed without startup runtime', async () => { clearPublicRuntime(); const response = await POST(new Request('http://127.0.0.1/api/v1/tasks/t/complete', { method: 'POST' }), { params: Promise.resolve({ taskId: 't' }) }); expect(response.status).toBe(503); }); });

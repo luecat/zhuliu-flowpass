@@ -48,10 +48,13 @@ export function PassportQuestionnaire({
   passport,
   answerState,
   onAnswerStateChange,
+  onRevisionRequest,
 }: {
   passport: PassportDraft;
   answerState?: ConfirmationAnswerState;
   onAnswerStateChange?: (answers: ConfirmationAnswerState) => void;
+  /** Optional public-flow hook; the Studio keeps its copy-to-AI behavior. */
+  onRevisionRequest?: (answers: ConfirmationAnswerState) => void;
 }) {
   const [internalAnswers, setInternalAnswers] = useState<ConfirmationAnswerState>(() =>
     reconcileConfirmationAnswers(passport.confirmation_questions, {}),
@@ -122,6 +125,7 @@ export function PassportQuestionnaire({
   }
 
   function generateRevisionJson() {
+    onRevisionRequest?.(answers);
     setOutput(buildPassportRevisionJson(passport, answers));
     setIsDirty(false);
     setCopyState('idle');

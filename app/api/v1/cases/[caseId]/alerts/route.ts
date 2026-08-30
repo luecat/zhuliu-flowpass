@@ -1,0 +1,9 @@
+import { ApiErrorCode, apiFailure, apiSuccess, toJsonResponse } from '../../../../../../shared/api-contract';
+import { getPublicRuntime } from '../../../../../../server/public/runtime';
+
+function cookie(request: Request, name: string): string | null { for (const part of (request.headers.get('cookie') ?? '').split(';')) { const [key, ...value] = part.trim().split('='); if (key === name) return value.join('=') || null; } return null; }
+export async function GET(request: Request, context: { params: Promise<{ caseId: string }> }): Promise<Response> {
+  const runtime = getPublicRuntime(); const requestId = runtime?.requestIdGenerator?.() ?? crypto.randomUUID(); if (!runtime) return toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId)); const session = runtime.lineSessions.authenticateApplicant(cookie(request, 'flowpass_session')); if (!session) return toJsonResponse(apiFailure(ApiErrorCode.UNAUTHENTICATED, requestId)); const { caseId } = await context.params;
+  const rows = runtime.database.prepare(`SELECT a.id, a.status, a.severity, a.public_summary, a.public_guidance, a.created_at, a.resolved_at FROM alerts a JOIN cases c ON c.id = a.case_id WHERE a.case_id = ? AND c.applicant_id = ? AND a.status IN ('open','acknowledged','resolved') ORDER BY a.created_at DESC, a.id DESC`).all(caseId, session.applicantId) as Array<{ id: string; status: string; severity: string; public_summary: string; public_guidance: string; created_at: string; resolved_at: string | null }>;
+  return toJsonResponse(apiSuccess({ alerts: rows.map((row) => ({ id: row.id, status: row.status, severity: row.severity, summary: row.public_summary, guidance: row.public_guidance, createdAt: row.created_at, resolvedAt: row.resolved_at })) }, requestId), { headers: { 'Cache-Control': 'no-store' } });
+}

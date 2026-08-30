@@ -1,0 +1,3 @@
+import { describe, expect, it } from 'vitest'; import { hashAdminPassword, verifyAdminPassword } from './password';
+describe('admin password', () => { it('uses a salted scrypt hash and verifies without exposing plaintext', () => { const encoded = hashAdminPassword('correct horse battery staple 2026!'); expect(encoded).toMatch(/^scrypt-v1\$/); expect(verifyAdminPassword('correct horse battery staple 2026!', encoded)).toBe(true); expect(verifyAdminPassword('wrong password', encoded)).toBe(false); expect(encoded).not.toContain('correct horse'); }); });
+it('rejects short and known demo passwords', () => { expect(() => hashAdminPassword('too-short')).toThrow(); expect(() => hashAdminPassword('password password')).toThrow(); });

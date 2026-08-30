@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type {
   ConfirmationQuestion,
   FlowPassParseResult,
@@ -136,24 +137,35 @@ function sortedQuestions(
 function DetailsSection({
   result,
   showQuestions,
+  onConfirm,
+  onSubmit,
+  canSubmit = false,
+  workflowState,
 }: {
   result: FlowPassParseResult;
   showQuestions: boolean;
+  onConfirm?: (confirmed: boolean) => void;
+  onSubmit?: () => void;
+  canSubmit?: boolean;
+  workflowState?: string;
 }) {
   if (!result.passport || !result.summary) return <InvalidResult result={result} />;
 
   const isGraphInvalid = result.status === 'invalid_graph';
+  const isConfirmed = workflowState === 'confirmed';
 
   return (
     <div className="passport-details" aria-live="polite">
       <section className={isGraphInvalid ? 'draft-banner invalid' : 'draft-banner'}>
         <span aria-hidden="true">!</span>
         <div>
-          <strong>AI 草稿，尚未確認</strong>
-          <p>
-            {isGraphInvalid
-              ? '節點引用仍有錯誤，修正前不可視為完整護照。'
-              : '解析成功不等於安全、合規或補助核准。'}
+            <strong>{isConfirmed ? '護照已確認' : 'AI 草稿，尚未確認'}</strong>
+            <p>
+              {isGraphInvalid
+                ? '節點引用仍有錯誤，修正前不可視為完整護照。'
+                : isConfirmed
+                  ? '這個版本已由你確認；送出申請後將鎖定本次資料。'
+                : '解析成功不等於安全、合規或補助核准。'}
           </p>
         </div>
       </section>
@@ -330,7 +342,31 @@ function DetailsSection({
           ))}
         </ul>
       </section>
+
+      {(onConfirm || onSubmit) && <PassportConfirmationControls onConfirm={onConfirm} onSubmit={onSubmit} canSubmit={canSubmit} />}
     </div>
+  );
+}
+
+function PassportConfirmationControls({
+  onConfirm,
+  onSubmit,
+  canSubmit,
+}: {
+  onConfirm?: (confirmed: boolean) => void;
+  onSubmit?: () => void;
+  canSubmit: boolean;
+}) {
+  const [confirmed, setConfirmed] = useState(false);
+  return (
+    <section className="passport-submit-card" aria-labelledby="passport-submit-heading">
+      <h3 id="passport-submit-heading">送出前確認</h3>
+      <label>
+        <input type="checkbox" checked={confirmed} onChange={(event) => { setConfirmed(event.target.checked); onConfirm?.(event.target.checked); }} />
+        我已確認護照內容
+      </label>
+      {onSubmit && <button type="button" className="primary-action" disabled={!confirmed || !canSubmit} onClick={onSubmit}>送出申請</button>}
+    </section>
   );
 }
 
@@ -338,14 +374,22 @@ export function PassportViewer({
   result,
   section,
   showQuestions = true,
+  onConfirm,
+  onSubmit,
+  canSubmit = false,
+  workflowState,
 }: {
   result: FlowPassParseResult;
   section: 'flow' | 'details';
   showQuestions?: boolean;
+  onConfirm?: (confirmed: boolean) => void;
+  onSubmit?: () => void;
+  canSubmit?: boolean;
+  workflowState?: string;
 }) {
   return section === 'flow' ? (
     <FlowSection result={result} />
   ) : (
-    <DetailsSection result={result} showQuestions={showQuestions} />
+    <DetailsSection result={result} showQuestions={showQuestions} onConfirm={onConfirm} onSubmit={onSubmit} canSubmit={canSubmit} workflowState={workflowState} />
   );
 }

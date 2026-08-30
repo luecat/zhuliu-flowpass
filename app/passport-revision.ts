@@ -1,5 +1,6 @@
 import type { ConfirmationQuestion, PassportDraft } from './passport-parser';
-import { NODE_KIND_GUIDE } from './prompt-builder';
+import { inspectPassportDocument } from '../server/domain/passport-validation';
+import { NODE_KIND_GUIDE, type FlowPassPassport } from '../shared/passport-contract';
 
 export type ConfirmationAnswerStatus =
   | 'answered'
@@ -14,6 +15,27 @@ export type ConfirmationAnswerState = Record<
   }
 >;
 
+function immutableQuestionFingerprint(question: ConfirmationQuestion): string {
+  const answerSchema =
+    question.answerSchema ?? ({ type: 'text', maxLength: 400 } as const);
+  return JSON.stringify({
+    id: question.id,
+    version: question.version ?? 1,
+    prompt: question.question,
+    answerSchema,
+    required: question.required ?? false,
+    relatedNodeIds: question.related_node_ids,
+  });
+}
+
+function canonicalPassportForRevision(passport: PassportDraft): FlowPassPassport {
+  const inspection = inspectPassportDocument({ passport_draft: passport });
+  if (!inspection.canonical) {
+    throw new Error('FlowPass draft does not satisfy the canonical revision contract.');
+  }
+  return inspection.canonical;
+}
+
 export function reconcileConfirmationAnswers(
   questions: ConfirmationQuestion[],
   current: ConfirmationAnswerState,
@@ -21,7 +43,10 @@ export function reconcileConfirmationAnswers(
 ): ConfirmationAnswerState {
   const previousById = previousQuestions
     ? new Map(
-        previousQuestions.map((question) => [question.id, question.question]),
+        previousQuestions.map((question) => [
+          question.id,
+          immutableQuestionFingerprint(question),
+        ]),
       )
     : null;
 
@@ -29,7 +54,8 @@ export function reconcileConfirmationAnswers(
     questions.map((question) => {
       const canReuse =
         current[question.id] &&
-        (!previousById || previousById.get(question.id) === question.question);
+        (!previousById ||
+          previousById.get(question.id) === immutableQuestionFingerprint(question));
 
       return [
         question.id,
@@ -45,7 +71,8 @@ export function buildPassportRevisionJson(
   passport: PassportDraft,
   answers: ConfirmationAnswerState,
 ): string {
-  const confirmationAnswers = passport.confirmation_questions.map(
+  const canonicalPassport = canonicalPassportForRevision(passport);
+  const confirmationAnswers = canonicalPassport.follow_up_questions.map(
     (question) => {
       const current = answers[question.id] ?? {
         status: 'unanswered' as const,
@@ -59,9 +86,9 @@ export function buildPassportRevisionJson(
 
       return {
         question_id: question.id,
-        question: question.question,
+        question: question.prompt,
         priority: question.priority,
-        related_node_ids: question.related_node_ids,
+        related_node_ids: question.relatedNodeIds,
         status,
         answer_text:
           status === 'unanswered' ? null : answerText || null,
@@ -78,7 +105,7 @@ export function buildPassportRevisionJson(
         schema_version: 'flowpass.passport_revision_request.v1',
         task:
           'Revise the supplied FlowPass passport draft using the applicant confirmation answers, then return the updated passport draft as JSON only.',
-        source_passport_draft: passport,
+        source_passport_draft: canonicalPassport,
         confirmation_answers: {
           schema_version: 'flowpass.confirmation_answers.v1',
           source_passport: {

@@ -1,0 +1,3 @@
+export const PUBLIC_TIMELINE_EVENT_TYPES = ['submitted','received','review_started','documents_requested','documents_resubmitted','correction_requested','passport_reconfirmed','approved','rejected','awaiting_disbursement','disbursed','closed','security_alert_created','security_alert_updated'] as const;
+export type PublicTimelineEventType = typeof PUBLIC_TIMELINE_EVENT_TYPES[number];
+export interface PublicTimelineEvent { id: string; caseId: string; sequenceNo: number; eventType: PublicTimelineEventType; publicSummary: string; publicData: Record<string, string | number | boolean | null>; actorType: 'applicant' | 'admin' | 'system'; createdAt: string; }

@@ -1,0 +1,1 @@
+{"fixture":"dangling-edge","expectedSchemaValid":false,"requiredFollowUpTopics":["destination"],"answers":{"material":"合成資料與流程圖","aiPurpose":"檢查節點連線","sensitiveData":"無","destinationAndAudience":"團隊內部"},"modelOutput":{"passport_draft":{"edges":[{"from_node_id":"missing-node","to_node_id":"also-missing"}]}}}

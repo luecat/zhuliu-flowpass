@@ -1,3 +1,10 @@
+import {
+  NODE_KIND_GUIDE,
+  PASSPORT_JSON_SCHEMA,
+} from '../shared/passport-contract';
+
+export { NODE_KIND_GUIDE, PASSPORT_JSON_SCHEMA } from '../shared/passport-contract';
+
 export type FlowPassInputs = {
   materials: string;
   intended_use: string;
@@ -19,261 +26,6 @@ type NormalizedInputs = {
   personal_or_sensitive_data: string | null;
   destination_and_audience: string | null;
 };
-
-const SOURCE_FIELDS = [
-  'materials',
-  'intended_use',
-  'personal_or_sensitive_data',
-  'destination_and_audience',
-] as const;
-
-export const PASSPORT_JSON_SCHEMA = {
-  $schema: 'https://json-schema.org/draft/2020-12/schema',
-  type: 'object',
-  additionalProperties: false,
-  required: ['passport_draft'],
-  properties: {
-    passport_draft: {
-      type: 'object',
-      additionalProperties: false,
-      required: [
-        'use_case',
-        'nodes',
-        'edges',
-        'sharing_scope',
-        'retention',
-        'safety_actions',
-        'confirmation_questions',
-        'administrative_hints',
-        'audit',
-      ],
-      properties: {
-        use_case: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['title', 'purpose', 'intended_outcome'],
-          properties: {
-            title: { type: 'string' },
-            purpose: { type: 'string' },
-            intended_outcome: { type: 'string' },
-          },
-        },
-        nodes: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: [
-              'id',
-              'kind',
-              'label',
-              'data_category',
-              'sensitivity',
-              'source_field',
-              'source_excerpt',
-              'confidence',
-              'needs_confirmation',
-            ],
-            properties: {
-              id: { type: 'string' },
-              kind: {
-                enum: [
-                  'data',
-                  'ai_tool',
-                  'plugin',
-                  'storage',
-                  'person',
-                  'organization',
-                  'destination',
-                ],
-              },
-              label: { type: 'string' },
-              data_category: {
-                enum: [
-                  'photo',
-                  'audio',
-                  'video',
-                  'document',
-                  'code',
-                  'personal_data',
-                  'creative_asset',
-                  'other',
-                  null,
-                ],
-              },
-              sensitivity: {
-                enum: ['low', 'medium', 'high', 'unknown'],
-              },
-              source_field: { enum: SOURCE_FIELDS },
-              source_excerpt: { type: 'string' },
-              confidence: { type: 'number', minimum: 0, maximum: 1 },
-              needs_confirmation: { type: 'boolean' },
-            },
-          },
-        },
-        edges: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: [
-              'id',
-              'from_node_id',
-              'to_node_id',
-              'purpose',
-              'source_field',
-              'source_excerpt',
-              'confidence',
-              'needs_confirmation',
-            ],
-            properties: {
-              id: { type: 'string' },
-              from_node_id: { type: 'string' },
-              to_node_id: { type: 'string' },
-              purpose: { type: 'string' },
-              source_field: { enum: SOURCE_FIELDS },
-              source_excerpt: { type: 'string' },
-              confidence: { type: 'number', minimum: 0, maximum: 1 },
-              needs_confirmation: { type: 'boolean' },
-            },
-          },
-        },
-        sharing_scope: {
-          type: 'object',
-          additionalProperties: false,
-          required: [
-            'audience',
-            'source_field',
-            'source_excerpt',
-            'needs_confirmation',
-          ],
-          properties: {
-            audience: {
-              enum: ['self', 'team', 'client', 'public', 'unknown'],
-            },
-            source_field: { const: 'destination_and_audience' },
-            source_excerpt: { type: 'string' },
-            needs_confirmation: { type: 'boolean' },
-          },
-        },
-        retention: {
-          type: 'object',
-          additionalProperties: false,
-          required: [
-            'storage_location',
-            'duration',
-            'deletion_plan',
-            'needs_confirmation',
-          ],
-          properties: {
-            storage_location: { type: 'string' },
-            duration: { type: 'string' },
-            deletion_plan: { type: 'string' },
-            needs_confirmation: { type: 'boolean' },
-          },
-        },
-        safety_actions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: [
-              'id',
-              'action',
-              'reason',
-              'applies_to_node_ids',
-              'status',
-              'evidence_type',
-            ],
-            properties: {
-              id: { type: 'string' },
-              action: { type: 'string' },
-              reason: { type: 'string' },
-              applies_to_node_ids: {
-                type: 'array',
-                items: { type: 'string' },
-              },
-              status: { const: 'required_confirmation' },
-              evidence_type: {
-                enum: [
-                  'applicant_confirmation',
-                  'system_check',
-                  'officer_review',
-                ],
-              },
-            },
-          },
-        },
-        confirmation_questions: {
-          type: 'array',
-          items: {
-            type: 'object',
-            additionalProperties: false,
-            required: [
-              'id',
-              'question',
-              'reason',
-              'related_node_ids',
-              'priority',
-            ],
-            properties: {
-              id: { type: 'string' },
-              question: { type: 'string' },
-              reason: { type: 'string' },
-              related_node_ids: {
-                type: 'array',
-                items: { type: 'string' },
-              },
-              priority: { enum: ['high', 'medium', 'low'] },
-            },
-          },
-        },
-        administrative_hints: {
-          type: 'object',
-          additionalProperties: false,
-          required: [
-            'requested_tool',
-            'invoice_fields_required',
-            'subsidy_calculation',
-            'requires_officer_review',
-          ],
-          properties: {
-            requested_tool: { type: 'string' },
-            invoice_fields_required: {
-              type: 'array',
-              items: {
-                enum: [
-                  'tool_name',
-                  'purchase_date',
-                  'amount',
-                  'invoice_number',
-                ],
-              },
-              minItems: 4,
-              maxItems: 4,
-              uniqueItems: true,
-            },
-            subsidy_calculation: { const: 'not_performed_by_ai' },
-            requires_officer_review: { const: true },
-          },
-        },
-        audit: {
-          type: 'object',
-          additionalProperties: false,
-          required: ['draft_status', 'rules_version', 'unknown_fields'],
-          properties: {
-            draft_status: { const: 'ai_generated_unconfirmed' },
-            rules_version: { const: 'hackathon-mvp-2026-08-27' },
-            unknown_fields: {
-              type: 'array',
-              items: { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-  },
-} as const;
 
 export type PromptPayload = {
   schema_version: 'flowpass.prompt.v1';
@@ -311,31 +63,6 @@ export type PromptPayload = {
     quality_checks: string[];
   };
 };
-
-export const NODE_KIND_GUIDE = {
-  allowed_values: [
-    'data',
-    'ai_tool',
-    'plugin',
-    'storage',
-    'person',
-    'organization',
-    'destination',
-  ],
-  content_artifact_kind: 'data',
-  category_only_values: [
-    'photo',
-    'audio',
-    'video',
-    'document',
-    'code',
-    'personal_data',
-    'creative_asset',
-    'other',
-  ],
-  rule:
-    'For every input or output content artifact, including generated videos and creative assets, use kind "data". Put its format only in data_category. Never use a category_only_values entry as kind.',
-} as const;
 
 export const presets: Preset[] = [
   {
@@ -413,7 +140,7 @@ const BASE_TEMPLATE = {
       'Identify data, AI tool, plugin, storage, person, organization, and publication destination nodes explicitly stated in the corresponding input field.',
       'Use kind data for every input or output content artifact. Values such as photo, audio, video, document, personal_data, and creative_asset belong only in data_category and must never be used as kind.',
       'When an optional input is null, preserve it as unknown and generate a focused confirmation question. Never invent the missing answer.',
-      'Connect nodes only when the four input fields support a transfer or access relationship. Record the source field and exact supporting excerpt for every node and edge.',
+      'Connect nodes only when the four input fields support a transfer or access relationship. Record only the approved source field and use [not retained] in each source_excerpt slot; never reproduce source text.',
       'Use confidence from 0 to 1 and set needs_confirmation to true for inferred, ambiguous, or missing details.',
       'Generate 8 to 12 focused confirmation questions when the scenario warrants them, prioritizing consent, personal data, model training, third-party plugins, access permissions, retention, deletion, and publication.',
       'Suggest situation-specific safety actions for photos, audio, documents, creative assets, cloud sharing, plugins, and public release.',
@@ -434,7 +161,7 @@ const BASE_TEMPLATE = {
     schema_name: 'flowpass_passport_draft',
     json_schema: PASSPORT_JSON_SCHEMA,
     quality_checks: [
-      'Every node and edge names its source input field and excerpt or is marked for confirmation.',
+      'Every node and edge names an approved source input field and uses [not retained] for source excerpts.',
       'Null optional inputs remain unknown and produce confirmation questions.',
       'No administrative decision, invoice authenticity claim, or opaque risk score is present.',
       'No original sensitive content is requested, reproduced, or retained.',

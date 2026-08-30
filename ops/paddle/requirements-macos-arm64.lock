@@ -1,0 +1,3 @@
+# Fallback remains disabled until the no-network sandbox preflight passes.
+# This lock records the policy gate; no unpinned package installation is allowed.
+paddleocr==2.10.0 --hash=sha256:deployment-gate

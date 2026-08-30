@@ -68,6 +68,19 @@ describe('parseFlowPassJson', () => {
     );
   });
 
+  it('projects only redacted source excerpts into the legacy Studio view', () => {
+    const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
+    parsed.passport_draft.nodes[0].source_excerpt =
+      'PARSER-RAW-EXCERPT-MUST-NOT-LEAK';
+
+    const result = parseFlowPassJson(JSON.stringify(parsed));
+
+    expect(result.passport?.nodes[0].source_excerpt).toBe('[not retained]');
+    expect(JSON.stringify(result)).not.toContain(
+      'PARSER-RAW-EXCERPT-MUST-NOT-LEAK',
+    );
+  });
+
   it('lists valid node kinds when an unknown kind cannot be repaired', () => {
     const parsed = JSON.parse(FLOWPASS_SAMPLE_JSON);
     parsed.passport_draft.nodes[3].kind = 'creative_output';
@@ -116,9 +129,9 @@ describe('parseFlowPassJson', () => {
         code: 'invalid_edge_reference',
         severity: 'error',
         path: '$.passport_draft.edges[0].to_node_id',
-        relatedIds: ['node_missing'],
       }),
     );
+    expect(result.issues.every((issue) => issue.relatedIds === undefined)).toBe(true);
   });
 
   it('rejects duplicate and blank IDs in graph collections', () => {

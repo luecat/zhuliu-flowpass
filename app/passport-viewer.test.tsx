@@ -1,5 +1,5 @@
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import { parseFlowPassJson } from './passport-parser';
 import { FLOWPASS_SAMPLE_JSON } from './passport-sample';
 import { PassportViewer } from './passport-viewer';
@@ -22,6 +22,17 @@ describe('PassportViewer', () => {
         '社員照片與錄音原始檔 傳送到 AI 影片生成工具：提供照片素材供 AI 生成影片',
       ),
     ).toBeInTheDocument();
+  });
+
+  it('offers explicit confirmation and submission controls when provided', () => {
+    const result = parseFlowPassJson(FLOWPASS_SAMPLE_JSON);
+    const onConfirm = vi.fn();
+    const onSubmit = vi.fn();
+    render(<PassportViewer result={result} section="details" onConfirm={onConfirm} onSubmit={onSubmit} canSubmit />);
+    fireEvent.click(screen.getByRole('checkbox', { name: '我已確認護照內容' }));
+    fireEvent.click(screen.getByRole('button', { name: '送出申請' }));
+    expect(onConfirm).toHaveBeenCalledWith(true);
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('renders draft status, counts, actions, priorities, and unknown fields', () => {

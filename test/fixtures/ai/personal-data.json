@@ -1,0 +1,1 @@
+{"fixture":"personal-data","expectedSchemaValid":true,"requiredFollowUpTopics":["destination"],"answers":{"material":"報名者姓名與聯絡信箱","aiPurpose":"整理報名資料","sensitiveData":"姓名、聯絡方式","destinationAndAudience":"承辦團隊"}}

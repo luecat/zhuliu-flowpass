@@ -1,0 +1,29 @@
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, symlinkSync, lstatSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { join, relative } from 'node:path';
+
+function hashFile(path: string): string { return createHash('sha256').update(readFileSync(path)).digest('hex'); }
+function files(root: string): string[] { if (!existsSync(root)) return []; const result: string[] = []; for (const name of readdirSync(root)) { const path = join(root, name); const stat = lstatSync(path); if (stat.isSymbolicLink()) continue; if (stat.isDirectory()) result.push(...files(path)); else result.push(path); } return result; }
+export function packageRelease(input: { projectRoot: string; releaseRoot: string; releaseId?: string }): { releaseDir: string; manifest: string } {
+  const releaseId = input.releaseId ?? new Date().toISOString().replaceAll(/[-:.TZ]/g, '').slice(0, 14); const releaseDir = join(input.releaseRoot, releaseId); if (existsSync(releaseDir)) throw new Error('release already exists'); mkdirSync(releaseDir, { recursive: true });
+  const publicDir = join(releaseDir, 'public'); mkdirSync(publicDir, { recursive: true }); mkdirSync(join(releaseDir, 'runtime'), { recursive: true });
+  const standalone = join(input.projectRoot, '.next', 'standalone'); const staticDir = join(input.projectRoot, '.next', 'static'); const assetsDir = join(input.projectRoot, 'public');
+  if (existsSync(standalone)) cpSync(standalone, publicDir, { recursive: true });
+  if (existsSync(staticDir)) cpSync(staticDir, join(publicDir, '.next', 'static'), { recursive: true });
+  if (existsSync(assetsDir)) cpSync(assetsDir, join(publicDir, 'public'), { recursive: true });
+  const adminDist = join(input.projectRoot, 'dist', 'admin'); if (existsSync(adminDist)) cpSync(adminDist, join(releaseDir, 'admin'), { recursive: true });
+  const serverDist = join(input.projectRoot, 'dist', 'server'); if (existsSync(serverDist)) cpSync(serverDist, join(releaseDir, 'server'), { recursive: true });
+  const nativeRoot = join(input.projectRoot, 'native', 'flowpass-vision-ocr'); const nativeCandidates = [join(nativeRoot, '.build', 'arm64-apple-macosx', 'release', 'FlowPassVisionOCR'), join(nativeRoot, '.build', 'arm64-apple-macosx', 'debug', 'FlowPassVisionOCR')]; const nativeExecutable = nativeCandidates.find((path) => existsSync(path)); if (nativeExecutable) { mkdirSync(join(releaseDir, 'native'), { recursive: true }); cpSync(nativeExecutable, join(releaseDir, 'native', 'flowpass-vision-ocr')); }
+  const lockPath = join(input.projectRoot, 'package-lock.json');
+  const sourceCommit = process.env.FLOWPASS_SOURCE_COMMIT ?? null;
+  const lockHash = existsSync(lockPath) ? hashFile(lockPath) : null;
+  const entries = files(releaseDir).map((path) => ({ path: relative(releaseDir, path), sha256: hashFile(path) }));
+  const manifest = JSON.stringify({ format: 'flowpass-release-v1', releaseId, builtAt: new Date().toISOString(), nodeVersion: process.version, sourceCommit, dependencyLockSha256: lockHash, migrationRange: '001_core..003_ocr_raw_payloads', entries }, null, 2);
+  const manifestPath = join(releaseDir, 'manifest.json'); writeFileSync(manifestPath, manifest, { mode: 0o600 });
+  const verified = JSON.parse(readFileSync(manifestPath, 'utf8')) as { format?: string; entries?: Array<{ path: string; sha256: string }> };
+  if (verified.format !== 'flowpass-release-v1' || !verified.entries?.every((entry) => hashFile(join(releaseDir, entry.path)) === entry.sha256)) throw new Error('release manifest verification failed');
+  mkdirSync(input.releaseRoot, { recursive: true }); const current = join(input.releaseRoot, 'current'); const temp = join(input.releaseRoot, `.current-${releaseId}`);
+  try { if (existsSync(temp)) throw new Error('temporary release pointer already exists'); symlinkSync(releaseDir, temp); renameSync(temp, current); } catch (error) { try { if (existsSync(temp)) renameSync(temp, join(input.releaseRoot, `.orphan-${releaseId}`)); } catch { /* preserve release for manual cleanup */ } throw error; }
+  return { releaseDir, manifest: manifestPath };
+}
+if (import.meta.url === `file://${process.argv[1]}`) { const projectRoot = process.cwd(); const releaseRoot = process.env.FLOWPASS_RELEASE_ROOT ?? join(projectRoot, '.flowpass-releases'); try { console.log(JSON.stringify(packageRelease({ projectRoot, releaseRoot }))); } catch (error) { console.error(error instanceof Error ? error.message : 'release packaging failed'); process.exitCode = 1; } }

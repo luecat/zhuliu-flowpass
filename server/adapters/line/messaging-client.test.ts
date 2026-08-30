@@ -1,0 +1,3 @@
+import { describe, expect, it, vi } from 'vitest';
+import { createLineMessagingClient } from './messaging-client';
+describe('LINE messaging client', () => { it('uses stable retry key and generic payload', async () => { const fetcher = vi.fn(async () => new Response(null, { status: 200 })); await createLineMessagingClient({ channelAccessToken: 'token', fetcher }).push({ to: 'U1', text: 'generic', uri: 'https://liff.line.me/id/tasks', retryKey: 'retry-1' }); expect(fetcher).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ headers: expect.objectContaining({ 'X-Line-Retry-Key': 'retry-1' }) })); }); });

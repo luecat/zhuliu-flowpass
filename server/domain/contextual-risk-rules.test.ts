@@ -1,0 +1,3 @@
+import { describe, expect, it } from 'vitest';
+import { evaluateContextualRisk } from './contextual-risk-rules';
+describe('contextual risk rules', () => { it('is deterministic for sensitive and public flows', () => { const codes = evaluateContextualRisk({ containsPersonalData: true, containsHealthData: true, publicDestination: true, usesPlugin: true, deletionPeriodDays: null, accessControl: false, deidentified: true }).map((risk) => risk.ruleCode); expect(codes).toEqual(['personal_data', 'health_data', 'public_destination', 'plugin_use', 'deletion_period', 'access_control', 'deidentification']); }); });

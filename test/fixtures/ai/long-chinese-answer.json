@@ -1,0 +1,1 @@
+{"fixture":"long-chinese-answer","expectedSchemaValid":true,"requiredFollowUpTopics":["retention"],"answers":{"material":"研究素材與訪談逐字稿，包含多種格式與歷史版本，僅使用去識別化內容","aiPurpose":"整理一份供團隊檢視的資料流程說明，逐步標示來源、轉換、儲存、分享與刪除責任","sensitiveData":"可能包含受訪者背景描述、聯絡方式與健康經驗，使用前會再次確認是否需要遮罩","destinationAndAudience":"研究團隊與經申請核准的合作單位，完成審查後才可能對外展示"}}

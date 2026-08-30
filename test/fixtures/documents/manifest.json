@@ -1,0 +1,20 @@
+{
+  "purpose": "deidentified synthetic document validation cases",
+  "limits": {
+    "maxBytes": 12582912,
+    "maxPdfPages": 10,
+    "maxImagePixels": 36000000
+  },
+  "fixtures": [
+    { "name": "valid.jpg", "mediaType": "image/jpeg", "expected": "accept" },
+    { "name": "valid.png", "mediaType": "image/png", "expected": "accept" },
+    { "name": "one-page.pdf", "mediaType": "application/pdf", "pages": 1, "expected": "accept" },
+    { "name": "ten-page.pdf", "mediaType": "application/pdf", "pages": 10, "expected": "accept" },
+    { "name": "eleven-page.pdf", "mediaType": "application/pdf", "pages": 11, "expected": "reject", "code": "pdf_too_many_pages" },
+    { "name": "encrypted.pdf", "mediaType": "application/pdf", "expected": "reject", "code": "pdf_encrypted" },
+    { "name": "mime-mismatch.txt", "declaredMime": "text/plain", "expected": "accept-by-magic-bytes" },
+    { "name": "truncated.jpg", "expected": "reject", "code": "file_truncated" },
+    { "name": "37-megapixel.png", "pixels": 37000000, "expected": "reject", "code": "image_too_large" },
+    { "name": "13-mib.bin", "bytes": 13631488, "expected": "reject", "code": "file_too_large" }
+  ]
+}

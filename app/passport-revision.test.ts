@@ -93,6 +93,53 @@ describe('buildPassportRevisionJson', () => {
       }),
     );
   });
+
+  it('sends a canonical redacted source passport instead of raw excerpts', () => {
+    const passport = samplePassport();
+    passport.nodes[0].source_excerpt = 'REVISION-RAW-EXCERPT-MUST-NOT-LEAK';
+
+    const json = buildPassportRevisionJson(passport, {});
+    const payload = JSON.parse(json);
+
+    expect(json).not.toContain('REVISION-RAW-EXCERPT-MUST-NOT-LEAK');
+    expect(
+      payload.flowpass_revision_request.source_passport_draft
+        .follow_up_questions[0],
+    ).toMatchObject({
+      id: 'q_01',
+      answerSchema: { type: 'text', maxLength: 400 },
+      status: 'open',
+    });
+    expect(
+      payload.flowpass_revision_request.source_passport_draft.nodes[0]
+        .source_excerpt,
+    ).toBe('[not retained]');
+  });
+
+  it('keeps the legacy correction flow usable for a graph-invalid draft', () => {
+    const passport = samplePassport();
+    passport.edges[0].to_node_id = 'node_missing';
+    passport.nodes[0].source_excerpt = 'INVALID-GRAPH-RAW-EXCERPT';
+
+    expect(() => buildPassportRevisionJson(passport, {})).not.toThrow();
+    expect(buildPassportRevisionJson(passport, {})).not.toContain(
+      'INVALID-GRAPH-RAW-EXCERPT',
+    );
+  });
+
+  it('uses canonical graph-safe question references in a graph-invalid revision', () => {
+    const passport = samplePassport();
+    const sentinel = 'DUPLICATE-NODE-REFERENCE-SENTINEL-DO-NOT-LEAK';
+    passport.nodes[0].id = sentinel;
+    passport.nodes[1].id = sentinel;
+    passport.edges[3].to_node_id = sentinel;
+    passport.safety_actions[0].applies_to_node_ids = [sentinel];
+    passport.confirmation_questions[0].related_node_ids = [sentinel];
+
+    const revision = buildPassportRevisionJson(passport, {});
+
+    expect(revision).not.toContain(sentinel);
+  });
 });
 
 describe('reconcileConfirmationAnswers', () => {
@@ -132,6 +179,35 @@ describe('reconcileConfirmationAnswers', () => {
       ),
     ).toEqual({
       q_01: { status: 'unanswered', answerText: '' },
+    });
+  });
+
+  it('invalidates stale cached answers when the immutable question form changes', () => {
+    const previousQuestion = {
+      ...samplePassport().confirmation_questions[0],
+      version: 1,
+      answerSchema: { type: 'text' as const, maxLength: 400 as const },
+      required: false,
+      status: 'open' as const,
+    };
+    const changes = [
+      { version: 2 },
+      { answerSchema: { type: 'boolean' as const } },
+      { required: true },
+      { related_node_ids: ['node_data_pii_01'] },
+    ];
+
+    changes.forEach((change) => {
+      const nextQuestion = { ...previousQuestion, ...change };
+      expect(
+        reconcileConfirmationAnswers(
+          [nextQuestion],
+          { q_01: { status: 'answered', answerText: '舊答案' } },
+          [previousQuestion],
+        ),
+      ).toEqual({
+        q_01: { status: 'unanswered', answerText: '' },
+      });
     });
   });
 });

@@ -36,3 +36,11 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# FlowPass local runtime data and release artifacts
+/.flowpass-local/
+/.flowpass-releases/
+/runtime/
+
+# TypeScript build cache
+*.tsbuildinfo

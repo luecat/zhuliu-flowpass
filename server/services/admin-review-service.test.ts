@@ -118,6 +118,30 @@ describe('admin review service', () => {
     expect(() => service().decide({ adminId: ADMIN_ID, caseId: CASE_ID, ifMatch: '"4"', idempotencyKey: 'bad-state', action: 'await_disbursement', toState: 'awaiting_disbursement', reason: '撥款' })).toThrowError(expect.objectContaining({ code: 'FORBIDDEN_TRANSITION' }));
   });
 
+  it('records the actual transfer amount when a case is marked as disbursed', () => {
+    database.prepare("UPDATE cases SET state = 'awaiting_disbursement', approved_amount_twd = 2000, row_version = 4 WHERE id = ?").run(CASE_ID);
+
+    const result = service().decide({
+      adminId: ADMIN_ID,
+      caseId: CASE_ID,
+      ifMatch: '"4"',
+      idempotencyKey: 'disburse-actual-amount',
+      action: 'disburse',
+      toState: 'disbursed',
+      reason: '已完成匯款作業',
+      disbursedAmountTwd: 1850,
+    });
+
+    expect(result.case).toMatchObject({
+      state: 'disbursed',
+      approvedAmountTwd: 2000,
+      disbursedAmountTwd: 1850,
+    });
+    expect(database.prepare('SELECT disbursed_amount_twd FROM cases WHERE id = ?').get(CASE_ID)).toEqual({
+      disbursed_amount_twd: 1850,
+    });
+  });
+
   it('rolls back the complete command when the notification outbox cannot be written', () => {
     const failing = service({ notificationWriter: () => { throw new Error('queue unavailable'); } });
     expect(() => failing.decide({

@@ -38,6 +38,7 @@ function safeResult(result: ReturnType<ReturnType<typeof createAdminReviewServic
       requestedAmountTwd: result.case.requestedAmountTwd,
       calculatedAmountTwd: result.case.calculatedAmountTwd,
       approvedAmountTwd: result.case.approvedAmountTwd,
+      disbursedAmountTwd: result.case.disbursedAmountTwd,
       submittedAt: result.case.submittedAt,
       closedAt: result.case.closedAt,
       updatedAt: result.case.updatedAt,
@@ -57,7 +58,7 @@ export function createReviewRoutes(database: FlowPassDatabase, crypto: FieldCryp
     if (!auth) return context.json({ error: { code: 'UNAUTHENTICATED' } }, 401);
     const csrfCookie = cookie(context.req.header('cookie'), ADMIN_CSRF_COOKIE);
     const csrfHeader = context.req.header('x-csrf-token');
-    if (context.req.header('origin') !== 'http://127.0.0.1:38101' || !csrfCookie || csrfCookie !== (csrfHeader ?? csrfCookie) || !verifyAdminCsrf(csrfHeader ?? csrfCookie, auth.csrfHash)) {
+    if (!['http://127.0.0.1:38101', 'https://admin.luecat.com'].includes(context.req.header('origin') ?? '') || !csrfCookie || !csrfHeader || csrfCookie !== csrfHeader || !verifyAdminCsrf(csrfHeader, auth.csrfHash)) {
       return context.json({ error: { code: 'CSRF_FAILED' } }, 403);
     }
     const body = await context.req.json().catch(() => null) as Record<string, unknown> | null;
@@ -82,6 +83,7 @@ export function createReviewRoutes(database: FlowPassDatabase, crypto: FieldCryp
       toState: selected.toState,
       reason: typeof body.reason === 'string' ? body.reason : undefined,
       approvedAmountTwd: typeof body.approvedAmountTwd === 'number' ? body.approvedAmountTwd : undefined,
+      disbursedAmountTwd: typeof body.disbursedAmountTwd === 'number' ? body.disbursedAmountTwd : undefined,
       overrideReason: typeof body.overrideReason === 'string' ? body.overrideReason : undefined,
       passportVersionId: typeof body.passportVersionId === 'string' ? body.passportVersionId : null,
       supplement,

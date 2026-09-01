@@ -1,0 +1,127 @@
+button:disabled {
+  cursor: not-allowed;
+}
+
+.primary[aria-busy='true'] {
+  cursor: wait;
+}
+
+.primary.danger {
+  background: #9e3037;
+}
+
+.primary.danger:hover:not(:disabled) {
+  background: #7f252c;
+}
+
+.review-empty p,
+.review-guidance {
+  margin-bottom: 0;
+}
+
+.review > .review-requirements {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #eed49b;
+  border-radius: 0.55rem;
+  background: #fff8e8;
+  color: #795408;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.choice input {
+  width: auto;
+  margin-top: 0.15rem;
+}
+
+.review-confirm-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: #10271e8f;
+}
+
+.review-confirm-dialog {
+  width: min(100%, 28rem);
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid #d9e3dc;
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: 0 24px 64px #10281f55;
+}
+
+.review-confirm-dialog::backdrop {
+  background: #10271e8f;
+}
+
+.review-confirm-dialog h4 {
+  margin: 0 0 0.55rem;
+  color: #183b2e;
+  font-size: 1.25rem;
+}
+
+.review-confirm-dialog > p:not(.eyebrow) {
+  color: #64736b;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.panel .review-confirm-dialog dl {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  margin: 1rem 0;
+  border: 1px solid #e1e8e3;
+  border-radius: 0.65rem;
+  background: #f8faf8;
+}
+
+.review-confirm-dialog dl div {
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid #e1e8e3;
+}
+
+.review-confirm-dialog dl div:last-child {
+  border-bottom: 0;
+}
+
+.review-confirm-dialog dd {
+  margin-top: 0.25rem;
+  white-space: pre-wrap;
+}
+
+.review-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+
+.review-confirm-actions .primary {
+  width: auto;
+}
+
+@media (max-width: 430px) {
+  .review-confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .review-confirm-actions .primary,
+  .review-confirm-actions .secondary {
+    width: 100%;
+  }
+}

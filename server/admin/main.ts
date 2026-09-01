@@ -1,9 +1,13 @@
 import { serve } from '@hono/node-server';
+import { join } from 'node:path';
 import { runtimeConfig } from '../config/runtime-config';
 import { flowPassDatabasePath, openMigratedDatabase } from '../db/connection';
 import { createAdminApp } from './app';
 import { KeychainSecretProvider } from '../config/keychain';
 import { initializeFieldCryptoAtStartup } from '../crypto/keyring';
+import { createCloudflareAccessVerifier } from './auth/cloudflare-access';
+import type { AdminAppDependencies } from './app';
+import { DocumentVault } from '../services/document-vault';
 
 const database = openMigratedDatabase(flowPassDatabasePath(runtimeConfig.dataRoot));
 
@@ -15,7 +19,13 @@ void (async () => {
   } catch {
     // Health, login and read-only routes remain available when Keychain is locked.
   }
-  serve({ fetch: createAdminApp(database, { crypto }).fetch, hostname: runtimeConfig.adminHost, port: runtimeConfig.adminPort });
+  const documentVaultPath = join(runtimeConfig.dataRoot, 'vault');
+  const dependencies: AdminAppDependencies = { crypto, documentVaultPath, dataRoot: runtimeConfig.dataRoot, backupRoot: join(runtimeConfig.dataRoot, 'backups') };
+  if (crypto) dependencies.documentVault = new DocumentVault({ rootPath: documentVaultPath, crypto });
+  const teamDomain = process.env.FLOWPASS_CF_ACCESS_TEAM_DOMAIN;
+  const audience = process.env.FLOWPASS_CF_ACCESS_AUD;
+  if (teamDomain && audience) dependencies.verifyAccessToken = createCloudflareAccessVerifier({ teamDomain, audience });
+  serve({ fetch: createAdminApp(database, dependencies).fetch, hostname: runtimeConfig.adminHost, port: runtimeConfig.adminPort });
 })();
 
 process.once('SIGINT', () => database.close());

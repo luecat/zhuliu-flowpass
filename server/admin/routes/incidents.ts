@@ -12,7 +12,10 @@ function auth(context: { req: { header(name: string): string | undefined } }, da
   const session = authenticateAdmin(database, cookie(context.req.header('cookie'), ADMIN_SESSION_COOKIE));
   if (!session) return { session: null, error: 'UNAUTHENTICATED' as const };
   const host = context.req.header('host');
-  if ((host && host.split(':')[0] !== '127.0.0.1') || context.req.header('origin') !== 'http://127.0.0.1:38101' || !verifyAdminCsrf(cookie(context.req.header('cookie'), ADMIN_CSRF_COOKIE), session.csrfHash)) return { session: null, error: 'CSRF_FAILED' as const };
+  const origin = context.req.header('origin');
+  const csrfCookie = cookie(context.req.header('cookie'), ADMIN_CSRF_COOKIE);
+  const csrfHeader = context.req.header('x-csrf-token');
+  if (!['127.0.0.1', 'admin.luecat.com'].includes(host?.split(':')[0] ?? '') || !['http://127.0.0.1:38101', 'https://admin.luecat.com'].includes(origin ?? '') || !csrfCookie || csrfCookie !== csrfHeader || !verifyAdminCsrf(csrfHeader ?? null, session.csrfHash)) return { session: null, error: 'CSRF_FAILED' as const };
   return { session, error: null };
 }
 

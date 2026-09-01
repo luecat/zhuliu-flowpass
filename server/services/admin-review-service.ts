@@ -41,7 +41,8 @@ export type AdminReviewErrorCode =
   | 'FORBIDDEN_TRANSITION'
   | 'REASON_REQUIRED'
   | 'INVALID_APPROVED_AMOUNT'
-  | 'APPROVED_AMOUNT_EXCEEDS_CAP';
+  | 'APPROVED_AMOUNT_EXCEEDS_CAP'
+  | 'INVALID_DISBURSED_AMOUNT';
 
 export class AdminReviewError extends Error {
   constructor(readonly code: AdminReviewErrorCode, message: string = code) {
@@ -67,6 +68,7 @@ export interface AdminReviewDecision {
   toState: CaseState;
   reason?: string;
   approvedAmountTwd?: number;
+  disbursedAmountTwd?: number;
   overrideReason?: string;
   passportVersionId?: string | null;
   supplement?: SupplementRequest;
@@ -198,6 +200,7 @@ function mapMachineError(error: CaseStateMachineError): AdminReviewError {
     REASON_REQUIRED: 'REASON_REQUIRED',
     INVALID_APPROVED_AMOUNT: 'INVALID_APPROVED_AMOUNT',
     APPROVED_AMOUNT_EXCEEDS_CAP: 'APPROVED_AMOUNT_EXCEEDS_CAP',
+    INVALID_DISBURSED_AMOUNT: 'INVALID_DISBURSED_AMOUNT',
     INVALID_ACTION: 'INVALID_REQUEST',
   };
   return new AdminReviewError(code[error.code], error.message);
@@ -290,6 +293,7 @@ export function createAdminReviewService(options: AdminReviewServiceOptions) {
         toState: input.toState,
         reason: input.reason,
         approvedAmountTwd: input.approvedAmountTwd,
+        disbursedAmountTwd: input.disbursedAmountTwd,
         overrideReason: input.overrideReason,
         passportVersionId: input.passportVersionId ?? null,
         supplement: input.supplement ?? null,
@@ -322,6 +326,7 @@ export function createAdminReviewService(options: AdminReviewServiceOptions) {
               action: input.action,
               reason: input.reason,
               approvedAmountTwd: input.approvedAmountTwd,
+              disbursedAmountTwd: input.disbursedAmountTwd,
               capTwd: cap,
               overrideReason: input.overrideReason,
               manualOverride: input.action === 'manual_override',
@@ -350,7 +355,7 @@ export function createAdminReviewService(options: AdminReviewServiceOptions) {
           const decisionReasonEnc = decisionReason === undefined
             ? null
             : encryptCaseSensitiveFields(options.crypto, input.caseId, { decisionReason }).decisionReasonEnc;
-          const update = options.database.prepare('UPDATE cases SET state = ?, decision_reason_enc = COALESCE(?, decision_reason_enc), approved_amount_twd = CASE WHEN ? = \'approved\' THEN ? ELSE approved_amount_twd END, approved_passport_version_id = CASE WHEN ? = \'approved\' THEN ? ELSE approved_passport_version_id END, closed_at = CASE WHEN ? = \'closed\' THEN ? ELSE closed_at END, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?').run(input.toState, decisionReasonEnc, input.toState, input.approvedAmountTwd ?? null, input.toState, input.toState === 'approved' ? input.passportVersionId ?? null : null, input.toState, input.toState === 'closed' ? createdAt : null, createdAt, input.caseId, expectedVersion);
+          const update = options.database.prepare('UPDATE cases SET state = ?, decision_reason_enc = COALESCE(?, decision_reason_enc), approved_amount_twd = CASE WHEN ? = \'approved\' THEN ? ELSE approved_amount_twd END, approved_passport_version_id = CASE WHEN ? = \'approved\' THEN ? ELSE approved_passport_version_id END, disbursed_amount_twd = CASE WHEN ? = \'disbursed\' THEN ? ELSE disbursed_amount_twd END, closed_at = CASE WHEN ? = \'closed\' THEN ? ELSE closed_at END, updated_at = ?, row_version = row_version + 1 WHERE id = ? AND row_version = ?').run(input.toState, decisionReasonEnc, input.toState, input.approvedAmountTwd ?? null, input.toState, input.toState === 'approved' ? input.passportVersionId ?? null : null, input.toState, input.disbursedAmountTwd ?? null, input.toState, input.toState === 'closed' ? createdAt : null, createdAt, input.caseId, expectedVersion);
           if (update.changes !== 1) throw new AdminReviewError('ETAG_MISMATCH');
 
           insertEncryptedCaseStateTransitionForAdmin(options.database, { adminId: input.adminId } satisfies AdminScope, options.crypto, {

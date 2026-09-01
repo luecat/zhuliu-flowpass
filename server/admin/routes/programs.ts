@@ -18,7 +18,7 @@ function authorized(database: FlowPassDatabase, context: { req: { header(name: s
   if (!auth) return { error: 'UNAUTHENTICATED' as const };
   const csrfCookie = cookie(context.req.header('cookie'), ADMIN_CSRF_COOKIE);
   const csrfHeader = context.req.header('x-csrf-token');
-  if (context.req.header('origin') !== 'http://127.0.0.1:38101' || !csrfCookie || csrfCookie !== csrfHeader || !verifyAdminCsrf(csrfHeader, auth.csrfHash)) {
+  if (!['http://127.0.0.1:38101', 'https://admin.luecat.com'].includes(context.req.header('origin') ?? '') || !csrfCookie || csrfCookie !== csrfHeader || !verifyAdminCsrf(csrfHeader, auth.csrfHash)) {
     return { error: 'CSRF_FAILED' as const };
   }
   return { auth };

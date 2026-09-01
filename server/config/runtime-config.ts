@@ -1,19 +1,18 @@
 import { z } from 'zod';
-
-const isLoopbackHost = (host: string) =>
-  host === '127.0.0.1' || host === '::1' || host === 'localhost';
+import { isLoopbackHost, normalizeLoopbackOpenAiBaseUrl } from './loopback-openai-url';
 
 const LoopbackHostSchema = z
   .string()
   .refine(isLoopbackHost, 'must be a loopback host');
 
-const LoopbackUrlSchema = z.string().url().refine((value) => {
+const LoopbackOpenAiBaseUrlSchema = z.string().url().refine((value) => {
   try {
-    return isLoopbackHost(new URL(value).hostname);
+    normalizeLoopbackOpenAiBaseUrl(value);
+    return true;
   } catch {
     return false;
   }
-}, 'must use a loopback host');
+}, 'must be a loopback OpenAI base URL').transform(normalizeLoopbackOpenAiBaseUrl);
 
 const PRODUCTION_PUBLIC_ORIGIN = 'https://flowpass.luecat.com';
 
@@ -50,14 +49,17 @@ const RuntimeConfigSchema = z.object({
   adminPort: z.coerce.number().int().min(1).max(65535).default(38101),
   workerHost: LoopbackHostSchema.default('127.0.0.1'),
   workerPort: z.coerce.number().int().min(1).max(65535).default(38102),
-  lmStudioBaseUrl: LoopbackUrlSchema.default('http://127.0.0.1:1234'),
+  lmStudioBaseUrl: LoopbackOpenAiBaseUrlSchema.default('http://127.0.0.1:1234'),
   timezone: z.literal('Asia/Taipei').default('Asia/Taipei'),
   dataRoot: z
     .string()
     .min(1)
     .default('/Users/luecat/Library/Application Support/FlowPass'),
-  lineLoginChannelId: z.string().trim().min(1).default('flowpass-local-line-login'),
-  liffId: z.string().trim().min(1).default('flowpass-local-liff'),
+  // These are public LINE identifiers, so keeping the configured production
+  // values as defaults lets a fresh local checkout work without a second
+  // build-time configuration step. Secrets remain Keychain-only.
+  lineLoginChannelId: z.string().trim().min(1).default('2011336492'),
+  liffId: z.string().trim().min(1).default('2011336492-ay7OJ4mO'),
 });
 
 export type RuntimeConfig = z.infer<typeof RuntimeConfigSchema>;

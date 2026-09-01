@@ -6,8 +6,9 @@ import {
   type ApiFailure,
 } from '../../shared/api-contract';
 import type { FlowPassDatabase } from '../db/connection';
-import { getCaseForApplicant } from '../db/repositories/cases';
+import { getCaseForApplicant, getCurrentAnswersForApplicant, listCasesForApplicant } from '../db/repositories/cases';
 import { getApplicantVisibleJob } from '../db/repositories/jobs';
+import type { FieldCrypto } from '../crypto/field-crypto';
 
 export interface PublicApplicantSession {
   sessionId: string;
@@ -20,6 +21,7 @@ export interface PublicSessionReader {
 
 export interface PublicRouteDependencies {
   database: FlowPassDatabase;
+  crypto: FieldCrypto;
   sessionReader: PublicSessionReader;
   requestIdGenerator?: () => string;
 }
@@ -57,6 +59,7 @@ function isFailure(value: PublicApplicantSession | ApiFailure): value is ApiFail
 }
 
 export interface PublicRouteHandlers {
+  listCases(request: Request): Promise<Response>;
   getCase(request: Request, caseId: string): Promise<Response>;
   getJob(request: Request, jobId: string): Promise<Response>;
 }
@@ -64,6 +67,18 @@ export interface PublicRouteHandlers {
 /** Route factories keep authentication and SQL-scoped ownership testable without proxy involvement. */
 export function createPublicRouteHandlers(dependencies: PublicRouteDependencies): PublicRouteHandlers {
   return {
+    async listCases(request) {
+      const session = requireApplicant(request, dependencies);
+      if (isFailure(session)) return toJsonResponse(session);
+      const cases = listCasesForApplicant(
+        dependencies.database,
+        { applicantId: session.applicantId },
+      );
+      return toJsonResponse(apiSuccess({ cases }, requestId(dependencies)), {
+        headers: { 'Cache-Control': 'no-store' },
+      });
+    },
+
     async getCase(request, caseId) {
       const session = requireApplicant(request, dependencies);
       if (isFailure(session)) {
@@ -73,8 +88,19 @@ export function createPublicRouteHandlers(dependencies: PublicRouteDependencies)
       if (!record) {
         return toJsonResponse(apiFailure(ApiErrorCode.NOT_FOUND, requestId(dependencies)));
       }
-      const body = apiSuccess(record, requestId(dependencies), record.rowVersion);
-      return toJsonResponse(body, { headers: { ETag: body.meta.etag ?? '' } });
+      let answers;
+      try {
+        answers = getCurrentAnswersForApplicant(
+          dependencies.database,
+          { applicantId: session.applicantId },
+          dependencies.crypto,
+          caseId,
+        );
+      } catch {
+        return toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId(dependencies)));
+      }
+      const body = apiSuccess({ ...record, answers }, requestId(dependencies), record.rowVersion);
+      return toJsonResponse(body, { headers: { ETag: body.meta.etag ?? '', 'Cache-Control': 'no-store' } });
     },
 
     async getJob(request, jobId) {

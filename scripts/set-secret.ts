@@ -2,6 +2,7 @@ import { execFile as execFileCallback } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { promisify } from 'node:util';
 import * as readline from 'node:readline';
+import { pathToFileURL } from 'node:url';
 const execFile = promisify(execFileCallback);
 
 export const SECRET_NAMES = ['line-channel-access-token', 'line-channel-secret', 'line-login-channel-secret', 'lm-studio-api-token', 'vault-master-key-v1', 'session-hmac-key-v1', 'backup-master-key-v1'] as const;
@@ -17,4 +18,4 @@ export async function setSecret(operation: 'bind' | 'set' | 'generate', name: st
   await execFile('security', ['add-generic-password', '-U', '-s', service, '-a', account, '-w', value]);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) { const [operation, name] = process.argv.slice(2); if (!operation || !name || !['bind', 'set', 'generate'].includes(operation)) { console.error('usage: set-secret.ts <bind|set|generate> <logical-name>'); process.exitCode = 2; } else { void setSecret(operation as 'bind' | 'set' | 'generate', name).then(() => console.log('ok')).catch((error) => { console.error(error instanceof Error ? error.message : 'secret operation failed'); process.exitCode = 1; }); } }
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) { const [operation, name, account] = process.argv.slice(2); if (!operation || !name || !['bind', 'set', 'generate'].includes(operation)) { console.error('usage: set-secret.ts <bind|set|generate> <logical-name> [keychain-account]'); process.exitCode = 2; } else { void setSecret(operation as 'bind' | 'set' | 'generate', name, account).then(() => console.log('ok')).catch((error) => { console.error(error instanceof Error ? error.message : 'secret operation failed'); process.exitCode = 1; }); } }

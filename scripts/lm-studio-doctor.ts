@@ -1,12 +1,13 @@
-import { isIP } from 'node:net';
 import { readFileSync, readdirSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { KeychainSecretProvider } from '../server/config/keychain';
 import { LmStudioClient } from '../server/adapters/lm-studio/lm-studio-client';
 import { inspectPassportJson } from '../server/domain/passport-validation';
 import { createModelCatalog, eligibleModel, formatModelDoctorReport, type ModelCapabilities } from '../server/adapters/lm-studio/model-catalog';
 import { FIXED_AI_INSTRUCTION } from '../server/domain/ai-draft-service';
+import { normalizeLoopbackOpenAiBaseUrl, openAiApiUrl } from '../server/config/loopback-openai-url';
 
 type Fixture = { fixture: string; expectedSchemaValid: boolean; requiredFollowUpTopics: string[]; answers: Record<string, string>; modelOutput?: unknown };
 type BenchmarkResult = { fixture: string; valid: boolean; coveredTopics: string[]; latencyMs: number; failureType?: string };
@@ -46,9 +47,9 @@ function summarize(results: BenchmarkResult[]) {
 }
 
 async function main() {
-  const endpoint = process.env.FLOWPASS_LM_STUDIO_URL ?? 'http://127.0.0.1:1234';
-  const url = new URL(endpoint);
-  if (isIP(url.hostname) !== 4 || url.hostname !== '127.0.0.1') throw new Error('LM Studio endpoint must remain on 127.0.0.1');
+  const endpoint = normalizeLoopbackOpenAiBaseUrl(
+    process.env.FLOWPASS_LM_STUDIO_BASE_URL ?? process.env.FLOWPASS_LM_STUDIO_URL ?? 'http://127.0.0.1:1234',
+  );
   const service = process.env.FLOWPASS_LM_STUDIO_KEYCHAIN_SERVICE ?? 'FlowPass';
   const account = process.env.FLOWPASS_LM_STUDIO_KEYCHAIN_ACCOUNT ?? 'lm-studio-api-token';
   const provider = new KeychainSecretProvider();
@@ -57,7 +58,7 @@ async function main() {
   let models: ModelCapabilities[] = [];
   if (process.argv.includes('--live')) {
     try {
-      const response = await fetch(`${endpoint}/v1/models`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+      const response = await fetch(openAiApiUrl(endpoint, 'models'), { headers: token ? { authorization: `Bearer ${token}` } : {}, redirect: 'error' });
       if (response.ok) {
         const body = await response.json() as { data?: Array<Record<string, unknown>> };
         models = (body.data ?? []).map((item) => ({ id: typeof item.id === 'string' ? item.id : 'unknown', contextLength: typeof item.context_length === 'number' ? item.context_length : null, supportsJsonSchema: item.supports_json_schema === true ? true : null, supportsChat: item.supports_chat !== false }));
@@ -68,8 +69,7 @@ async function main() {
   const catalog = createModelCatalog(models, selected);
   const report: Record<string, unknown> = { ...JSON.parse(formatModelDoctorReport({ ...catalog, models: catalog.models.map((item) => ({ ...item, eligible: eligibleModel(item) })) })), keychainTokenPresent: Boolean(token), fixtureCount: loadAiFixtures().length, liveModels: models.map((model) => ({ id: model.id, contextLength: model.contextLength, supportsJsonSchema: model.supportsJsonSchema, supportsChat: model.supportsChat })) };
   if (process.argv.includes('--benchmark')) {
-    if (!token) throw new Error('LM Studio token is unavailable');
-    const client = new LmStudioClient({ modelId: selected, endpoint: `${endpoint}/v1/chat/completions`, token });
+    const client = new LmStudioClient({ modelId: selected, endpoint: openAiApiUrl(endpoint, 'chat/completions'), token });
     const benchmark = summarize(await runFixtureBenchmark(client));
     const selectedMetadata = models.find((model) => model.id === selected);
     report.benchmark = { ...benchmark, candidateEligible: Boolean(selectedMetadata && eligibleModel(selectedMetadata)), accepted: benchmark.accepted && Boolean(selectedMetadata && eligibleModel(selectedMetadata)) };
@@ -77,4 +77,4 @@ async function main() {
   console.log(JSON.stringify(report, null, 2));
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) void main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) void main();

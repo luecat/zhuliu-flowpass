@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRuntimeConfig } from './runtime-config';
+import { normalizeLoopbackOpenAiBaseUrl, openAiApiUrl } from './loopback-openai-url';
 
 describe('createRuntimeConfig', () => {
   it('uses the FlowPass local-system defaults', () => {
@@ -13,13 +14,28 @@ describe('createRuntimeConfig', () => {
       lmStudioBaseUrl: 'http://127.0.0.1:1234',
       timezone: 'Asia/Taipei',
       dataRoot: '/Users/luecat/Library/Application Support/FlowPass',
-      lineLoginChannelId: 'flowpass-local-line-login',
-      liffId: 'flowpass-local-liff',
+      lineLoginChannelId: '2011336492',
+      liffId: '2011336492-ay7OJ4mO',
     });
   });
 
   it('permits a public-port override for isolated tests', () => {
     expect(createRuntimeConfig({ publicPort: 39100 }).publicPort).toBe(39100);
+  });
+
+  it('normalizes a local OpenAI root or /v1 prefix exactly once', () => {
+    expect(normalizeLoopbackOpenAiBaseUrl('http://localhost:1234')).toBe('http://localhost:1234');
+    expect(normalizeLoopbackOpenAiBaseUrl('http://localhost:1234/v1/')).toBe('http://localhost:1234');
+    expect(createRuntimeConfig({ lmStudioBaseUrl: 'http://localhost:1234/v1' }).lmStudioBaseUrl).toBe('http://localhost:1234');
+    expect(openAiApiUrl('http://localhost:1234/v1', 'chat/completions')).toBe('http://localhost:1234/v1/chat/completions');
+  });
+
+  it.each([
+    'http://localhost:1234/other',
+    'http://user:pass@localhost:1234',
+    'http://localhost:1234/v1?debug=true',
+  ])('rejects an unsafe OpenAI base URL: %s', (value) => {
+    expect(() => normalizeLoopbackOpenAiBaseUrl(value)).toThrow();
   });
 
   it.each([

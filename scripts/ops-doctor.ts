@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { openMigratedDatabase, flowPassDatabasePath } from '../server/db/connection';
 import { localReadiness } from '../server/services/health-service';
 import { preflightConfig } from './preflight';
@@ -12,4 +13,4 @@ export function opsDoctor(input: { dataRoot: string; releaseRoot: string; offlin
   let config = { ok: false, checks: {} as Record<string, boolean> }; try { config = preflightConfig(existsSync(configPath) ? configPath : undefined); } catch { /* invalid config */ }
   return { releaseManifestValid, configPermissions0600, databaseReady, config: config.checks, offline: input.offline === true, skippedLiveChecks: input.offline === true ? ['keychain', 'line', 'cloudflare', 'publicHttps', 'listeners', 'model'] : [] };
 }
-if (import.meta.url === `file://${process.argv[1]}`) { const dataRoot = process.env.FLOWPASS_DATA_ROOT ?? '/Users/luecat/Library/Application Support/FlowPass'; const releaseRoot = process.env.FLOWPASS_RELEASE_ROOT ?? join(dataRoot, 'releases'); try { console.log(JSON.stringify(opsDoctor({ dataRoot, releaseRoot, offline: process.argv.includes('--offline') }), null, 2)); } catch (error) { console.error(error instanceof Error ? error.message : 'ops doctor failed'); process.exitCode = 1; } }
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) { const dataRoot = process.env.FLOWPASS_DATA_ROOT ?? '/Users/luecat/Library/Application Support/FlowPass'; const releaseRoot = process.env.FLOWPASS_RELEASE_ROOT ?? join(dataRoot, 'releases'); try { console.log(JSON.stringify(opsDoctor({ dataRoot, releaseRoot, offline: process.argv.includes('--offline') }), null, 2)); } catch (error) { console.error(error instanceof Error ? error.message : 'ops doctor failed'); process.exitCode = 1; } }

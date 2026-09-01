@@ -2,6 +2,7 @@ import type { FieldCrypto } from '../crypto/field-crypto';
 import type { FlowPassDatabase } from '../db/connection';
 import type { LineSessionService } from '../domain/line-session-service';
 import type { DocumentVault } from '../services/document-vault';
+import { isMaintenanceMode } from '../services/maintenance-mode';
 
 /**
  * Trusted startup-composition seam. The public routes receive only already-built
@@ -13,16 +14,23 @@ export interface PublicRuntime {
   crypto: FieldCrypto;
   lineSessions: LineSessionService;
   publicOrigin: string;
+  /** Loaded in-memory only for the LINE webhook route; never serialized. */
+  lineChannelSecret?: string;
   requestIdGenerator?: () => string;
   clock?: () => Date;
   /** Vault is injected by trusted startup composition; requests never construct keys. */
   documentVault?: DocumentVault;
 }
 
-let configuredRuntime: PublicRuntime | null = null;
+const RUNTIME_GLOBAL_KEY = Symbol.for('flowpass.public.runtime');
+type RuntimeGlobal = typeof globalThis & { [RUNTIME_GLOBAL_KEY]?: PublicRuntime | null };
+
+function runtimeGlobal(): RuntimeGlobal {
+  return globalThis as RuntimeGlobal;
+}
 
 export function configurePublicRuntime(runtime: PublicRuntime): void {
-  configuredRuntime = runtime;
+  runtimeGlobal()[RUNTIME_GLOBAL_KEY] = runtime;
   // Trusted startup composition owns recovery. Requests never trigger a
   // filesystem scan, but a process restart must reconcile pending vault rows
   // before serving upload/download routes.
@@ -30,10 +38,12 @@ export function configurePublicRuntime(runtime: PublicRuntime): void {
 }
 
 export function getPublicRuntime(): PublicRuntime | null {
-  return configuredRuntime;
+  const runtime = runtimeGlobal()[RUNTIME_GLOBAL_KEY] ?? null;
+  if (!runtime) return null;
+  return isMaintenanceMode(runtime.database) ? null : runtime;
 }
 
 /** Test-only cleanup; production process composition calls configure once at startup. */
 export function clearPublicRuntime(): void {
-  configuredRuntime = null;
+  runtimeGlobal()[RUNTIME_GLOBAL_KEY] = null;
 }

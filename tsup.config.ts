@@ -1,4 +1,5 @@
 import { defineConfig } from 'tsup';
+import { cpSync, mkdirSync } from 'node:fs';
 
 export default defineConfig({
   entry: {
@@ -12,8 +13,14 @@ export default defineConfig({
   target: 'node22',
   splitting: false,
   sourcemap: false,
-  clean: true,
+  // The admin Vite build shares dist/. Cleaning here deletes dist/admin.
+  clean: false,
   outDir: 'dist',
   outExtension: () => ({ js: '.mjs' }),
   external: ['better-sqlite3'],
+  noExternal: ['@hono/node-server', 'hono', 'uuid', 'zod'],
+  onSuccess: async () => {
+    mkdirSync('dist/server/migrations', { recursive: true });
+    cpSync('server/db/migrations', 'dist/server/migrations', { recursive: true });
+  },
 });

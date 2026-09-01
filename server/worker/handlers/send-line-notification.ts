@@ -2,7 +2,7 @@ import type { FieldCrypto } from '../../crypto/field-crypto';
 import type { FlowPassDatabase } from '../../db/connection';
 import type { DurableJob } from '../../db/repositories/jobs';
 import { decryptDatabaseText } from '../../db/repositories/encrypted-fields';
-import { notificationText, notificationUri, type NotificationTemplate } from '../../domain/notification-template';
+import { notificationPresentation, type NotificationTemplate } from '../../domain/notification-template';
 import { LineMessagingError, type LineMessagingClient } from '../../adapters/line/messaging-client';
 
 export async function sendLineNotification(job: DurableJob, input: { database: FlowPassDatabase; crypto: FieldCrypto; client: LineMessagingClient; liffId: string; now?: string }): Promise<void> {
@@ -10,12 +10,17 @@ export async function sendLineNotification(job: DurableJob, input: { database: F
   const payload = job.payload as Record<string, unknown>;
   const notificationJobId = typeof payload.notificationJobId === 'string' ? payload.notificationJobId : null;
   if (!notificationJobId) throw new Error('notification payload is invalid');
-  const row = input.database.prepare(`SELECT n.template, n.provider_retry_key, n.status, n.attempts, li.line_subject_enc, li.id AS identity_id FROM notification_jobs n JOIN cases c ON c.id = n.case_id JOIN line_identities li ON li.applicant_id = c.applicant_id AND li.push_state = 'enabled' WHERE n.id = ? ORDER BY li.linked_at DESC LIMIT 1`).get(notificationJobId) as { template: string; provider_retry_key: string; status: string; attempts: number; line_subject_enc: string; identity_id: string } | undefined;
+  const row = input.database.prepare(`SELECT n.template, n.status, n.attempts, n.created_at, c.state AS case_state, c.approved_amount_twd, c.disbursed_amount_twd, li.line_subject_enc, li.id AS identity_id FROM notification_jobs n JOIN cases c ON c.id = n.case_id JOIN line_identities li ON li.applicant_id = c.applicant_id AND li.push_state = 'enabled' WHERE n.id = ? ORDER BY li.linked_at DESC LIMIT 1`).get(notificationJobId) as { template: string; status: string; attempts: number; created_at: string; case_state: string; approved_amount_twd: number | null; disbursed_amount_twd: number | null; line_subject_enc: string; identity_id: string } | undefined;
   if (!row || row.status === 'sent_confirmed') return;
   if (row.status === 'unknown_delivery' && row.attempts >= 2) return;
   const subject = decryptDatabaseText(input.crypto, 'line_identities', 'line_subject_enc', row.identity_id, row.line_subject_enc);
   try {
-    await input.client.push({ to: subject, text: notificationText(row.template as NotificationTemplate), uri: notificationUri(row.template as NotificationTemplate, input.liffId), retryKey: row.provider_retry_key });
+    const presentation = notificationPresentation(row.template as NotificationTemplate, input.liffId, row.created_at, {
+      state: row.case_state,
+      approvedAmountTwd: row.approved_amount_twd,
+      disbursedAmountTwd: row.disbursed_amount_twd,
+    });
+    await input.client.push({ to: subject, retryKey: notificationJobId, ...presentation });
     input.database.prepare(`UPDATE notification_jobs SET status = 'sent_confirmed', sent_at = ?, attempts = attempts + 1, provider_message_id = COALESCE(provider_message_id, 'line-accepted') WHERE id = ? AND status IN ('pending','leased','unknown_delivery')`).run(input.now ?? new Date().toISOString(), notificationJobId);
   } catch (error) {
     const status = error instanceof LineMessagingError ? error.status : 0;

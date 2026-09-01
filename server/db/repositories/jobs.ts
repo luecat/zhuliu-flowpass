@@ -92,11 +92,42 @@ export function getApplicantVisibleJob(
        JOIN cases
          ON cases.id = json_extract(jobs.payload_json, '$.caseId')
         AND cases.applicant_id = ?
+        AND cases.deleted_at IS NULL
        WHERE jobs.id = ?
          AND jobs.job_type = 'ai_draft'
          AND json_type(jobs.payload_json, '$.caseId') = 'text'`,
     )
     .get(scope.applicantId, jobId) as
+    | { id: string; state: JobState; created_at: string; completed_at: string | null }
+    | undefined;
+  return row
+    ? { id: row.id, state: row.state, createdAt: row.created_at, completedAt: row.completed_at }
+    : null;
+}
+
+/** Lets an applicant reconnect to their own in-flight AI draft without exposing job internals. */
+export function getApplicantActiveAiDraftJob(
+  database: FlowPassDatabase,
+  scope: ApplicantScope,
+  caseId: string,
+): ApplicantVisibleJob | null {
+  requireApplicantScope(scope);
+  const row = database
+    .prepare(
+      `SELECT jobs.id, jobs.state, jobs.created_at, jobs.completed_at
+       FROM jobs
+       JOIN cases
+         ON cases.id = json_extract(jobs.payload_json, '$.caseId')
+        AND cases.applicant_id = ?
+        AND cases.deleted_at IS NULL
+       WHERE jobs.job_type = 'ai_draft'
+         AND json_type(jobs.payload_json, '$.caseId') = 'text'
+         AND json_extract(jobs.payload_json, '$.caseId') = ?
+         AND jobs.state IN ('queued', 'leased')
+       ORDER BY jobs.created_at DESC, jobs.id DESC
+       LIMIT 1`,
+    )
+    .get(scope.applicantId, caseId) as
     | { id: string; state: JobState; created_at: string; completed_at: string | null }
     | undefined;
   return row

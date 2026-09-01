@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server';
 import { runtimeConfig } from '../config/runtime-config';
 import { flowPassDatabasePath, openMigratedDatabase } from '../db/connection';
-import { createWorkerApp } from './app';
+import { createWorkerApp, defaultWorkerDependencyStatus } from './app';
 import { QueueDispatcher } from './queue-dispatcher';
 import { generatePassport } from './handlers/generate-passport';
 import { LmStudioClient } from '../adapters/lm-studio/lm-studio-client';
@@ -19,11 +19,15 @@ import type { DurableJob } from '../db/repositories/jobs';
 import { processLineEvent } from './handlers/process-line-event';
 import { sendLineNotification } from './handlers/send-line-notification';
 import { createLineMessagingClient } from '../adapters/line/messaging-client';
+import { openAiApiUrl } from '../config/loopback-openai-url';
+import { isMaintenanceMode } from '../services/maintenance-mode';
 
 const database = openMigratedDatabase(flowPassDatabasePath(runtimeConfig.dataRoot));
 
+const dependencyStatus = defaultWorkerDependencyStatus();
+
 serve({
-  fetch: createWorkerApp(database).fetch,
+  fetch: createWorkerApp(database, dependencyStatus).fetch,
   hostname: runtimeConfig.workerHost,
   port: runtimeConfig.workerPort,
 });
@@ -42,16 +46,40 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
         activeKeyId: keyId,
         masterKeyRefs: { [keyId]: { service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_MASTER_KEY_ACCOUNT ?? 'flowpass-master-key' } },
       });
-      // A missing model token must not prevent OCR/retention maintenance from
-      // starting. AI jobs remain durably queued until the operator configures
-      // the token and restarts the worker.
+      // Local OpenAI-compatible servers can intentionally run without a token.
+      // The configured model ID remains the explicit opt-in for AI processing.
       let client: LmStudioClient | null = null;
+      let lmToken: string | null = null;
       try {
-        const token = await provider.get({ service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_LM_STUDIO_KEYCHAIN_ACCOUNT ?? 'lm-studio-api-token' });
-        client = new LmStudioClient({ modelId: process.env.FLOWPASS_MODEL_ID ?? 'unconfigured', endpoint: `${runtimeConfig.lmStudioBaseUrl}/v1/chat/completions`, token });
+        lmToken = await provider.get({ service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_LM_STUDIO_KEYCHAIN_ACCOUNT ?? 'lm-studio-api-token' });
       } catch {
-        client = null;
+        lmToken = null;
       }
+      const modelId = process.env.FLOWPASS_MODEL_ID?.trim();
+      if (modelId) {
+        client = new LmStudioClient({
+          modelId,
+          endpoint: openAiApiUrl(runtimeConfig.lmStudioBaseUrl, 'chat/completions'),
+          token: lmToken,
+          // A local 9B GGUF model can need more than two minutes to satisfy
+          // the complete strict passport schema on first inference.
+          overallTimeoutMs: 300_000,
+        });
+      }
+      dependencyStatus.lmStudio = client ? 'ready' : 'disabled';
+      let lineChannelAccessToken: string | null = null;
+      try {
+        lineChannelAccessToken = await provider.get({
+          service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass',
+          account: process.env.FLOWPASS_LINE_CHANNEL_ACCESS_TOKEN_KEYCHAIN_ACCOUNT ?? 'line-channel-access-token',
+        });
+      } catch {
+        lineChannelAccessToken = null;
+      }
+      const lineClient = lineChannelAccessToken
+        ? createLineMessagingClient({ channelAccessToken: lineChannelAccessToken })
+        : null;
+      dependencyStatus.lineNotification = lineClient ? 'ready' : 'disabled';
       const workerId = process.env.FLOWPASS_WORKER_ID ?? `worker-${process.pid}`;
       const vault = new DocumentVault({ rootPath: join(runtimeConfig.dataRoot, 'vault'), crypto });
       const visionRunner = process.env.FLOWPASS_VISION_OCR_PATH
@@ -59,17 +87,25 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
         : async () => { throw new OcrAdapterError('OCR_UNAVAILABLE'); };
       const vision = new VisionClient(visionRunner);
       const paddle = new PaddleClient(async () => { throw new OcrAdapterError('OCR_UNAVAILABLE'); }, process.env.FLOWPASS_PADDLE_PREFLIGHT === 'passed');
+      dependencyStatus.ocr = process.env.FLOWPASS_VISION_OCR_PATH ? 'ready' : 'disabled';
       const handlers = {
         ocr: async (job: DurableJob) => { await runOcrJob(job, { workerId }, { database, crypto, vault, ocr: { vision, paddle } }); },
         retention: async (job: DurableJob) => { await runRetentionJob(job, { workerId }, { database, crypto }); },
         line_webhook: async (job: DurableJob) => { processLineEvent(job, { database }); },
-        ...(process.env.FLOWPASS_LINE_CHANNEL_ACCESS_TOKEN ? { line_notification: async (job: DurableJob) => { await sendLineNotification(job, { database, crypto, client: createLineMessagingClient({ channelAccessToken: process.env.FLOWPASS_LINE_CHANNEL_ACCESS_TOKEN! }), liffId: runtimeConfig.liffId }); } } : {}),
+        ...(lineClient ? { line_notification: async (job: DurableJob) => { await sendLineNotification(job, { database, crypto, client: lineClient, liffId: runtimeConfig.liffId }); } } : {}),
         ...(client ? { ai_draft: async (job: DurableJob) => { await generatePassport(job, { workerId }, { database, crypto, client: client! }); } } : {}),
       };
-      const dispatcher = new QueueDispatcher({ database, workerId, handlers });
+      const dispatcher = new QueueDispatcher({
+        database,
+        workerId,
+        handlers,
+        // Keep the durable lease longer than the model timeout so another
+        // worker cannot lease the same AI draft while inference is active.
+        leaseDurationMs: 960_000,
+      });
       const retentionJobs = new JobRepository(database);
       const enqueueLineNotifications = () => {
-        if (!process.env.FLOWPASS_LINE_CHANNEL_ACCESS_TOKEN) return;
+        if (!lineClient) return;
         const pending = database.prepare("SELECT id FROM notification_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 20").all() as Array<{ id: string }>;
         for (const row of pending) retentionJobs.enqueue({ systemId: 'line-notification-bridge' }, { jobType: 'line_notification', payload: { notificationJobId: row.id }, uniqueKey: `line-notification:${row.id}`, maxAttempts: 3 });
       };
@@ -78,12 +114,18 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
         retentionJobs.enqueue({ systemId: 'retention-scheduler' }, { jobType: 'retention', payload: { day }, uniqueKey: `retention:${day}`, maxAttempts: 5 });
       };
       enqueueRetention();
-      const tick = () => { enqueueLineNotifications(); dispatcher.dispatchOnce(); };
+      const tick = () => {
+        if (isMaintenanceMode(database)) return;
+        enqueueLineNotifications();
+        dispatcher.dispatchOnce();
+      };
+      dependencyStatus.processing = 'ready';
       const timer = setInterval(tick, 250);
       const retentionTimer = setInterval(enqueueRetention, 60 * 60 * 1000);
       process.once('SIGINT', () => { clearInterval(timer); clearInterval(retentionTimer); });
       process.once('SIGTERM', () => { clearInterval(timer); clearInterval(retentionTimer); });
     } catch {
+      dependencyStatus.processing = 'failed';
       // Keep health available and leave jobs queued for an operator retry.
     }
   })();

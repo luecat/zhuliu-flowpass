@@ -8,6 +8,8 @@ import { migrateDatabase } from '../server/db/migrate';
 import { getDocumentForApplicant } from '../server/db/repositories/documents';
 import { getCaseTaskForApplicant } from '../server/db/repositories/tasks';
 import { createPublicRouteHandlers } from '../server/public/public-routes';
+import { FieldCrypto } from '../server/crypto/field-crypto';
+import { encryptDatabaseText } from '../server/db/repositories/encrypted-fields';
 
 const STAMP = '2026-08-30T00:00:00.000Z';
 const IDS = {
@@ -21,7 +23,7 @@ const IDS = {
   jobA: '0198f051-0000-7000-8000-000000000008',
 };
 
-function seed(database: Database.Database): void {
+function seed(database: Database.Database, crypto: FieldCrypto): void {
   for (const applicant of [IDS.applicantA, IDS.applicantB]) {
     database.prepare(
       `INSERT INTO applicants (id, display_label_enc, status, created_at, updated_at, row_version)
@@ -44,6 +46,14 @@ function seed(database: Database.Database): void {
       created_at, updated_at, row_version
     ) VALUES (?, 'CASE-A', ?, ?, ?, 'draft', ?, ?, 7)`,
   ).run(IDS.caseA, IDS.applicantA, IDS.programCycle, IDS.ruleVersion, STAMP, STAMP);
+  const answerVersion = '0198f051-0000-7000-8000-000000000009';
+  const answerText = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端' });
+  database.prepare(
+    `INSERT INTO answer_versions (
+      id, case_id, version_no, answers_enc, content_sha256, created_by_applicant_id, created_at
+    ) VALUES (?, ?, 1, ?, 'answer-hash', ?, ?)`,
+  ).run(answerVersion, IDS.caseA, encryptDatabaseText(crypto, 'answer_versions', 'answers_enc', answerVersion, answerText), IDS.applicantA, STAMP);
+  database.prepare('UPDATE cases SET current_answer_version_id = ? WHERE id = ?').run(answerVersion, IDS.caseA);
   database.prepare(
     `INSERT INTO documents (
       id, case_id, kind, storage_id, key_id, content_sha256, media_type, byte_size,
@@ -75,14 +85,17 @@ describe('public applicant authorization boundary', () => {
   let directory: string;
   let database: Database.Database;
   let handlers: ReturnType<typeof createPublicRouteHandlers>;
+  let crypto: FieldCrypto;
 
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), 'flowpass-authorization-'));
     database = openDatabase(join(directory, 'flowpass.sqlite'));
     migrateDatabase(database);
-    seed(database);
+    crypto = new FieldCrypto({ activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x34) : undefined });
+    seed(database, crypto);
     handlers = createPublicRouteHandlers({
       database,
+      crypto,
       sessionReader: {
         authenticateApplicant(value) {
           if (value === 'session-a') return { sessionId: 'session-a', applicantId: IDS.applicantA };
@@ -105,11 +118,19 @@ describe('public applicant authorization boundary', () => {
 
     expect(caseResponse.status).toBe(200);
     expect(caseResponse.headers.get('etag')).toBe('"7"');
-    expect(await caseResponse.json()).toMatchObject({ data: { id: IDS.caseA, caseCode: 'CASE-A' } });
+    expect(await caseResponse.json()).toMatchObject({ data: { id: IDS.caseA, caseCode: 'CASE-A', answers: { material: '照片', aiPurpose: '整理' } } });
     expect(jobResponse.status).toBe(200);
     const jobBody = await jobResponse.json();
     expect(jobBody).toMatchObject({ data: { id: IDS.jobA, state: 'queued' } });
     expect(JSON.stringify(jobBody)).not.toMatch(/payload|lease|error|unique|prompt|caseId/i);
+  });
+
+  it('does not expose unsubmitted cases through the applicant record list', async () => {
+    const response = await handlers.listCases(request('flowpass_session=session-a'));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ data: { cases: [] } });
+    const foreign = await handlers.listCases(request('flowpass_session=session-b'));
+    await expect(foreign.json()).resolves.toMatchObject({ data: { cases: [] } });
   });
 
   it('makes foreign and absent case/job resources indistinguishable as a public 404', async () => {
@@ -140,6 +161,6 @@ describe('public applicant authorization boundary', () => {
 
   it('keeps existing document/task scoped queries null for a foreign applicant before future handlers decrypt anything', () => {
     expect(getDocumentForApplicant(database, { applicantId: IDS.applicantB }, IDS.documentA)).toBeNull();
-    expect(getCaseTaskForApplicant(database, { applicantId: IDS.applicantB }, IDS.taskA)).toBeNull();
+    expect(getCaseTaskForApplicant(database, { applicantId: IDS.applicantB }, crypto, IDS.taskA)).toBeNull();
   });
 });

@@ -557,3 +557,40 @@ export const PASSPORT_JSON_SCHEMA = {
     },
   },
 } as const;
+
+type GenerationSchema = {
+  [key: string]: unknown;
+  properties: {
+    passport_draft: {
+      properties: {
+        follow_up_questions: {
+          items: {
+            properties: { answerSchema: unknown };
+          };
+        };
+      };
+    };
+  };
+};
+
+/**
+ * LM Studio's local grammar compiler cannot consume the full runtime schema's
+ * oneOf branch. Generation uses the text-question subset below; the complete
+ * Zod and graph validator remains authoritative before anything is persisted.
+ */
+export const PASSPORT_GENERATION_JSON_SCHEMA = (() => {
+  const schema = structuredClone(PASSPORT_JSON_SCHEMA) as unknown as GenerationSchema;
+  delete schema.$schema;
+  delete schema.$comment;
+  delete schema['x-flowpass-runtime-limits'];
+  schema.properties.passport_draft.properties.follow_up_questions.items.properties.answerSchema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['type', 'maxLength'],
+    properties: {
+      type: { const: 'text' },
+      maxLength: { const: 400 },
+    },
+  };
+  return schema;
+})();

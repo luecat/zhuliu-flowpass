@@ -12,11 +12,23 @@ import { SubmissionCommandError, createSubmissionService } from './submission-se
 import { FLOWPASS_SAMPLE } from '../../app/passport-sample';
 import { inspectPassportDocument } from './passport-validation';
 import type { FlowPassPassport } from '../../shared/passport-contract';
+import { upsertPurchaseDetailsForApplicant } from '../db/repositories/purchase-details';
+import type { DocumentRequirementKey, PurchaseDetails } from '../../shared/purchase-details-contract';
 
 const IDS = { applicant: '0198f050-0000-7000-8000-000000000001', cycle: '0198f050-0000-7000-8000-000000000002', rule: '0198f050-0000-7000-8000-000000000003', docsCycle: '0198f050-0000-7000-8000-000000000004', docsRule: '0198f050-0000-7000-8000-000000000005' };
 const NOW = '2026-08-30T00:00:00.000Z';
 
 function cryptoForTests(): FieldCrypto { const keyring: Keyring = { activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x44) : undefined }; return new FieldCrypto(keyring); }
+const PURCHASE_DETAILS: PurchaseDetails = { billingCycle: 'annual', billingPeriods: null, softwareFunction: 'imaging', otherFunction: null, softwareName: '影像工具', companyName: 'Example Inc.', purchaseDate: '2026-08-30', payerType: 'self_card', originalCurrency: 'TWD', otherCurrency: null, originalExpense: '1000', convertedTwd: 1000, specialStatus: false };
+
+function savePurchaseDetails(db: ReturnType<typeof openDatabase>, crypto: FieldCrypto, caseId: string, details: PurchaseDetails = PURCHASE_DETAILS): void {
+  upsertPurchaseDetailsForApplicant(db, { applicantId: IDS.applicant }, crypto, { caseId, details, now: NOW });
+}
+
+function insertReadyDocument(db: ReturnType<typeof openDatabase>, caseId: string, id: string, requirementKey: DocumentRequirementKey): void {
+  const kind = requirementKey === 'purchase_proof' ? 'invoice' : requirementKey === 'passbook_cover' ? 'supplement' : requirementKey === 'affidavit' || requirementKey === 'representative_affidavit' ? 'other' : 'eligibility_proof';
+  db.prepare('INSERT INTO documents (id,case_id,kind,requirement_key,storage_id,key_id,content_sha256,media_type,byte_size,original_name_enc,status,uploaded_by_type,uploaded_by_id,created_at,deleted_at,row_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, caseId, kind, requirementKey, `storage-${id}`, 'key-v1', `hash-${id}`, 'application/pdf', 10, 'enc', 'ready', 'applicant', IDS.applicant, NOW, null, 1);
+}
 function passport(): FlowPassPassport {
   const value = structuredClone(FLOWPASS_SAMPLE) as Record<string, unknown>;
   const draft = value.passport_draft as Record<string, unknown>;
@@ -49,10 +61,15 @@ describe('submission service', () => {
     const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
     lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
     const invoiceDocumentId = '0198f050-0000-7000-8000-000000000020';
-    const duplicateDocumentId = '0198f050-0000-7000-8000-000000000021';
+    const duplicateDocumentId = '0198f050-0000-7000-8000-000000000019';
     const ocrRunId = '0198f050-0000-7000-8000-000000000022';
-    db.prepare('INSERT INTO documents (id,case_id,kind,storage_id,key_id,content_sha256,media_type,byte_size,original_name_enc,status,uploaded_by_type,uploaded_by_id,created_at,deleted_at,row_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(invoiceDocumentId, created.case.id, 'invoice', `storage-${invoiceDocumentId}`, 'key-v1', 'invoice-hash', 'application/pdf', 10, 'enc', 'ready', 'applicant', IDS.applicant, NOW, null, 1);
-    db.prepare('INSERT INTO documents (id,case_id,kind,storage_id,key_id,content_sha256,media_type,byte_size,original_name_enc,status,uploaded_by_type,uploaded_by_id,created_at,deleted_at,row_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(duplicateDocumentId, created.case.id, 'invoice', `storage-${duplicateDocumentId}`, 'key-v1', 'duplicate-hash', 'application/pdf', 10, 'enc', 'ready', 'applicant', IDS.applicant, NOW, null, 1);
+    savePurchaseDetails(db, crypto, created.case.id);
+    insertReadyDocument(db, created.case.id, duplicateDocumentId, 'purchase_proof');
+    insertReadyDocument(db, created.case.id, invoiceDocumentId, 'purchase_proof');
+    insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000040', 'identity_front');
+    insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000041', 'identity_back');
+    insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000042', 'passbook_cover');
+    insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000043', 'affidavit');
     db.prepare('INSERT INTO ocr_runs (id,document_id,engine,engine_version,status,result_enc,result_sha256,failure_code,started_at,finished_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(ocrRunId, invoiceDocumentId, 'manual', 'test', 'completed', null, null, null, NOW, NOW, NOW);
     const fields = [
       ['invoice_number', 'AB123456'],
@@ -96,7 +113,7 @@ describe('submission service', () => {
     expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"9"' })).toThrowError(SubmissionCommandError);
   });
 
-  it('rejects a required document until its upload and OCR are terminal', () => {
+  it('requires every attachment but does not wait for OCR completion', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.docsCycle, idempotencyKey: 'case' });
@@ -105,9 +122,15 @@ describe('submission service', () => {
     const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
     const confirmed = lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
     const service = createSubmissionService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'submit-request' });
-    const documentId = `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`;
-    db.prepare('INSERT INTO documents (id,case_id,kind,storage_id,key_id,content_sha256,media_type,byte_size,original_name_enc,status,uploaded_by_type,uploaded_by_id,created_at,deleted_at,row_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(documentId, created.case.id, 'invoice', `storage-${documentId}`, 'key-v1', 'sha256', 'application/pdf', 10, 'invoice.pdf', 'ready', 'applicant', IDS.applicant, NOW, null, 1);
-    db.prepare('INSERT INTO ocr_runs (id,document_id,engine,engine_version,status,result_enc,result_sha256,failure_code,started_at,finished_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(`0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, documentId, 'manual', 'test', 'failed', null, null, 'ocr_failed', NOW, NOW, NOW);
-    expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: confirmed.id, ifMatch: '"2"' })).toThrowError(SubmissionCommandError);
+    savePurchaseDetails(db, crypto, created.case.id);
+    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'purchase_proof');
+    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'identity_front');
+    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'passbook_cover');
+    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'affidavit');
+    const currentVersion = (db.prepare('SELECT row_version FROM cases WHERE id = ?').get(created.case.id) as { row_version: number }).row_version;
+    expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: confirmed.id, ifMatch: `"${currentVersion}"` })).toThrowError(SubmissionCommandError);
+    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'identity_back');
+    const result = service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: confirmed.id, ifMatch: `"${currentVersion}"` });
+    expect(result.case.state).toBe('submitted');
   });
 });

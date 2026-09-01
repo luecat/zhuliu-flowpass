@@ -96,7 +96,7 @@ export function listAiRunsForApplicant(
       `SELECT ai_runs.*
        FROM ai_runs
        JOIN cases ON cases.id = ai_runs.case_id
-       WHERE ai_runs.case_id = ? AND cases.applicant_id = ?
+       WHERE ai_runs.case_id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL
        ORDER BY ai_runs.created_at DESC, ai_runs.id DESC`,
     )
     .all(caseId, scope.applicantId) as AiRunRow[];
@@ -111,7 +111,7 @@ export function listAiRunsForAdmin(
 ): AdminAiRunRecord[] {
   requireAdminScope(scope);
   const rows = database
-    .prepare('SELECT * FROM ai_runs WHERE case_id = ? ORDER BY created_at DESC, id DESC')
+    .prepare('SELECT ai_runs.* FROM ai_runs JOIN cases ON cases.id = ai_runs.case_id WHERE ai_runs.case_id = ? AND cases.deleted_at IS NULL ORDER BY ai_runs.created_at DESC, ai_runs.id DESC')
     .all(caseId) as AiRunRow[];
 
   return rows.map(mapAdminAiRun);

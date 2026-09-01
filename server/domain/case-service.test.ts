@@ -28,13 +28,16 @@ describe('case service', () => {
   afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
   function service() { return createCaseService({ database: db, crypto: cryptoForTests(), clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' }); }
 
-  it('creates multiple owned draft cases and immutable answer versions', () => {
-    const s = service(); const first = s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'a' }); const second = s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'b' });
-    expect(first.case.state).toBe('draft'); expect(second.case.id).not.toBe(first.case.id);
+  it('replaces an older unsubmitted case and keeps answer versions encrypted', () => {
+    const s = service(); const first = s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'a' });
     const saved = s.saveAnswers({ applicantId: IDS.applicant, caseId: first.case.id, answers, ifMatch: '"1"', idempotencyKey: 'answers-a' });
     expect(saved.answerVersion.versionNo).toBe(1); expect(saved.case.rowVersion).toBe(2);
     const row = db.prepare('SELECT answers_enc FROM answer_versions WHERE id = ?').get(saved.answerVersion.id) as { answers_enc: string };
     expect(row.answers_enc).not.toContain('照片');
+    const second = s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'b' });
+    expect(second.case.id).not.toBe(first.case.id);
+    expect((db.prepare('SELECT deleted_at FROM cases WHERE id = ?').get(first.case.id) as { deleted_at: string | null }).deleted_at).toBe(NOW);
+    expect((db.prepare('SELECT COUNT(*) AS count FROM cases WHERE applicant_id = ? AND state = \'draft\' AND deleted_at IS NULL').get(IDS.applicant) as { count: number }).count).toBe(1);
   });
   it('replays idempotency and rejects stale etags/submitted mutation', () => {
     const s = service(); const created = s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'same' }); expect(s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'same' }).case.id).toBe(created.case.id);

@@ -1,6 +1,8 @@
 import type { FlowPassDatabase } from '../connection';
 import type { FieldCrypto } from '../../crypto/field-crypto';
 import { encryptDatabaseText } from './encrypted-fields';
+import { decryptDatabaseText } from './encrypted-fields';
+import { validateCoreAnswers, type CoreAnswers } from '../../../shared/case-contract';
 import {
   requireAdminScope,
   requireApplicantScope,
@@ -25,6 +27,7 @@ interface CaseRow {
   requested_amount_twd: number | null;
   calculated_amount_twd: number | null;
   approved_amount_twd: number | null;
+  disbursed_amount_twd: number | null;
   title_enc: string | null;
   decision_reason_enc: string | null;
   submitted_at: string | null;
@@ -50,6 +53,7 @@ export interface AdminCaseRecord {
   requestedAmountTwd: number | null;
   calculatedAmountTwd: number | null;
   approvedAmountTwd: number | null;
+  disbursedAmountTwd: number | null;
   titleEnc: string | null;
   decisionReasonEnc: string | null;
   submittedAt: string | null;
@@ -89,6 +93,7 @@ const CASE_COLUMNS = `
   requested_amount_twd,
   calculated_amount_twd,
   approved_amount_twd,
+  disbursed_amount_twd,
   title_enc,
   decision_reason_enc,
   submitted_at,
@@ -114,6 +119,7 @@ function mapAdminCase(row: CaseRow): AdminCaseRecord {
     requestedAmountTwd: row.requested_amount_twd,
     calculatedAmountTwd: row.calculated_amount_twd,
     approvedAmountTwd: row.approved_amount_twd,
+    disbursedAmountTwd: row.disbursed_amount_twd,
     titleEnc: row.title_enc,
     decisionReasonEnc: row.decision_reason_enc,
     submittedAt: row.submitted_at,
@@ -147,7 +153,7 @@ export function getCaseForApplicant(
 ): ApplicantCaseRecord | null {
   requireApplicantScope(scope);
   const row = database
-    .prepare(`SELECT ${CASE_COLUMNS} FROM cases WHERE id = ? AND applicant_id = ?`)
+    .prepare(`SELECT ${CASE_COLUMNS} FROM cases WHERE id = ? AND applicant_id = ? AND deleted_at IS NULL`)
     .get(caseId, scope.applicantId) as CaseRow | undefined;
 
   return row ? mapApplicantCase(row) : null;
@@ -164,7 +170,7 @@ export function listCasesForApplicant(
         .prepare(
           `SELECT ${CASE_COLUMNS}
            FROM cases
-           WHERE applicant_id = ? AND id < ?
+           WHERE applicant_id = ? AND deleted_at IS NULL AND state <> 'draft' AND id < ?
            ORDER BY created_at DESC, id DESC`,
         )
         .all(scope.applicantId, cursor)
@@ -172,12 +178,36 @@ export function listCasesForApplicant(
         .prepare(
           `SELECT ${CASE_COLUMNS}
            FROM cases
-           WHERE applicant_id = ?
+           WHERE applicant_id = ? AND deleted_at IS NULL AND state <> 'draft'
            ORDER BY created_at DESC, id DESC`,
         )
         .all(scope.applicantId);
 
   return (rows as CaseRow[]).map(mapApplicantCase);
+}
+
+/** Returns only the current answer version for the authenticated case owner. */
+export function getCurrentAnswersForApplicant(
+  database: FlowPassDatabase,
+  scope: ApplicantScope,
+  crypto: FieldCrypto,
+  caseId: string,
+): CoreAnswers | null {
+  requireApplicantScope(scope);
+  const row = database.prepare(
+    `SELECT a.id, a.answers_enc
+       FROM cases c
+       JOIN answer_versions a ON a.id = c.current_answer_version_id
+       WHERE c.id = ? AND c.applicant_id = ? AND c.deleted_at IS NULL`,
+  ).get(caseId, scope.applicantId) as { id: string; answers_enc: string } | undefined;
+  if (!row) return null;
+  try {
+    return validateCoreAnswers(JSON.parse(
+      decryptDatabaseText(crypto, 'answer_versions', 'answers_enc', row.id, row.answers_enc),
+    ));
+  } catch {
+    throw new Error('Current answers are unavailable');
+  }
 }
 
 export function getCaseForAdmin(
@@ -187,7 +217,7 @@ export function getCaseForAdmin(
 ): AdminCaseRecord | null {
   requireAdminScope(scope);
   const row = database
-    .prepare(`SELECT ${CASE_COLUMNS} FROM cases WHERE id = ?`)
+    .prepare(`SELECT ${CASE_COLUMNS} FROM cases WHERE id = ? AND deleted_at IS NULL`)
     .get(caseId) as CaseRow | undefined;
 
   return row ? mapAdminCase(row) : null;
@@ -229,7 +259,7 @@ export function insertEncryptedAnswerVersionForApplicant(
 ): void {
   requireApplicantScope(scope);
   const ownedCase = database
-    .prepare('SELECT id FROM cases WHERE id = ? AND applicant_id = ?')
+    .prepare('SELECT id FROM cases WHERE id = ? AND applicant_id = ? AND deleted_at IS NULL')
     .get(input.caseId, scope.applicantId) as { id: string } | undefined;
   if (!ownedCase) {
     throw new Error('Case is not available');

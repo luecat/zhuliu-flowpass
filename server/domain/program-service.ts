@@ -38,8 +38,8 @@ export function seedDemoProgram(database: FlowPassDatabase, input: DemoSeedWindo
   const cycleId = idGenerator();
   const ruleId = idGenerator();
   database.transaction(() => {
-    database.prepare(`INSERT INTO program_cycles (id, code, name, year, status, retention_policy_json, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, 1)`).run(cycleId, `DEMO-${now.slice(0, 10).replaceAll('-', '')}`, 'FlowPass 示範申請', new Date(now).getUTCFullYear(), '{}', now, now);
-    database.prepare(`INSERT INTO program_rule_versions (id, program_cycle_id, version_no, status, application_start_at, application_end_at, purchase_start_at, purchase_end_at, subsidy_rate_bps, per_case_cap_twd, rounding_mode, required_documents_json, rules_json, published_at, created_at) VALUES (?, ?, 1, 'published', ?, ?, ?, ?, 5000, 10000, 'floor', '[]', '{"demo":true}', ?, ?)`).run(ruleId, cycleId, windows.applicationStart, windows.applicationEnd, windows.purchaseStart, windows.purchaseEnd, now, now);
+    database.prepare(`INSERT INTO program_cycles (id, code, name, year, status, retention_policy_json, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, 'active', ?, ?, ?, 1)`).run(cycleId, `SOFTWARE-SUBSIDY-${new Date(now).getUTCFullYear()}`, '軟體補助申請', new Date(now).getUTCFullYear(), '{}', now, now);
+    database.prepare(`INSERT INTO program_rule_versions (id, program_cycle_id, version_no, status, application_start_at, application_end_at, purchase_start_at, purchase_end_at, subsidy_rate_bps, per_case_cap_twd, rounding_mode, required_documents_json, rules_json, published_at, created_at) VALUES (?, ?, 1, 'published', ?, ?, ?, ?, 5000, 10000, 'floor', '[]', '{}', ?, ?)`).run(ruleId, cycleId, windows.applicationStart, windows.applicationEnd, windows.purchaseStart, windows.purchaseEnd, now, now);
   })();
   return { cycleId, ruleId };
 }

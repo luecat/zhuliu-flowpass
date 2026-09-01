@@ -40,6 +40,7 @@ describe('case state machine', () => {
         from,
         to,
         ...(to === 'approved' ? { reason: '符合規則', approvedAmountTwd: 0, capTwd: 10000 } : {}),
+        ...(to === 'disbursed' ? { disbursedAmountTwd: 0 } : {}),
         ...(to !== 'approved' && ['awaiting_documents', 'returned_for_correction', 'rejected', 'awaiting_disbursement', 'disbursed', 'closed'].includes(to) ? { reason: '作業依據' } : {}),
       })).not.toThrow();
     }
@@ -74,6 +75,7 @@ describe('case state machine', () => {
         to,
         reason: '核定依據',
         ...(to === 'approved' ? { approvedAmountTwd: 0, capTwd: 10000 } : {}),
+        ...(to === 'disbursed' ? { disbursedAmountTwd: 0 } : {}),
       })).not.toThrow();
     }
 
@@ -100,6 +102,17 @@ describe('case state machine', () => {
       from: 'under_review', to: 'approved', reason: '特殊核准', approvedAmountTwd: 10001, capTwd: 10000,
       overrideReason: '  ',
     })).toThrowError(expect.objectContaining({ code: 'APPROVED_AMOUNT_EXCEEDS_CAP' }));
+  });
+
+  it('requires a non-negative integer transfer amount when marking a case as disbursed', () => {
+    expect(() => assertCaseTransition({
+      from: 'awaiting_disbursement', to: 'disbursed', reason: '已匯款', disbursedAmountTwd: 1850,
+    })).not.toThrow();
+    for (const disbursedAmountTwd of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => assertCaseTransition({
+        from: 'awaiting_disbursement', to: 'disbursed', reason: '已匯款', disbursedAmountTwd,
+      })).toThrowError(expect.objectContaining({ code: 'INVALID_DISBURSED_AMOUNT' }));
+    }
   });
 
   it('requires a reason for manual override and permits an explicitly audited destination', () => {

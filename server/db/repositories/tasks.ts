@@ -1,6 +1,6 @@
 import type { FlowPassDatabase } from '../connection';
 import type { FieldCrypto } from '../../crypto/field-crypto';
-import { encryptDatabaseText } from './encrypted-fields';
+import { decryptDatabaseText, encryptDatabaseText } from './encrypted-fields';
 import {
   requireAdminScope,
   requireApplicantScope,
@@ -50,7 +50,8 @@ export interface ApplicantCaseTaskRecord {
   caseRowVersion: number;
   taskType: string;
   title: string;
-  acceptedDocumentTypesJson: string;
+  instructions: string;
+  acceptedDocumentTypes: string[];
   dueAt: string | null;
   status: string;
   completedAt: string | null;
@@ -77,14 +78,22 @@ function mapAdminCaseTask(row: CaseTaskRow): AdminCaseTaskRecord {
   };
 }
 
-function mapApplicantCaseTask(row: CaseTaskRow & { case_row_version: number }): ApplicantCaseTaskRecord {
+function mapApplicantCaseTask(row: CaseTaskRow & { case_row_version: number }, crypto: FieldCrypto): ApplicantCaseTaskRecord {
+  let acceptedDocumentTypes: string[] = [];
+  try {
+    const parsed: unknown = JSON.parse(row.accepted_document_types_json);
+    if (Array.isArray(parsed)) acceptedDocumentTypes = parsed.filter((value): value is string => typeof value === 'string');
+  } catch {
+    acceptedDocumentTypes = [];
+  }
   return {
     id: row.id,
     caseId: row.case_id,
     caseRowVersion: row.case_row_version,
     taskType: row.task_type,
     title: row.title,
-    acceptedDocumentTypesJson: row.accepted_document_types_json,
+    instructions: decryptDatabaseText(crypto, 'case_tasks', 'instructions_enc', row.id, row.instructions_enc),
+    acceptedDocumentTypes,
     dueAt: row.due_at,
     status: row.status,
     completedAt: row.completed_at,
@@ -96,6 +105,7 @@ function mapApplicantCaseTask(row: CaseTaskRow & { case_row_version: number }): 
 export function getCaseTaskForApplicant(
   database: FlowPassDatabase,
   scope: ApplicantScope,
+  crypto: FieldCrypto,
   taskId: string,
 ): ApplicantCaseTaskRecord | null {
   requireApplicantScope(scope);
@@ -104,16 +114,17 @@ export function getCaseTaskForApplicant(
       `SELECT case_tasks.*, cases.row_version AS case_row_version
        FROM case_tasks
        JOIN cases ON cases.id = case_tasks.case_id
-       WHERE case_tasks.id = ? AND cases.applicant_id = ?`,
+       WHERE case_tasks.id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL`,
     )
     .get(taskId, scope.applicantId) as (CaseTaskRow & { case_row_version: number }) | undefined;
 
-  return row ? mapApplicantCaseTask(row) : null;
+  return row ? mapApplicantCaseTask(row, crypto) : null;
 }
 
 export function listCaseTasksForApplicant(
   database: FlowPassDatabase,
   scope: ApplicantScope,
+  crypto: FieldCrypto,
   caseId: string,
 ): ApplicantCaseTaskRecord[] {
   requireApplicantScope(scope);
@@ -122,18 +133,18 @@ export function listCaseTasksForApplicant(
       `SELECT case_tasks.*, cases.row_version AS case_row_version
        FROM case_tasks
        JOIN cases ON cases.id = case_tasks.case_id
-       WHERE case_tasks.case_id = ? AND cases.applicant_id = ?
+       WHERE case_tasks.case_id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL
        ORDER BY case_tasks.created_at DESC, case_tasks.id DESC`,
     )
     .all(caseId, scope.applicantId) as Array<CaseTaskRow & { case_row_version: number }>;
 
-  return rows.map(mapApplicantCaseTask);
+  return rows.map((row) => mapApplicantCaseTask(row, crypto));
 }
 
-export function listAllCaseTasksForApplicant(database: FlowPassDatabase, scope: ApplicantScope): ApplicantCaseTaskRecord[] {
+export function listAllCaseTasksForApplicant(database: FlowPassDatabase, scope: ApplicantScope, crypto: FieldCrypto): ApplicantCaseTaskRecord[] {
   requireApplicantScope(scope);
-  const rows = database.prepare(`SELECT case_tasks.*, cases.row_version AS case_row_version FROM case_tasks JOIN cases ON cases.id = case_tasks.case_id WHERE cases.applicant_id = ? ORDER BY case_tasks.created_at DESC, case_tasks.id DESC`).all(scope.applicantId) as Array<CaseTaskRow & { case_row_version: number }>;
-  return rows.map(mapApplicantCaseTask);
+  const rows = database.prepare(`SELECT case_tasks.*, cases.row_version AS case_row_version FROM case_tasks JOIN cases ON cases.id = case_tasks.case_id WHERE cases.applicant_id = ? AND cases.deleted_at IS NULL ORDER BY case_tasks.created_at DESC, case_tasks.id DESC`).all(scope.applicantId) as Array<CaseTaskRow & { case_row_version: number }>;
+  return rows.map((row) => mapApplicantCaseTask(row, crypto));
 }
 
 export function getCaseTaskForAdmin(
@@ -143,7 +154,7 @@ export function getCaseTaskForAdmin(
 ): AdminCaseTaskRecord | null {
   requireAdminScope(scope);
   const row = database
-    .prepare('SELECT * FROM case_tasks WHERE id = ?')
+    .prepare('SELECT case_tasks.* FROM case_tasks JOIN cases ON cases.id = case_tasks.case_id WHERE case_tasks.id = ? AND cases.deleted_at IS NULL')
     .get(taskId) as CaseTaskRow | undefined;
 
   return row ? mapAdminCaseTask(row) : null;

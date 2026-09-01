@@ -112,7 +112,7 @@ export function getPassportForApplicant(
       `SELECT passports.id, passports.case_id, passports.created_at
        FROM passports
        JOIN cases ON cases.id = passports.case_id
-       WHERE passports.case_id = ? AND cases.applicant_id = ?`,
+       WHERE passports.case_id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL`,
     )
     .get(caseId, scope.applicantId) as PassportRow | undefined;
 
@@ -126,7 +126,7 @@ export function getPassportForAdmin(
 ): PassportRecord | null {
   requireAdminScope(scope);
   const row = database
-    .prepare('SELECT id, case_id, created_at FROM passports WHERE case_id = ?')
+    .prepare('SELECT passports.id, passports.case_id, passports.created_at FROM passports JOIN cases ON cases.id = passports.case_id WHERE passports.case_id = ? AND cases.deleted_at IS NULL')
     .get(caseId) as PassportRow | undefined;
 
   return row ? mapPassport(row) : null;
@@ -144,7 +144,7 @@ export function listPassportVersionsForApplicant(
        FROM passport_versions
        JOIN passports ON passports.id = passport_versions.passport_id
        JOIN cases ON cases.id = passports.case_id
-       WHERE cases.id = ? AND cases.applicant_id = ?
+       WHERE cases.id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL
        ORDER BY passport_versions.version_no DESC`,
     )
     .all(caseId, scope.applicantId) as PassportVersionRow[];
@@ -163,7 +163,8 @@ export function listPassportVersionsForAdmin(
       `SELECT passport_versions.*
        FROM passport_versions
        JOIN passports ON passports.id = passport_versions.passport_id
-       WHERE passports.case_id = ?
+       JOIN cases ON cases.id = passports.case_id
+       WHERE passports.case_id = ? AND cases.deleted_at IS NULL
        ORDER BY passport_versions.version_no DESC`,
     )
     .all(caseId) as PassportVersionRow[];

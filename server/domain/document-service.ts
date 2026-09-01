@@ -14,8 +14,23 @@ import { RateLimitAction, RateLimiter } from './line-session-service';
 import { DocumentVault, type PreparedVaultFile } from '../services/document-vault';
 import { FileValidationError, readLimitedDocumentStream, validateDocumentBytesAsync, validateDocumentFilename, type DocumentByteStream, type DocumentMediaType } from './file-validation';
 import { JobRepository } from '../db/repositories/jobs';
+import {
+  DocumentRequirementKeySchema,
+  type DocumentRequirementKey,
+} from '../../shared/purchase-details-contract';
 
 export type DocumentKind = 'invoice' | 'eligibility_proof' | 'supplement' | 'other';
+
+const REQUIREMENT_KIND: Record<DocumentRequirementKey, DocumentKind> = {
+  identity_front: 'eligibility_proof',
+  identity_back: 'eligibility_proof',
+  special_status_proof: 'eligibility_proof',
+  purchase_proof: 'invoice',
+  passbook_cover: 'supplement',
+  affidavit: 'other',
+  representative_affidavit: 'other',
+  supplement_other: 'supplement',
+};
 
 export class DocumentCommandError extends Error {
   constructor(readonly code: 'NOT_FOUND' | 'ETAG_MISMATCH' | 'INVALID_STATE' | 'INVALID_REQUEST' | 'IDEMPOTENCY_KEY_REUSED' | 'RATE_LIMITED' | 'FILE_INVALID' | 'DEPENDENCY_UNAVAILABLE', readonly retryAfter?: number, message: string = code, readonly validationCode?: FileValidationError['code']) {
@@ -42,7 +57,7 @@ export interface DocumentServiceOptions {
 }
 
 export interface DocumentService {
-  upload(input: { applicantId: string; caseId: string; kind: DocumentKind; originalName: string; bytes?: Uint8Array; stream?: DocumentByteStream; ifMatch: string; idempotencyKey: string; requestId?: string }): Promise<DocumentUploadResult>;
+  upload(input: { applicantId: string; caseId: string; kind: DocumentKind; requirementKey: DocumentRequirementKey; originalName: string; bytes?: Uint8Array; stream?: DocumentByteStream; ifMatch: string; idempotencyKey: string; requestId?: string }): Promise<DocumentUploadResult>;
   list(input: { applicantId: string; caseId: string }): NonNullable<ReturnType<typeof listDocumentsForApplicant>>;
   delete(input: { applicantId: string; caseId: string; documentId: string; ifMatch: string; idempotencyKey: string; requestId?: string }): DocumentUploadResult;
 }
@@ -59,6 +74,13 @@ function requireKey(value: string): void {
 
 function requireKind(value: string): asserts value is DocumentKind {
   if (!['invoice', 'eligibility_proof', 'supplement', 'other'].includes(value)) throw new DocumentCommandError('INVALID_REQUEST');
+}
+
+function requireRequirement(kind: DocumentKind, value: string): asserts value is DocumentRequirementKey {
+  const parsed = DocumentRequirementKeySchema.safeParse(value);
+  if (!parsed.success || REQUIREMENT_KIND[parsed.data] !== kind) {
+    throw new DocumentCommandError('INVALID_REQUEST');
+  }
 }
 
 function assertCaseMutable(database: FlowPassDatabase, applicantId: string, caseId: string, ifMatch: string): { rowVersion: number; state: string } {
@@ -86,13 +108,14 @@ export function createDocumentService(options: DocumentServiceOptions): Document
     async upload(input) {
       requireKey(input.idempotencyKey);
       requireKind(input.kind);
+      requireRequirement(input.kind, input.requirementKey);
       try { validateDocumentFilename(input.originalName); } catch (error) { if (error instanceof FileValidationError) throw fileCommandError(error); throw error; }
       const bytes = input.bytes ? Buffer.from(input.bytes) : input.stream ? await readLimitedDocumentStream(input.stream) : (() => { throw new DocumentCommandError('INVALID_REQUEST'); })();
       let validated;
       try { validated = await validateDocumentBytesAsync(bytes, input.originalName); } catch (error) { if (error instanceof FileValidationError) throw fileCommandError(error); throw error; }
       const now = clock();
       const route = `/api/v1/cases/${input.caseId}/documents`;
-      const projection = { caseId: input.caseId, kind: input.kind, originalName: input.originalName, contentSha256: validated.contentSha256, byteSize: validated.byteSize, ifMatch: input.ifMatch };
+      const projection = { caseId: input.caseId, kind: input.kind, requirementKey: input.requirementKey, originalName: input.originalName, contentSha256: validated.contentSha256, byteSize: validated.byteSize, ifMatch: input.ifMatch };
       const existing = readApplicantMutation({ database: options.database, crypto: options.crypto, applicantId: input.applicantId, method: 'POST', normalizedRoute: route, idempotencyKey: input.idempotencyKey, requestProjection: projection, now });
       if (existing?.kind === 'conflict') throw new DocumentCommandError('IDEMPOTENCY_KEY_REUSED');
       if (existing?.kind === 'replay') return { document: replayData<DocumentUploadResult>(existing.body).document };
@@ -112,10 +135,10 @@ export function createDocumentService(options: DocumentServiceOptions): Document
         const createdAt = now.toISOString();
         options.database.transaction(() => {
           const row = assertCaseMutable(options.database, input.applicantId, input.caseId, input.ifMatch);
-          insertEncryptedDocumentForApplicant(options.database, { applicantId: input.applicantId }, options.crypto, { id: documentId, caseId: input.caseId, kind: input.kind, storageId, vaultKeyId: options.vault.activeKeyId, contentSha256: validated.contentSha256, mediaType: validated.mediaType as DocumentMediaType, byteSize: validated.byteSize, originalName: input.originalName, status: 'pending_vault', uploadedByType: 'applicant', uploadedById: input.applicantId, createdAt, rowVersion: 1 });
+          insertEncryptedDocumentForApplicant(options.database, { applicantId: input.applicantId }, options.crypto, { id: documentId, caseId: input.caseId, kind: input.kind, requirementKey: input.requirementKey, storageId, vaultKeyId: options.vault.activeKeyId, contentSha256: validated.contentSha256, mediaType: validated.mediaType as DocumentMediaType, byteSize: validated.byteSize, originalName: input.originalName, status: 'pending_vault', uploadedByType: 'applicant', uploadedById: input.applicantId, createdAt, rowVersion: 1 });
           const changed = options.database.prepare('UPDATE cases SET updated_at = ?, row_version = row_version + 1 WHERE id = ? AND applicant_id = ? AND row_version = ?').run(createdAt, input.caseId, input.applicantId, row.rowVersion);
           if (changed.changes !== 1) throw new DocumentCommandError('ETAG_MISMATCH');
-          options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_upload_started', '文件上傳處理中', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ kind: input.kind, mediaType: validated.mediaType, byteSize: validated.byteSize }), createdAt);
+          options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_upload_started', '文件上傳處理中', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ kind: input.kind, requirementKey: input.requirementKey, mediaType: validated.mediaType, byteSize: validated.byteSize }), createdAt);
         })();
         prepared = options.vault.prepare({ documentId, bytes, storageId });
         options.database.prepare('UPDATE documents SET key_id = ? WHERE id = ? AND status = \'pending_vault\'').run(prepared.keyId, documentId);
@@ -126,13 +149,14 @@ export function createDocumentService(options: DocumentServiceOptions): Document
         options.database.transaction(() => {
           const changed = options.database.prepare(`UPDATE documents SET status = 'ready', row_version = row_version + 1 WHERE id = ? AND status = 'pending_vault'`).run(documentId);
           if (changed.changes !== 1) throw new DocumentCommandError('DEPENDENCY_UNAVAILABLE');
-          options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_uploaded', '文件已安全保存', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ kind: input.kind, mediaType: validated.mediaType, byteSize: validated.byteSize }), readyAt);
+          options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_uploaded', '文件已安全保存', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ kind: input.kind, requirementKey: input.requirementKey, mediaType: validated.mediaType, byteSize: validated.byteSize }), readyAt);
           appendEncryptedAuditLog(options.database, options.crypto, { id: idGenerator(), actorType: 'applicant', actorId: input.applicantId, action: 'create', entityType: 'document', entityId: documentId, beforeHash: null, afterHash: validated.contentSha256, detail: { kind: 'operation', operation: 'create', outcome: 'ok' }, requestId: input.requestId ?? requestIdGenerator(), createdAt: readyAt });
-          // Enqueue only the opaque IDs; the worker re-reads and decrypts the
-          // exact vault blob under its system scope. Keeping this insert in the
-          // same transaction as the ready transition prevents a ready upload
-          // from becoming an OCR orphan.
-          new JobRepository(options.database).enqueue({ systemId: 'document-upload-admission' }, { jobType: 'ocr', payload: { caseId: input.caseId, documentId }, uniqueKey: `ocr:${documentId}` });
+          // Only a purchase proof is eligible for OCR. Identity, bankbook and
+          // affidavits are stored as opaque encrypted files and never enter the
+          // OCR worker queue.
+          if (input.requirementKey === 'purchase_proof') {
+            new JobRepository(options.database).enqueue({ systemId: 'document-upload-admission' }, { jobType: 'ocr', payload: { caseId: input.caseId, documentId }, uniqueKey: `ocr:${documentId}` });
+          }
           const document = getDocumentForApplicant(options.database, { applicantId: input.applicantId }, documentId);
           if (!document) throw new DocumentCommandError('DEPENDENCY_UNAVAILABLE');
           output = { document };

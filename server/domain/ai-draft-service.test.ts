@@ -6,7 +6,7 @@ import { FieldCrypto, type Keyring } from '../crypto/field-crypto';
 import { openDatabase } from '../db/connection';
 import { migrateDatabase } from '../db/migrate';
 import { createCaseService } from './case-service';
-import { AI_INPUT_TOKEN_BUDGET, createAiDraftService, estimateInputTokens } from './ai-draft-service';
+import { AI_INPUT_TOKEN_BUDGET, AI_PROMPT_VERSION, FIXED_AI_INSTRUCTION, createAiDraftService, estimateInputTokens } from './ai-draft-service';
 import { v7 as uuidv7 } from 'uuid';
 
 const IDS = { applicant: '0198f050-0000-7000-8000-000000000001', cycle: '0198f050-0000-7000-8000-000000000002', rule: '0198f050-0000-7000-8000-000000000003' };
@@ -34,6 +34,16 @@ describe('ai draft admission boundary', () => {
     expect(AI_INPUT_TOKEN_BUDGET).toBe(11_264);
     const service = createAiDraftService({ database: {} as never, crypto: {} as never, modelId: 'fixture' });
     expect(service).toHaveProperty('enqueue');
+  });
+
+  it('requires natural Traditional Chinese without exposing structural JSON names in visible copy', () => {
+    expect(AI_PROMPT_VERSION).toBe('flowpass-ai-v7');
+    expect(FIXED_AI_INSTRUCTION).toContain('Traditional Chinese (zh-Hant)');
+    expect(FIXED_AI_INSTRUCTION).toContain('Never expose or quote JSON property names');
+    expect(FIXED_AI_INSTRUCTION).toContain('structural JSON property names and enum values exactly');
+    expect(FIXED_AI_INSTRUCTION).toContain('answeredFollowUps entry pairs');
+    expect(FIXED_AI_INSTRUCTION).toContain('set follow_up_questions exactly to []');
+    expect(FIXED_AI_INSTRUCTION).toContain('at most four required follow-up questions');
   });
 
   it('does not turn an unknown case into a job', () => {

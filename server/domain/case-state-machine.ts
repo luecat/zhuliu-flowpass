@@ -46,6 +46,7 @@ export type CaseStateMachineErrorCode =
   | 'REASON_REQUIRED'
   | 'INVALID_APPROVED_AMOUNT'
   | 'APPROVED_AMOUNT_EXCEEDS_CAP'
+  | 'INVALID_DISBURSED_AMOUNT'
   | 'INVALID_ACTION';
 
 export class CaseStateMachineError extends Error {
@@ -100,6 +101,7 @@ export interface CaseTransitionInput {
   action?: CaseTransitionAction;
   reason?: string;
   approvedAmountTwd?: number;
+  disbursedAmountTwd?: number;
   capTwd?: number;
   overrideReason?: string;
   manualOverride?: boolean;
@@ -162,6 +164,12 @@ export function assertCaseTransition(input: CaseTransitionInput): void {
       if (typeof input.overrideReason !== 'string' || input.overrideReason.trim().length === 0) {
         throw new CaseStateMachineError('APPROVED_AMOUNT_EXCEEDS_CAP', 'Approved amount exceeds the configured cap');
       }
+    }
+  }
+
+  if (input.to === 'disbursed' || input.action === 'disburse') {
+    if (!Number.isSafeInteger(input.disbursedAmountTwd) || (input.disbursedAmountTwd as number) < 0) {
+      throw new CaseStateMachineError('INVALID_DISBURSED_AMOUNT', 'disbursed_amount_twd must be a non-negative integer');
     }
   }
 }

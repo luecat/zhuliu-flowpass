@@ -70,8 +70,21 @@ describe('case repository authorization scopes', () => {
   });
 
   it('lists only cases owned by the applicant scope', () => {
+    db.prepare("UPDATE cases SET state = 'submitted' WHERE id = ?").run(IDS.case);
     expect(listCasesForApplicant(db, { applicantId: IDS.applicantA })).toHaveLength(1);
     expect(listCasesForApplicant(db, { applicantId: IDS.applicantB })).toEqual([]);
+  });
+
+  it('does not list an unsubmitted case as an application record', () => {
+    expect(listCasesForApplicant(db, { applicantId: IDS.applicantA })).toEqual([]);
+  });
+
+  it('does not expose a soft-deleted case to applicants or admins', () => {
+    db.prepare('UPDATE cases SET deleted_at = ? WHERE id = ?').run('2026-09-01T04:16:00.000Z', IDS.case);
+
+    expect(getCaseForApplicant(db, { applicantId: IDS.applicantA }, IDS.case)).toBeNull();
+    expect(listCasesForApplicant(db, { applicantId: IDS.applicantA })).toEqual([]);
+    expect(getCaseForAdmin(db, { adminId: 'admin-1' }, IDS.case)).toBeNull();
   });
 
   it('requires an admin scope before returning a case to an admin workflow', () => {

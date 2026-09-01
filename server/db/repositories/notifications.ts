@@ -85,7 +85,7 @@ const PUBLIC_NOTIFICATION_TEMPLATE_PAYLOADS = {
   submission_acknowledged: {
     notificationType: 'submission',
     messageCode: 'submission_acknowledged',
-    publicPath: '/app/status',
+    publicPath: '/app/passports',
   },
   review_updated: {
     notificationType: 'review',

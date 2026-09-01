@@ -12,6 +12,8 @@ import { getPassportForApplicant, listPassportVersionsForApplicant } from './pas
 import { listRuleEvaluationsForApplicant } from './rules';
 import { getCaseTaskForApplicant } from './tasks';
 import { listTimelineForApplicant } from './timeline';
+import { FieldCrypto } from '../../crypto/field-crypto';
+import { encryptDatabaseText } from './encrypted-fields';
 
 const STAMP = '2026-08-30T00:00:00.000Z';
 const IDS = {
@@ -30,7 +32,7 @@ const IDS = {
   aiRun: '0198f015-0000-7000-8000-000000000213',
 };
 
-function seedApplicantCase(db: Database.Database): void {
+function seedApplicantCase(db: Database.Database, crypto: FieldCrypto): void {
   db.prepare(
     `INSERT INTO applicants (id, display_label_enc, status, created_at, updated_at, row_version)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -117,7 +119,7 @@ function seedApplicantCase(db: Database.Database): void {
     IDS.case,
     'provide_document',
     'Upload an invoice',
-    'enc:instructions',
+    encryptDatabaseText(crypto, 'case_tasks', 'instructions_enc', IDS.task, 'Please upload the complete invoice.'),
     '[]',
     'open',
     'system',
@@ -189,12 +191,14 @@ function seedApplicantCase(db: Database.Database): void {
 describe('applicant-owned repository reads', () => {
   let directory: string;
   let db: Database.Database;
+  let crypto: FieldCrypto;
 
   beforeEach(() => {
     directory = mkdtempSync(join(tmpdir(), 'flowpass-owned-repository-'));
     db = openDatabase(join(directory, 'flowpass.sqlite'));
     migrateDatabase(db);
-    seedApplicantCase(db);
+    crypto = new FieldCrypto({ activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x25) : undefined });
+    seedApplicantCase(db, crypto);
   });
 
   afterEach(() => {
@@ -210,8 +214,8 @@ describe('applicant-owned repository reads', () => {
     expect(getPassportForApplicant(db, stranger, IDS.case)).toBeNull();
     expect(getDocumentForApplicant(db, owner, IDS.document)).toMatchObject({ id: IDS.document });
     expect(getDocumentForApplicant(db, stranger, IDS.document)).toBeNull();
-    expect(getCaseTaskForApplicant(db, owner, IDS.task)).toMatchObject({ id: IDS.task });
-    expect(getCaseTaskForApplicant(db, stranger, IDS.task)).toBeNull();
+    expect(getCaseTaskForApplicant(db, owner, crypto, IDS.task)).toMatchObject({ id: IDS.task, instructions: 'Please upload the complete invoice.' });
+    expect(getCaseTaskForApplicant(db, stranger, crypto, IDS.task)).toBeNull();
     expect(listTimelineForApplicant(db, owner, IDS.case)).toHaveLength(1);
     expect(listTimelineForApplicant(db, stranger, IDS.case)).toEqual([]);
   });
@@ -221,7 +225,7 @@ describe('applicant-owned repository reads', () => {
     const caseRecord = getCaseForApplicant(db, owner, IDS.case);
     const passportVersions = listPassportVersionsForApplicant(db, owner, IDS.case);
     const document = getDocumentForApplicant(db, owner, IDS.document);
-    const task = getCaseTaskForApplicant(db, owner, IDS.task);
+    const task = getCaseTaskForApplicant(db, owner, crypto, IDS.task);
     const evaluations = listRuleEvaluationsForApplicant(db, owner, IDS.case);
     const aiRuns = listAiRunsForApplicant(db, owner, IDS.case);
 

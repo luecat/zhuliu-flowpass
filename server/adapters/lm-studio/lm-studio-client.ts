@@ -1,5 +1,6 @@
 import { createConnection } from 'node:net';
-import { PASSPORT_JSON_SCHEMA } from '../../../shared/passport-contract';
+import { PASSPORT_GENERATION_JSON_SCHEMA } from '../../../shared/passport-contract';
+import { assertLoopbackOpenAiChatCompletionsUrl } from '../../config/loopback-openai-url';
 
 export type LmStudioErrorCode =
   | 'MODEL_OFFLINE'
@@ -89,17 +90,19 @@ export class LmStudioClient {
 
   public constructor(options: LmStudioClientOptions) {
     this.options = { endpoint: DEFAULT_ENDPOINT, connectTimeoutMs: 5_000, overallTimeoutMs: 120_000, ...options };
-    let endpoint: URL;
-    try { endpoint = new URL(this.options.endpoint); } catch { throw new Error('LM Studio endpoint must be loopback'); }
-    if (endpoint.hostname !== '127.0.0.1') throw new Error('LM Studio endpoint must be loopback');
+    try {
+      assertLoopbackOpenAiChatCompletionsUrl(this.options.endpoint);
+    } catch {
+      throw new Error('LM Studio endpoint must be loopback');
+    }
   }
 
   public async complete(input: LmStudioInput): Promise<LmStudioResult> {
-    if (!this.options.token) throw new LmStudioError('MODEL_AUTH_FAILED');
     const isRepair = input.repairIssues !== undefined;
-    const envelope = isRepair
-      ? { validationIssues: input.repairIssues, invalidStructure: input.invalidStructure }
-      : input.inputEnvelope;
+    const envelope = {
+      originalInput: input.inputEnvelope,
+      ...(isRepair ? { validationIssues: input.repairIssues, invalidStructure: input.invalidStructure } : {}),
+    };
     let body: string;
     try {
       body = JSON.stringify({
@@ -111,7 +114,7 @@ export class LmStudioClient {
         temperature: 0.1,
         stream: false,
         max_tokens: 4096,
-        response_format: { type: 'json_schema', json_schema: { name: 'flowpass_passport', strict: true, schema: PASSPORT_JSON_SCHEMA } },
+        response_format: { type: 'json_schema', json_schema: { name: 'flowpass_passport', strict: true, schema: PASSPORT_GENERATION_JSON_SCHEMA } },
       });
     } catch { throw new LmStudioError('AI_INPUT_TOO_LARGE'); }
     const fetchImpl = this.options.fetchImpl ?? fetch;
@@ -125,17 +128,22 @@ export class LmStudioClient {
       const controller = new AbortController();
       const timer = setTimeout(() => { controller.abort(); }, this.options.overallTimeoutMs);
       try {
+        const headers: Record<string, string> = { 'content-type': 'application/json' };
+        const token = this.options.token?.trim();
+        if (token) headers.authorization = `Bearer ${token}`;
         const response = await fetchImpl(this.options.endpoint, {
           method: 'POST',
-          headers: { 'content-type': 'application/json', authorization: `Bearer ${this.options.token}` },
+          headers,
           body,
           signal: controller.signal,
+          redirect: 'error',
         });
         if (!response.ok) {
           if (isRetryable(response.status) && attempt === 0) { attempt += 1; continue; }
           if (response.status === 401 || response.status === 403) throw new LmStudioError('MODEL_AUTH_FAILED');
           if (response.status === 404) throw new LmStudioError('MODEL_NOT_FOUND');
           if (response.status === 429) throw new LmStudioError('MODEL_RATE_LIMITED');
+          if (response.status >= 400 && response.status < 500) throw new LmStudioError('AI_OUTPUT_INVALID');
           throw new LmStudioError('MODEL_OFFLINE');
         }
         let json: unknown;

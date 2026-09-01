@@ -38,15 +38,15 @@ describe('DocumentService', () => {
   afterEach(() => { db.close(); rmSync(root, { recursive: true, force: true }); });
 
   it('enforces applicant ownership and case ETag before persistence', async () => {
-    await expect(service.upload({ applicantId: ids.otherApplicant, caseId: ids.case, kind: 'invoice', originalName: 'invoice.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'foreign' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
-    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', originalName: 'invoice.png', bytes: png(), ifMatch: '"2"', idempotencyKey: 'stale' })).rejects.toMatchObject({ code: 'ETAG_MISMATCH' });
+    await expect(service.upload({ applicantId: ids.otherApplicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'invoice.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'foreign' })).rejects.toMatchObject({ code: 'NOT_FOUND' });
+    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'invoice.png', bytes: png(), ifMatch: '"2"', idempotencyKey: 'stale' })).rejects.toMatchObject({ code: 'ETAG_MISMATCH' });
     expect(db.prepare('SELECT COUNT(*) AS count FROM documents').get()).toEqual({ count: 0 });
   });
 
   it('uses the two-phase vault protocol, stores only encrypted metadata and replays idempotently', async () => {
     const bytes = png();
-    const first = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', originalName: 'private-invoice.png', bytes, ifMatch: '"1"', idempotencyKey: 'same-key' });
-    const replay = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', originalName: 'private-invoice.png', bytes, ifMatch: '"1"', idempotencyKey: 'same-key' });
+    const first = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'private-invoice.png', bytes, ifMatch: '"1"', idempotencyKey: 'same-key' });
+    const replay = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'private-invoice.png', bytes, ifMatch: '"1"', idempotencyKey: 'same-key' });
     expect(replay).toEqual(first);
     expect(first.document.status).toBe('ready');
     expect(first.document.mediaType).toBe('image/png');
@@ -59,16 +59,22 @@ describe('DocumentService', () => {
   });
 
   it('rejects submitted cases and removes a document only while the case is mutable', async () => {
-    const uploaded = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', originalName: 'receipt.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'upload' });
+    const uploaded = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'receipt.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'upload' });
     const deleted = service.delete({ applicantId: ids.applicant, caseId: ids.case, documentId: uploaded.document.id, ifMatch: '"2"', idempotencyKey: 'delete' });
     expect(deleted.document.status).toBe('deleted');
     db.prepare("UPDATE cases SET state = 'submitted' WHERE id = ?").run(ids.case);
-    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', originalName: 'again.png', bytes: png(), ifMatch: '"3"', idempotencyKey: 'submitted' })).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'again.png', bytes: png(), ifMatch: '"3"', idempotencyKey: 'submitted' })).rejects.toMatchObject({ code: 'INVALID_STATE' });
   });
 
   it('does not persist bytes when stream validation fails', async () => {
     const tooLarge = new Uint8Array(12 * 1024 * 1024 + 1);
-    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', originalName: 'bad.bin', bytes: tooLarge, ifMatch: '"1"', idempotencyKey: 'invalid' })).rejects.toBeInstanceOf(DocumentCommandError);
+    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'bad.bin', bytes: tooLarge, ifMatch: '"1"', idempotencyKey: 'invalid' })).rejects.toBeInstanceOf(DocumentCommandError);
     expect(db.prepare('SELECT COUNT(*) AS count FROM documents').get()).toEqual({ count: 0 });
+  });
+
+  it('never queues OCR for identity, bankbook, or affidavit uploads', async () => {
+    const uploaded = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'eligibility_proof', requirementKey: 'identity_front', originalName: 'identity.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'identity' });
+    expect(uploaded.document.requirementKey).toBe('identity_front');
+    expect((db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE job_type = 'ocr'").get() as { count: number }).count).toBe(0);
   });
 });

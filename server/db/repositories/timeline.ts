@@ -55,7 +55,7 @@ export function listTimelineForApplicant(
       `SELECT timeline_events.*
        FROM timeline_events
        JOIN cases ON cases.id = timeline_events.case_id
-       WHERE timeline_events.case_id = ? AND cases.applicant_id = ?
+       WHERE timeline_events.case_id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL
        ORDER BY timeline_events.created_at ASC, timeline_events.sequence_no ASC`,
     )
     .all(caseId, scope.applicantId) as TimelineRow[];
@@ -70,7 +70,7 @@ export function listTimelineForAdmin(
 ): TimelineEventRecord[] {
   requireAdminScope(scope);
   const rows = database
-    .prepare('SELECT * FROM timeline_events WHERE case_id = ? ORDER BY created_at ASC, sequence_no ASC')
+    .prepare('SELECT timeline_events.* FROM timeline_events JOIN cases ON cases.id = timeline_events.case_id WHERE timeline_events.case_id = ? AND cases.deleted_at IS NULL ORDER BY timeline_events.created_at ASC, timeline_events.sequence_no ASC')
     .all(caseId) as TimelineRow[];
 
   return rows.map(mapTimeline);

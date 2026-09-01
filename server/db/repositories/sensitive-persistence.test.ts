@@ -187,6 +187,7 @@ describe('encrypted repository persistence boundaries', () => {
       id: IDS.document,
       caseId: IDS.case,
       kind: 'invoice',
+      requirementKey: 'purchase_proof',
       storageId: 'vault-060',
       vaultKeyId: 'vault-v1',
       contentSha256: 'document-content-hash-060',

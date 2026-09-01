@@ -14,6 +14,7 @@ interface DocumentRow {
   id: string;
   case_id: string;
   kind: string;
+  requirement_key: string | null;
   storage_id: string;
   key_id: string;
   content_sha256: string;
@@ -33,6 +34,7 @@ export interface AdminDocumentRecord {
   id: string;
   caseId: string;
   kind: string;
+  requirementKey: string | null;
   storageId: string;
   keyId: string;
   contentSha256: string;
@@ -52,6 +54,7 @@ export interface ApplicantDocumentRecord {
   id: string;
   caseId: string;
   kind: string;
+  requirementKey: string | null;
   mediaType: string;
   byteSize: number;
   status: string;
@@ -88,7 +91,7 @@ export function listDocumentFieldsForApplicant(database: FlowPassDatabase, scope
     JOIN documents d ON d.id = f.document_id
     JOIN cases c ON c.id = d.case_id
     LEFT JOIN document_field_reviews r ON r.id = f.effective_review_id
-    WHERE d.case_id = ? AND c.applicant_id = ?
+    WHERE d.case_id = ? AND c.applicant_id = ? AND c.deleted_at IS NULL
     ORDER BY f.created_at ASC, f.id ASC
   `).all(caseId, scope.applicantId) as Array<{ id: string; document_id: string; field_name: string; original_value_enc: string | null; normalized_value_enc: string | null; effective_review_id: string | null; effective_value_enc: string | null; confidence: number | null; source_page: number | null; source_box_enc: string | null; parser_reason_code: string | null }>;
   return rows.map((row) => {
@@ -107,6 +110,7 @@ function mapAdminDocument(row: DocumentRow): AdminDocumentRecord {
     id: row.id,
     caseId: row.case_id,
     kind: row.kind,
+    requirementKey: row.requirement_key,
     storageId: row.storage_id,
     keyId: row.key_id,
     contentSha256: row.content_sha256,
@@ -127,6 +131,7 @@ function mapApplicantDocument(row: DocumentRow): ApplicantDocumentRecord {
     id: row.id,
     caseId: row.case_id,
     kind: row.kind,
+    requirementKey: row.requirement_key,
     mediaType: row.media_type,
     byteSize: row.byte_size,
     status: row.status,
@@ -147,7 +152,7 @@ export function getDocumentForApplicant(
       `SELECT documents.*
        FROM documents
        JOIN cases ON cases.id = documents.case_id
-       WHERE documents.id = ? AND cases.applicant_id = ?`,
+       WHERE documents.id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL`,
     )
     .get(documentId, scope.applicantId) as DocumentRow | undefined;
 
@@ -165,7 +170,7 @@ export function getDocumentStorageForApplicant(
       `SELECT documents.*
        FROM documents
        JOIN cases ON cases.id = documents.case_id
-       WHERE documents.id = ? AND cases.applicant_id = ?`,
+       WHERE documents.id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL`,
     )
     .get(documentId, scope.applicantId) as DocumentRow | undefined;
   return row
@@ -189,7 +194,7 @@ export function listDocumentsForApplicant(
       `SELECT documents.*
        FROM documents
        JOIN cases ON cases.id = documents.case_id
-       WHERE documents.case_id = ? AND cases.applicant_id = ?
+       WHERE documents.case_id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL
        ORDER BY documents.created_at DESC, documents.id DESC`,
     )
     .all(caseId, scope.applicantId) as DocumentRow[];
@@ -204,10 +209,29 @@ export function getDocumentForAdmin(
 ): AdminDocumentRecord | null {
   requireAdminScope(scope);
   const row = database
-    .prepare('SELECT * FROM documents WHERE id = ?')
+    .prepare('SELECT documents.* FROM documents JOIN cases ON cases.id = documents.case_id WHERE documents.id = ? AND cases.deleted_at IS NULL')
     .get(documentId) as DocumentRow | undefined;
 
   return row ? mapAdminDocument(row) : null;
+}
+
+export function listDocumentsForAdmin(
+  database: FlowPassDatabase,
+  scope: AdminScope,
+  caseId: string,
+): AdminDocumentRecord[] {
+  requireAdminScope(scope);
+  const rows = database
+    .prepare(
+      `SELECT documents.*
+       FROM documents
+       JOIN cases ON cases.id = documents.case_id
+       WHERE documents.case_id = ? AND documents.status <> 'deleted' AND documents.deleted_at IS NULL AND cases.deleted_at IS NULL
+       ORDER BY created_at DESC, id DESC`,
+    )
+    .all(caseId) as DocumentRow[];
+
+  return rows.map(mapAdminDocument);
 }
 
 export function insertEncryptedDocumentForApplicant(
@@ -218,6 +242,7 @@ export function insertEncryptedDocumentForApplicant(
     id: string;
     caseId: string;
     kind: 'invoice' | 'eligibility_proof' | 'supplement' | 'other';
+    requirementKey: string;
     storageId: string;
     /** Task 9 vault-file key version, intentionally distinct from the envelope keyId. */
     vaultKeyId: string;
@@ -234,7 +259,7 @@ export function insertEncryptedDocumentForApplicant(
 ): void {
   requireApplicantScope(scope);
   const ownedCase = database
-    .prepare('SELECT id FROM cases WHERE id = ? AND applicant_id = ?')
+    .prepare('SELECT id FROM cases WHERE id = ? AND applicant_id = ? AND deleted_at IS NULL')
     .get(input.caseId, scope.applicantId) as { id: string } | undefined;
   if (!ownedCase) {
     throw new Error('Case is not available');
@@ -243,14 +268,15 @@ export function insertEncryptedDocumentForApplicant(
   database
     .prepare(
       `INSERT INTO documents (
-        id, case_id, kind, storage_id, key_id, content_sha256, media_type, byte_size,
+        id, case_id, kind, requirement_key, storage_id, key_id, content_sha256, media_type, byte_size,
         original_name_enc, status, uploaded_by_type, uploaded_by_id, created_at, deleted_at, row_version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
     )
     .run(
       input.id,
       input.caseId,
       input.kind,
+      input.requirementKey,
       input.storageId,
       input.vaultKeyId,
       input.contentSha256,

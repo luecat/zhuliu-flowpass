@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
-import { join } from 'node:path';
+import { closeSync, existsSync, fsyncSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import { serializeEncryptedField, parseEncryptedField, type FieldCrypto } from '../crypto/field-crypto';
 import type { FlowPassDatabase } from '../db/connection';
@@ -27,6 +27,11 @@ export interface VaultDocumentRef {
   id: string;
   storageId: string;
   keyId: string;
+}
+
+export interface QuarantinedVaultFile extends VaultDocumentRef {
+  quarantinePath: string;
+  originalPath: string;
 }
 
 function validateStorageId(storageId: string): void {
@@ -135,6 +140,55 @@ export class DocumentVault {
   remove(input: VaultDocumentRef): void {
     validateStorageId(input.storageId);
     try { unlinkSync(this.finalPath(input.storageId)); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    fsyncDirectory(this.options.rootPath);
+  }
+
+  quarantine(refs: VaultDocumentRef[], operationId: string): QuarantinedVaultFile[] {
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(operationId)) throw new Error('Vault operation ID is invalid');
+    if (refs.length === 0) return [];
+    const quarantineRoot = join(this.options.rootPath, '.quarantine', operationId);
+    mkdirSync(quarantineRoot, { recursive: true, mode: 0o700 });
+    const moved: QuarantinedVaultFile[] = [];
+    try {
+      for (const ref of refs) {
+        validateStorageId(ref.storageId);
+        const originalPath = this.finalPath(ref.storageId);
+        const quarantinePath = join(quarantineRoot, ref.storageId);
+        if (!existsSync(originalPath)) continue;
+        renameSync(originalPath, quarantinePath);
+        moved.push({ ...ref, quarantinePath, originalPath });
+      }
+      fsyncDirectory(this.options.rootPath);
+      fsyncDirectory(quarantineRoot);
+      return moved;
+    } catch (error) {
+      for (const file of moved.reverse()) {
+        if (existsSync(file.quarantinePath)) renameSync(file.quarantinePath, file.originalPath);
+      }
+      rmSync(quarantineRoot, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  restoreQuarantine(files: QuarantinedVaultFile[]): void {
+    const roots = new Set<string>();
+    for (const file of files) {
+      validateStorageId(file.storageId);
+      if (existsSync(file.quarantinePath)) renameSync(file.quarantinePath, file.originalPath);
+      roots.add(dirname(file.quarantinePath));
+    }
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+    fsyncDirectory(this.options.rootPath);
+  }
+
+  purgeQuarantine(files: QuarantinedVaultFile[]): void {
+    const roots = new Set<string>();
+    for (const file of files) {
+      validateStorageId(file.storageId);
+      if (existsSync(file.quarantinePath)) unlinkSync(file.quarantinePath);
+      roots.add(dirname(file.quarantinePath));
+    }
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
     fsyncDirectory(this.options.rootPath);
   }
 

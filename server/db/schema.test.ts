@@ -1,6 +1,7 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase } from './connection';
@@ -162,7 +163,25 @@ describe('FlowPass SQLite schema', () => {
       { name: '001_core.sql' },
       { name: '002_indexes_and_guards.sql' },
       { name: '003_ocr_raw_payloads.sql' },
+      { name: '004_admin_security.sql' },
+      { name: '005_attachment_details.sql' },
+      { name: '006_disbursed_amount.sql' },
+      { name: '007_soft_deleted_cases.sql' },
+      { name: '008_production_program_name.sql' },
+      { name: '009_admin_data_management.sql' },
     ]);
+  });
+
+  it('renames a legacy demo program without mutating its published rule', () => {
+    const cycleId = '0198f015-0000-7000-8000-000000000091';
+    const ruleId = '0198f015-0000-7000-8000-000000000092';
+    db.prepare(`INSERT INTO program_cycles (id, code, name, year, status, retention_policy_json, created_at, updated_at, row_version) VALUES (?, 'DEMO-20260831', 'FlowPass 示範申請', 2026, 'active', '{}', ?, ?, 1)`).run(cycleId, STAMP, STAMP);
+    db.prepare(`INSERT INTO program_rule_versions (id, program_cycle_id, version_no, status, subsidy_rate_bps, per_case_cap_twd, rounding_mode, required_documents_json, rules_json, published_at, created_at) VALUES (?, ?, 1, 'published', 5000, 10000, 'floor', '[]', '{"demo":true}', ?, ?)`).run(ruleId, cycleId, STAMP, STAMP);
+
+    db.exec(readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'migrations/008_production_program_name.sql'), 'utf8'));
+
+    expect(db.prepare('SELECT code, name FROM program_cycles WHERE id = ?').get(cycleId)).toEqual({ code: 'SOFTWARE-SUBSIDY-2026', name: '軟體補助申請' });
+    expect(db.prepare('SELECT rules_json FROM program_rule_versions WHERE id = ?').get(ruleId)).toEqual({ rules_json: '{"demo":true}' });
   });
 
   it('rejects nullable, non-v7, non-canonical, and upper-case entity IDs', () => {
@@ -359,6 +378,12 @@ describe('FlowPass SQLite schema', () => {
       .all() as Array<{ name: string }>;
 
     expect(tables.map((table) => table.name)).toEqual([
+      'admin_auth_events',
+      'admin_data_edit_audits',
+      'admin_data_mutation_guards',
+      'admin_password_history',
+      'admin_purge_authorizations',
+      'admin_recovery_challenges',
       'admin_sessions',
       'admin_users',
       'ai_runs',
@@ -368,12 +393,14 @@ describe('FlowPass SQLite schema', () => {
       'applicant_sessions',
       'applicants',
       'audit_logs',
+      'case_purchase_details',
       'case_state_transitions',
       'case_tasks',
       'cases',
       'document_field_reviews',
       'document_fields',
       'documents',
+      'flowpass_maintenance_state',
       'incident_matches',
       'invoice_fingerprints',
       'jobs',

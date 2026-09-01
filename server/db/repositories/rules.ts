@@ -84,7 +84,7 @@ export function listRuleEvaluationsForApplicant(
       `SELECT rule_evaluations.*
        FROM rule_evaluations
        JOIN cases ON cases.id = rule_evaluations.case_id
-       WHERE rule_evaluations.case_id = ? AND cases.applicant_id = ?
+       WHERE rule_evaluations.case_id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL
        ORDER BY rule_evaluations.created_at DESC, rule_evaluations.id DESC`,
     )
     .all(caseId, scope.applicantId) as RuleEvaluationRow[];
@@ -100,8 +100,9 @@ export function listRuleEvaluationsForAdmin(
   requireAdminScope(scope);
   const rows = database
     .prepare(
-      `SELECT * FROM rule_evaluations
-       WHERE case_id = ? ORDER BY created_at DESC, id DESC`,
+      `SELECT rule_evaluations.* FROM rule_evaluations
+       JOIN cases ON cases.id = rule_evaluations.case_id
+       WHERE rule_evaluations.case_id = ? AND cases.deleted_at IS NULL ORDER BY rule_evaluations.created_at DESC, rule_evaluations.id DESC`,
     )
     .all(caseId) as RuleEvaluationRow[];
 

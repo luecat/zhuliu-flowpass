@@ -4,14 +4,12 @@ import { localReadiness } from '../services/health-service';
 
 export interface WorkerDependencyStatus {
   lmStudio: 'pending' | 'ready' | 'disabled' | 'failed';
-  ocr: 'pending' | 'ready' | 'disabled' | 'failed';
   lineNotification: 'pending' | 'ready' | 'disabled' | 'failed';
   processing: 'disabled' | 'starting' | 'ready' | 'failed';
 }
 
 export const defaultWorkerDependencyStatus = (): WorkerDependencyStatus => ({
   lmStudio: 'pending',
-  ocr: 'pending',
   lineNotification: 'pending',
   processing: process.env.FLOWPASS_WORKER_RUN === '1' ? 'starting' : 'disabled',
 });
@@ -23,7 +21,7 @@ export function createWorkerApp(database?: FlowPassDatabase, dependencies = defa
     context.json({
       status: 'ok',
       dependencies: { queue: database ? 'ready' : 'unavailable', ...dependencies },
-      concurrency: { ai: 1, ocr: 1, lineNotification: 4 },
+      concurrency: { ai: 1, lineNotification: 4 },
     }),
   );
   app.get('/readyz', (context) => {

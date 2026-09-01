@@ -55,7 +55,7 @@ describe('DocumentService', () => {
     const raw = db.prepare('SELECT original_name_enc FROM documents').get() as { original_name_enc: string };
     expect(raw.original_name_enc).not.toContain('private-invoice.png');
     expect((db.prepare('SELECT row_version FROM cases WHERE id = ?').get(ids.case) as { row_version: number }).row_version).toBe(2);
-    expect((db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE job_type = 'ocr'").get() as { count: number }).count).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM jobs').get()).toEqual({ count: 0 });
   });
 
   it('rejects submitted cases and removes a document only while the case is mutable', async () => {
@@ -72,9 +72,9 @@ describe('DocumentService', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM documents').get()).toEqual({ count: 0 });
   });
 
-  it('never queues OCR for identity, bankbook, or affidavit uploads', async () => {
+  it('stores identity, bankbook, and affidavit uploads without background jobs', async () => {
     const uploaded = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'eligibility_proof', requirementKey: 'identity_front', originalName: 'identity.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'identity' });
     expect(uploaded.document.requirementKey).toBe('identity_front');
-    expect((db.prepare("SELECT COUNT(*) AS count FROM jobs WHERE job_type = 'ocr'").get() as { count: number }).count).toBe(0);
+    expect(db.prepare('SELECT COUNT(*) AS count FROM jobs').get()).toEqual({ count: 0 });
   });
 });

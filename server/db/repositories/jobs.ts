@@ -3,7 +3,7 @@ import type { FlowPassDatabase } from '../connection';
 import { parseUtcRfc3339Timestamp } from '../timestamps';
 import { requireApplicantScope, requireSystemScope, type ApplicantScope, type SystemScope } from './scopes';
 
-export type JobType = 'ai_draft' | 'ocr' | 'line_webhook' | 'line_notification' | 'retention';
+export type JobType = 'ai_draft' | 'line_webhook' | 'line_notification';
 export type JobState = 'queued' | 'leased' | 'completed' | 'failed_terminal';
 
 export interface WorkerScope {

@@ -120,9 +120,7 @@ export function collectPassportRelationGraph(
   };
 
   const passportVersionIds = tableIds.passport_versions;
-  const documentIds = tableIds.documents;
   const inPassportVersions = passportVersionIds.length > 0 ? passportVersionIds.map(() => '?').join(', ') : "''";
-  const inDocuments = documentIds.length > 0 ? documentIds.map(() => '?').join(', ') : "''";
 
   tableIds.passport_node_index = ids(database, `SELECT id FROM passport_node_index WHERE passport_version_id IN (${inPassportVersions})`, ...passportVersionIds);
   tableIds.passport_edge_index = ids(database, `SELECT id FROM passport_edge_index WHERE passport_version_id IN (${inPassportVersions})`, ...passportVersionIds);
@@ -130,16 +128,6 @@ export function collectPassportRelationGraph(
   tableIds.passport_follow_up_questions = ids(database, `SELECT id FROM passport_follow_up_questions WHERE passport_version_id IN (${inPassportVersions})`, ...passportVersionIds);
   tableIds.passport_follow_up_answers = ids(database, `SELECT id FROM passport_follow_up_answers WHERE passport_version_id IN (${inPassportVersions})`, ...passportVersionIds);
   tableIds.passport_confirmations = ids(database, `SELECT id FROM passport_confirmations WHERE passport_version_id IN (${inPassportVersions})`, ...passportVersionIds);
-  tableIds.ocr_runs = ids(database, `SELECT id FROM ocr_runs WHERE document_id IN (${inDocuments})`, ...documentIds);
-  tableIds.document_fields = ids(database, `SELECT id FROM document_fields WHERE document_id IN (${inDocuments})`, ...documentIds);
-  tableIds.invoice_fingerprints = ids(database, 'SELECT id FROM invoice_fingerprints WHERE case_id = ?', caseId);
-
-  const ocrRunIds = tableIds.ocr_runs;
-  const fieldIds = tableIds.document_fields;
-  const inOcrRuns = ocrRunIds.length > 0 ? ocrRunIds.map(() => '?').join(', ') : "''";
-  const inFields = fieldIds.length > 0 ? fieldIds.map(() => '?').join(', ') : "''";
-  tableIds.ocr_raw_payloads = ids(database, `SELECT id FROM ocr_raw_payloads WHERE ocr_run_id IN (${inOcrRuns})`, ...ocrRunIds);
-  tableIds.document_field_reviews = ids(database, `SELECT id FROM document_field_reviews WHERE document_field_id IN (${inFields})`, ...fieldIds);
 
   const graph: PassportRelationGraph = {
     caseId: root.id,

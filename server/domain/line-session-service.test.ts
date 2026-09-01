@@ -364,7 +364,6 @@ describe('LineSessionService', () => {
       [RateLimitAction.CASE_CREATE]: { limit: 5, window: 'taipei-day' },
       [RateLimitAction.AI_DRAFT]: { limit: 20, window: 'taipei-day' },
       [RateLimitAction.UPLOAD_BYTES]: { limit: 60 * 1024 * 1024, window: 'taipei-day' },
-      [RateLimitAction.OCR_RETRY]: { limit: 3, window: 'taipei-day' },
       [RateLimitAction.INVALID_WEBHOOK]: { limit: 120, window: 'utc-minute' },
     });
     const first = new RateLimiter(database, crypto, clock.now);

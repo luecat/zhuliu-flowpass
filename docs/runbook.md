@@ -25,7 +25,7 @@ FlowPass 的公開頁面、管理後台、工作程序只綁定本機回環位�
 
 ## 備份與復原
 
-`npm run backup` 使用 SQLite Online Backup API 並寫入含雜湊的 manifest；`npm run restore:check` 會以唯讀方式驗證完整性。備份失敗時不執行 retention 刪除。SQLite busy/corruption、Keychain locked、MODEL_OFFLINE、OCR failure、LINE 401/429、tunnel 1016 與 invalid release manifest 都應先停止對應服務、保留現場，再依 `ops:doctor -- --offline` 結果逐項修復。
+`npm run backup` 使用 SQLite Online Backup API 並寫入含雜湊的 manifest；`npm run restore:check` 會以唯讀方式驗證完整性。備份失敗時不執行 retention 刪除。SQLite busy/corruption、Keychain locked、MODEL_OFFLINE、LINE 401/429、tunnel 1016 與 invalid release manifest 都應先停止對應服務、保留現場，再依 `ops:doctor -- --offline` 結果逐項修復。
 
 ## 日誌與敏感資料
 

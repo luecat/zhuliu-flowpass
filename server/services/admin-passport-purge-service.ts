@@ -108,11 +108,10 @@ export async function authorizePassportPurge(
   return { token, expiresAt };
 }
 
-const IMMUTABLE_DELETE_TABLES = new Set(['answer_versions', 'passport_versions', 'case_state_transitions', 'passport_follow_up_answers', 'passport_confirmations', 'ocr_runs', 'document_field_reviews', 'rule_evaluations', 'subsidy_calculations', 'timeline_events', 'audit_logs', 'ai_runs']);
+const IMMUTABLE_DELETE_TABLES = new Set(['answer_versions', 'passport_versions', 'case_state_transitions', 'passport_follow_up_answers', 'passport_confirmations', 'rule_evaluations', 'subsidy_calculations', 'timeline_events', 'audit_logs', 'ai_runs']);
 const DELETE_ORDER = [
   'notification_jobs', 'case_tasks', 'passport_follow_up_answers', 'passport_confirmations',
   'passport_follow_up_questions', 'passport_edge_index', 'passport_tool_index', 'passport_node_index',
-  'ocr_raw_payloads', 'document_field_reviews', 'document_fields', 'invoice_fingerprints', 'ocr_runs',
   'subsidy_calculations', 'rule_evaluations', 'ai_runs', 'timeline_events', 'case_state_transitions',
   'alerts', 'incident_matches', 'jobs', 'audit_logs', 'admin_data_edit_audits',
   'passport_versions', 'answer_versions', 'case_purchase_details', 'documents', 'passports',

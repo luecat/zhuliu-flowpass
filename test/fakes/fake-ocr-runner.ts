@@ -1,1 +1,0 @@
-export function createFakeOcrRunner() { return async (bytes: Uint8Array) => { void bytes; return { engine: 'fixture', engineVersion: '1', languages: ['zh-TW'], lines: [{ text: '統一發票', confidence: 0.99, box: { x: 0, y: 0, width: 1, height: 0.1 }, page: 1 }], durationMs: 1 }; }; }

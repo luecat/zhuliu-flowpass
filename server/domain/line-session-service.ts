@@ -38,7 +38,6 @@ export const RateLimitAction = {
   CASE_CREATE: 'case_create',
   AI_DRAFT: 'ai_draft',
   UPLOAD_BYTES: 'upload_bytes',
-  OCR_RETRY: 'ocr_retry',
   INVALID_WEBHOOK: 'invalid_webhook',
 } as const;
 
@@ -56,7 +55,6 @@ export const RATE_LIMIT_POLICIES: Readonly<Record<RateLimitAction, RateLimitPoli
   [RateLimitAction.CASE_CREATE]: { action: RateLimitAction.CASE_CREATE, limit: 5, window: 'taipei-day' },
   [RateLimitAction.AI_DRAFT]: { action: RateLimitAction.AI_DRAFT, limit: 20, window: 'taipei-day' },
   [RateLimitAction.UPLOAD_BYTES]: { action: RateLimitAction.UPLOAD_BYTES, limit: 60 * 1024 * 1024, window: 'taipei-day' },
-  [RateLimitAction.OCR_RETRY]: { action: RateLimitAction.OCR_RETRY, limit: 3, window: 'taipei-day' },
   [RateLimitAction.INVALID_WEBHOOK]: { action: RateLimitAction.INVALID_WEBHOOK, limit: 120, window: 'utc-minute' },
 };
 

@@ -14,10 +14,8 @@ const DURABLE_JOB_SYSTEM_SCOPE: SystemScope = { systemId: 'durable-job-runner' }
 
 export const JOB_CLASS_CONCURRENCY = {
   ai_draft: 1,
-  ocr: 1,
   line_notification: 4,
   line_webhook: 4,
-  retention: 1,
 } as const;
 
 export function concurrencyForJobType(jobType: DurableJob['jobType']): number {

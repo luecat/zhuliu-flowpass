@@ -12,11 +12,6 @@ CREATE INDEX idx_passport_node_index_kind_data_category ON passport_node_index(k
 CREATE INDEX idx_passport_tool_index_product_version ON passport_tool_index(tool_product_id, tool_version_id);
 
 CREATE INDEX idx_documents_case_status ON documents(case_id, status);
-CREATE INDEX idx_ocr_runs_document_created ON ocr_runs(document_id, created_at DESC);
-CREATE INDEX idx_document_fields_document_field ON document_fields(document_id, field_name);
-CREATE INDEX idx_document_fields_normalized_value_hmac ON document_fields(normalized_value_hmac);
-CREATE INDEX idx_document_field_reviews_field_created ON document_field_reviews(document_field_id, created_at DESC);
-CREATE INDEX idx_invoice_fingerprints_fingerprint_hmac ON invoice_fingerprints(fingerprint_hmac);
 CREATE INDEX idx_rule_evaluations_case_kind_created ON rule_evaluations(case_id, evaluation_kind, created_at DESC);
 
 CREATE INDEX idx_jobs_state_available ON jobs(state, available_at);
@@ -90,30 +85,6 @@ CREATE TRIGGER passport_confirmations_no_delete
 BEFORE DELETE ON passport_confirmations
 BEGIN
   SELECT RAISE(ABORT, 'passport_confirmations are immutable');
-END;
-
-CREATE TRIGGER ocr_runs_no_update
-BEFORE UPDATE ON ocr_runs
-BEGIN
-  SELECT RAISE(ABORT, 'ocr_runs are immutable');
-END;
-
-CREATE TRIGGER ocr_runs_no_delete
-BEFORE DELETE ON ocr_runs
-BEGIN
-  SELECT RAISE(ABORT, 'ocr_runs are immutable');
-END;
-
-CREATE TRIGGER document_field_reviews_no_update
-BEFORE UPDATE ON document_field_reviews
-BEGIN
-  SELECT RAISE(ABORT, 'document_field_reviews are immutable');
-END;
-
-CREATE TRIGGER document_field_reviews_no_delete
-BEFORE DELETE ON document_field_reviews
-BEGIN
-  SELECT RAISE(ABORT, 'document_field_reviews are immutable');
 END;
 
 CREATE TRIGGER rule_evaluations_no_update

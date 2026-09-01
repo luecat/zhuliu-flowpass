@@ -13,7 +13,6 @@ import { deleteApplicantMutationReservation, finalizeApplicantMutation, readAppl
 import { RateLimitAction, RateLimiter } from './line-session-service';
 import { DocumentVault, type PreparedVaultFile } from '../services/document-vault';
 import { FileValidationError, readLimitedDocumentStream, validateDocumentBytesAsync, validateDocumentFilename, type DocumentByteStream, type DocumentMediaType } from './file-validation';
-import { JobRepository } from '../db/repositories/jobs';
 import {
   DocumentRequirementKeySchema,
   type DocumentRequirementKey,
@@ -151,12 +150,6 @@ export function createDocumentService(options: DocumentServiceOptions): Document
           if (changed.changes !== 1) throw new DocumentCommandError('DEPENDENCY_UNAVAILABLE');
           options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_uploaded', '文件已安全保存', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ kind: input.kind, requirementKey: input.requirementKey, mediaType: validated.mediaType, byteSize: validated.byteSize }), readyAt);
           appendEncryptedAuditLog(options.database, options.crypto, { id: idGenerator(), actorType: 'applicant', actorId: input.applicantId, action: 'create', entityType: 'document', entityId: documentId, beforeHash: null, afterHash: validated.contentSha256, detail: { kind: 'operation', operation: 'create', outcome: 'ok' }, requestId: input.requestId ?? requestIdGenerator(), createdAt: readyAt });
-          // Only a purchase proof is eligible for OCR. Identity, bankbook and
-          // affidavits are stored as opaque encrypted files and never enter the
-          // OCR worker queue.
-          if (input.requirementKey === 'purchase_proof') {
-            new JobRepository(options.database).enqueue({ systemId: 'document-upload-admission' }, { jobType: 'ocr', payload: { caseId: input.caseId, documentId }, uniqueKey: `ocr:${documentId}` });
-          }
           const document = getDocumentForApplicant(options.database, { applicantId: input.applicantId }, documentId);
           if (!document) throw new DocumentCommandError('DEPENDENCY_UNAVAILABLE');
           output = { document };

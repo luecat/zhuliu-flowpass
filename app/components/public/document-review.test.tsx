@@ -34,7 +34,7 @@ describe('DocumentReview', () => {
     apiMocks.read.mockReset(); apiMocks.mutate.mockReset(); apiMocks.upload.mockReset();
   });
 
-  it('shows a guided five-document checklist without internal OCR copy', async () => {
+  it('shows a guided purchase-details and attachment checklist', async () => {
     installApi();
     render(<DocumentReview suppliedCaseId={CASE_ID} />);
     expect(await screen.findByRole('heading', { name: '購買資料與附件' })).toBeInTheDocument();
@@ -57,7 +57,7 @@ describe('DocumentReview', () => {
     expect(screen.getByText('0 / 7')).toBeInTheDocument();
   });
 
-  it('labels a purchase proof upload with the only OCR-eligible requirement key', async () => {
+  it('labels a purchase proof upload with its document requirement', async () => {
     installApi(details);
     const { container } = render(<DocumentReview suppliedCaseId={CASE_ID} />);
     await screen.findByRole('heading', { name: '上傳必要文件' });

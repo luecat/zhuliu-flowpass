@@ -8,15 +8,14 @@ describe('createWorkerApp', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       status: 'ok',
-      dependencies: { queue: 'unavailable', lmStudio: 'pending', ocr: 'pending', lineNotification: 'pending', processing: 'disabled' },
-      concurrency: { ai: 1, ocr: 1, lineNotification: 4 },
+      dependencies: { queue: 'unavailable', lmStudio: 'pending', lineNotification: 'pending', processing: 'disabled' },
+      concurrency: { ai: 1, lineNotification: 4 },
     });
   });
 
   it('reports mutable runtime dependencies without leaking credentials', async () => {
     const dependencies: WorkerDependencyStatus = {
       lmStudio: 'ready',
-      ocr: 'disabled',
       lineNotification: 'ready',
       processing: 'ready',
     };

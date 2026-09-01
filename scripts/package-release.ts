@@ -25,14 +25,13 @@ export function packageRelease(input: { projectRoot: string; releaseRoot: string
   }
   const tunnelConfig = join(input.projectRoot, 'runtime', 'cloudflared-flowpass.yml');
   if (existsSync(tunnelConfig)) cpSync(tunnelConfig, join(releaseDir, 'runtime', 'cloudflared-flowpass.yml'));
-  const nativeRoot = join(input.projectRoot, 'native', 'flowpass-vision-ocr'); const nativeCandidates = [join(nativeRoot, '.build', 'arm64-apple-macosx', 'release', 'FlowPassVisionOCR'), join(nativeRoot, '.build', 'arm64-apple-macosx', 'debug', 'FlowPassVisionOCR')]; const nativeExecutable = nativeCandidates.find((path) => existsSync(path)); if (nativeExecutable) { mkdirSync(join(releaseDir, 'native'), { recursive: true }); cpSync(nativeExecutable, join(releaseDir, 'native', 'flowpass-vision-ocr')); }
   const lockPath = join(input.projectRoot, 'package-lock.json');
   const sourceCommit = process.env.FLOWPASS_SOURCE_COMMIT ?? gitValue(input.projectRoot, ['rev-parse', 'HEAD']);
   const sourceDirty = gitValue(input.projectRoot, ['status', '--porcelain', '--untracked-files=normal']) !== null;
   const buildId = readFileSync(buildIdPath, 'utf8').trim();
   const lockHash = existsSync(lockPath) ? hashFile(lockPath) : null;
   const entries = files(releaseDir).map((path) => ({ path: relative(releaseDir, path), sha256: hashFile(path) }));
-  const manifest = JSON.stringify({ format: 'flowpass-release-v1', releaseId, builtAt: new Date().toISOString(), nodeVersion: process.version, buildId, sourceCommit, sourceDirty, dependencyLockSha256: lockHash, migrationRange: '001_core..009_admin_data_management', entries }, null, 2);
+  const manifest = JSON.stringify({ format: 'flowpass-release-v1', releaseId, builtAt: new Date().toISOString(), nodeVersion: process.version, buildId, sourceCommit, sourceDirty, dependencyLockSha256: lockHash, migrationRange: '001_core..010_drop_ocr', entries }, null, 2);
   const manifestPath = join(releaseDir, 'manifest.json'); writeFileSync(manifestPath, manifest, { mode: 0o600 });
   const verified = JSON.parse(readFileSync(manifestPath, 'utf8')) as { format?: string; entries?: Array<{ path: string; sha256: string }> };
   if (verified.format !== 'flowpass-release-v1' || !verified.entries?.every((entry) => hashFile(join(releaseDir, entry.path)) === entry.sha256)) throw new Error('release manifest verification failed');

@@ -16,19 +16,18 @@ const GROUPS: Array<[string, string, string[]]> = [
   ['case', '案件與申請人答案', ['cases', 'answer_versions']],
   ['purchase', '購買內容與金額', ['case_purchase_details']],
   ['passport', '護照與歷次護照版本', ['passports', 'passport_versions', 'passport_confirmations', 'passport_follow_up_questions', 'passport_follow_up_answers', 'passport_node_index', 'passport_edge_index', 'passport_tool_index']],
-  ['documents', '文件、欄位辨識與補件', ['documents', 'ocr_runs', 'ocr_raw_payloads', 'document_fields', 'document_field_reviews', 'invoice_fingerprints']],
+  ['documents', '文件與附件', ['documents']],
   ['tasks', '任務、審查與狀態流轉', ['case_tasks', 'case_state_transitions']],
   ['timeline', '時間軸與通知', ['timeline_events', 'notification_jobs']],
   ['rules', '規則判定與補助計算', ['rule_evaluations', 'subsidy_calculations']],
-  ['automation', 'AI、OCR、警示與事件', ['ai_runs', 'alerts', 'incident_matches', 'jobs']],
+  ['automation', 'AI、警示與事件', ['ai_runs', 'alerts', 'incident_matches', 'jobs']],
   ['system', '系統關聯與管理稽核', ['audit_logs', 'admin_data_edit_audits', 'api_idempotency_keys']],
 ];
 
 const TABLE_LABELS: Record<string, string> = {
   cases: '案件', answer_versions: '申請答案', case_purchase_details: '購買資料', passports: '護照', passport_versions: '護照版本',
   passport_confirmations: '護照確認', passport_follow_up_questions: '追問問題', passport_follow_up_answers: '追問回答', passport_node_index: '節點索引',
-  passport_edge_index: '關聯索引', passport_tool_index: '工具索引', documents: '附件', ocr_runs: 'OCR 執行', ocr_raw_payloads: 'OCR 原始資料',
-  document_fields: '文件辨識欄位', document_field_reviews: '欄位審查', invoice_fingerprints: '發票指紋', case_tasks: '任務', case_state_transitions: '狀態流轉',
+  passport_edge_index: '關聯索引', passport_tool_index: '工具索引', documents: '附件', case_tasks: '任務', case_state_transitions: '狀態流轉',
   timeline_events: '時間軸事件', notification_jobs: '通知', rule_evaluations: '規則判定', subsidy_calculations: '補助計算', ai_runs: 'AI 執行',
   alerts: '提醒', incident_matches: '事件比對', jobs: '背景工作', audit_logs: '系統稽核', admin_data_edit_audits: '資料校正稽核', api_idempotency_keys: '冪等紀錄',
 };
@@ -43,8 +42,7 @@ const FIELD_LABELS: Record<string, string> = {
   row_version: '資料版本', content_sha256: '內容摘要', key_id: '加密金鑰版本', byte_size: '檔案大小', media_type: '檔案類型', storage_id: '儲存識別碼',
   created_by_type: '建立者類型', created_by_id: '建立者識別碼', created_by_applicant_id: '建立此版本的申請人', actor_type: '操作者類型', actor_id: '操作者識別碼',
   event_type: '事件類型', from_state: '原狀態', to_state: '新狀態', reason_code: '原因代碼', reason_enc: '原因說明', outcome: '處理結果',
-  kind: '類型', requirement_key: '文件需求', fingerprint_hash: '發票指紋', field_name: '欄位名稱', field_value_enc: '欄位內容', confidence: '信心度',
-  started_at: '開始時間', completed_at: '完成時間', resolved_at: '解決時間', sent_at: '傳送時間', available_at: '可執行時間', leased_until: '租約到期時間',
+  kind: '類型', requirement_key: '文件需求', started_at: '開始時間', completed_at: '完成時間', resolved_at: '解決時間', sent_at: '傳送時間', available_at: '可執行時間', leased_until: '租約到期時間',
   error_code: '錯誤代碼', error_public_summary: '錯誤摘要', attempts: '嘗試次數', max_attempts: '最多嘗試次數',
 };
 
@@ -76,7 +74,7 @@ const EDITABLE: Record<string, Set<string>> = {
   documents: new Set(['original_name_enc']),
 };
 
-const DERIVED_TABLES = new Set(['passport_node_index', 'passport_edge_index', 'passport_tool_index', 'ocr_runs', 'ocr_raw_payloads', 'document_fields', 'rule_evaluations', 'subsidy_calculations', 'ai_runs', 'incident_matches']);
+const DERIVED_TABLES = new Set(['passport_node_index', 'passport_edge_index', 'passport_tool_index', 'rule_evaluations', 'subsidy_calculations', 'ai_runs', 'incident_matches']);
 const HISTORY_TABLES = new Set(['answer_versions', 'passport_versions', 'passport_confirmations', 'passport_follow_up_questions', 'passport_follow_up_answers', 'case_state_transitions', 'timeline_events', 'notification_jobs', 'audit_logs']);
 
 function parseJson(value: string): unknown {

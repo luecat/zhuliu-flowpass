@@ -162,13 +162,13 @@ describe('FlowPass SQLite schema', () => {
     expect(db.prepare('SELECT name FROM schema_migrations ORDER BY name').all()).toEqual([
       { name: '001_core.sql' },
       { name: '002_indexes_and_guards.sql' },
-      { name: '003_ocr_raw_payloads.sql' },
       { name: '004_admin_security.sql' },
       { name: '005_attachment_details.sql' },
       { name: '006_disbursed_amount.sql' },
       { name: '007_soft_deleted_cases.sql' },
       { name: '008_production_program_name.sql' },
       { name: '009_admin_data_management.sql' },
+      { name: '010_drop_ocr.sql' },
     ]);
   });
 
@@ -248,10 +248,6 @@ describe('FlowPass SQLite schema', () => {
       'passport_follow_up_answers',
       'passport_confirmations',
       'documents',
-      'ocr_runs',
-      'document_fields',
-      'document_field_reviews',
-      'invoice_fingerprints',
       'rule_evaluations',
       'subsidy_calculations',
       'jobs',
@@ -355,7 +351,7 @@ describe('FlowPass SQLite schema', () => {
         )
         .run(
           '0198f015-0000-7000-8000-000000000026',
-          'ocr',
+          'ai_draft',
           '{}',
           'queued',
           'job-non-canonical-time',
@@ -397,19 +393,14 @@ describe('FlowPass SQLite schema', () => {
       'case_state_transitions',
       'case_tasks',
       'cases',
-      'document_field_reviews',
-      'document_fields',
       'documents',
       'flowpass_maintenance_state',
       'incident_matches',
-      'invoice_fingerprints',
       'jobs',
       'line_identities',
       'line_webhook_events',
       'login_exchange_nonces',
       'notification_jobs',
-      'ocr_raw_payloads',
-      'ocr_runs',
       'passport_confirmations',
       'passport_edge_index',
       'passport_follow_up_answers',
@@ -435,13 +426,6 @@ describe('FlowPass SQLite schema', () => {
       'applicant_id',
       'program_cycle_id',
       'program_rule_version_id',
-    ]);
-    const documentFieldForeignKeys = db.pragma('foreign_key_list(document_fields)') as Array<{
-      from: string;
-    }>;
-    expect(documentFieldForeignKeys.map((foreignKey) => foreignKey.from).sort()).toEqual([
-      'document_id',
-      'source_ocr_run_id',
     ]);
 
     const cascadeForeignKeys = ['applicant_sessions', 'admin_sessions', 'cases', 'documents']
@@ -505,55 +489,6 @@ describe('FlowPass SQLite schema', () => {
     );
   });
 
-  it('keeps OCR observations immutable after they are recorded', () => {
-    const ids = insertCaseGraph(db);
-    const documentId = '0198f015-0000-7000-8000-000000000015';
-    const ocrRunId = '0198f015-0000-7000-8000-000000000016';
-
-    db.prepare(
-      `INSERT INTO documents (
-        id, case_id, kind, storage_id, key_id, content_sha256, media_type, byte_size,
-        original_name_enc, status, uploaded_by_type, uploaded_by_id, created_at, row_version
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      documentId,
-      ids.case,
-      'invoice',
-      'storage-ocr',
-      'key-ocr',
-      'document-hash-ocr',
-      'application/pdf',
-      1,
-      'enc:ocr.pdf',
-      'processing',
-      'system',
-      'worker-1',
-      STAMP,
-      1,
-    );
-    db.prepare(
-      `INSERT INTO ocr_runs (
-        id, document_id, engine, engine_version, status, result_enc, result_sha256,
-        started_at, finished_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      ocrRunId,
-      documentId,
-      'vision',
-      'v1',
-      'completed',
-      'enc:result',
-      'ocr-hash',
-      STAMP,
-      STAMP,
-      STAMP,
-    );
-
-    expect(() =>
-      db.prepare('UPDATE ocr_runs SET status = ? WHERE id = ?').run('failed', ocrRunId),
-    ).toThrow('ocr_runs are immutable');
-  });
-
   it('installs update and delete guards for every immutable historic table', () => {
     const immutableTables = [
       'passport_versions',
@@ -561,8 +496,6 @@ describe('FlowPass SQLite schema', () => {
       'case_state_transitions',
       'passport_follow_up_answers',
       'passport_confirmations',
-      'ocr_runs',
-      'document_field_reviews',
       'rule_evaluations',
       'subsidy_calculations',
       'timeline_events',
@@ -684,7 +617,7 @@ describe('FlowPass SQLite schema', () => {
         )
         .run(
           '0198f015-0000-7000-8000-000000000012',
-          'ocr',
+          'line_webhook',
           '{not-json',
           'queued',
           'job-invalid-json',

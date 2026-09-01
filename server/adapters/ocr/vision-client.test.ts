@@ -1,6 +1,0 @@
-import { describe, expect, it } from 'vitest';
-import { MAX_OCR_INPUT_BYTES } from './ocr-contract';
-import { VisionClient, createVisionProcessRunner } from './vision-client';
-describe('VisionClient', () => { it('passes bytes over injected stdin runner without paths', async () => { const result = await new VisionClient(async (bytes) => ({ engine: 'vision', engineVersion: 'fixture', languages: ['zh-Hant'], lines: [{ page: 1, text: `${bytes.length}`, confidence: 0.9, boundingBox: { x: 0, y: 0, width: 1, height: 1 } }], durationMs: 1 })).recognize(new Uint8Array([1, 2])); expect(result.lines[0].text).toBe('2'); }); });
-it('rejects an oversized process input before spawning a helper', async () => { await expect(createVisionProcessRunner('/definitely/missing-helper')(new Uint8Array(MAX_OCR_INPUT_BYTES + 1), new AbortController().signal)).rejects.toMatchObject({ code: 'OCR_SANDBOX_FAILED' }); });
-it('rejects out-of-canvas provenance from an untrusted helper', async () => { await expect(new VisionClient(async () => ({ engine: 'vision', engineVersion: 'fixture', languages: [], lines: [{ page: 1, text: 'x', confidence: 0.9, boundingBox: { x: 0.8, y: 0, width: 0.3, height: 0.1 } }], durationMs: 1 })).recognize(new Uint8Array([1]))).rejects.toMatchObject({ code: 'OCR_SANDBOX_FAILED' }); });

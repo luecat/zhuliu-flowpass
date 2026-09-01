@@ -37,9 +37,9 @@ describe('DurableJobRunner', () => {
     const firstRunner = new DurableJobRunner(db);
     const secondRunner = new DurableJobRunner(otherDb);
     const job = firstRunner.enqueue({
-      jobType: 'ocr',
-      payload: { documentId: 'document-1' },
-      uniqueKey: 'ocr:document-1',
+      jobType: 'ai_draft',
+      payload: { caseId: 'lease-case-1' },
+      uniqueKey: 'ai_draft:lease-case-1',
       availableAt: INITIAL_TIME,
     });
 
@@ -101,9 +101,9 @@ describe('DurableJobRunner', () => {
   it('normalizes RFC3339 timestamps to UTC before comparing ready jobs', () => {
     const runner = new DurableJobRunner(db);
     const job = runner.enqueue({
-      jobType: 'ocr',
-      payload: { documentId: 'document-offset' },
-      uniqueKey: 'ocr:document-offset',
+      jobType: 'line_webhook',
+      payload: { eventId: 'event-offset' },
+      uniqueKey: 'line_webhook:event-offset',
       createdAt: '2026-08-30T08:00:00+08:00',
       availableAt: '2026-08-30T08:00:00+08:00',
     });
@@ -117,9 +117,9 @@ describe('DurableJobRunner', () => {
   it('completes a job idempotently', () => {
     const runner = new DurableJobRunner(db);
     const job = runner.enqueue({
-      jobType: 'retention',
-      payload: { retentionRun: '2026-08-30' },
-      uniqueKey: 'retention:2026-08-30',
+      jobType: 'line_webhook',
+      payload: { eventId: 'event-complete' },
+      uniqueKey: 'line_webhook:event-complete',
       availableAt: INITIAL_TIME,
     });
     runner.leaseNext({ workerId: 'worker-a', now: INITIAL_TIME, leaseDurationMs: 5_000 });
@@ -142,9 +142,9 @@ describe('DurableJobRunner', () => {
   it('retries with bounded exponential backoff', () => {
     const runner = new DurableJobRunner(db);
     const job = runner.enqueue({
-      jobType: 'ocr',
-      payload: { documentId: 'document-2' },
-      uniqueKey: 'ocr:document-2',
+      jobType: 'line_notification',
+      payload: { caseId: 'backoff-case-1' },
+      uniqueKey: 'line_notification:backoff-case-1',
       maxAttempts: 10,
       availableAt: INITIAL_TIME,
     });

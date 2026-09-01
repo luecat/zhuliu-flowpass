@@ -7,13 +7,6 @@ import { generatePassport } from './handlers/generate-passport';
 import { LmStudioClient } from '../adapters/lm-studio/lm-studio-client';
 import { KeychainSecretProvider } from '../config/keychain';
 import { initializeFieldCryptoAtStartup } from '../crypto/keyring';
-import { join } from 'node:path';
-import { DocumentVault } from '../services/document-vault';
-import { OcrAdapterError } from '../adapters/ocr/ocr-contract';
-import { PaddleClient } from '../adapters/ocr/paddle-client';
-import { VisionClient, createVisionProcessRunner } from '../adapters/ocr/vision-client';
-import { runOcrJob } from './handlers/run-ocr';
-import { runRetentionJob } from './handlers/run-retention';
 import { JobRepository } from '../db/repositories/jobs';
 import type { DurableJob } from '../db/repositories/jobs';
 import { processLineEvent } from './handlers/process-line-event';
@@ -81,16 +74,7 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
         : null;
       dependencyStatus.lineNotification = lineClient ? 'ready' : 'disabled';
       const workerId = process.env.FLOWPASS_WORKER_ID ?? `worker-${process.pid}`;
-      const vault = new DocumentVault({ rootPath: join(runtimeConfig.dataRoot, 'vault'), crypto });
-      const visionRunner = process.env.FLOWPASS_VISION_OCR_PATH
-        ? createVisionProcessRunner(process.env.FLOWPASS_VISION_OCR_PATH)
-        : async () => { throw new OcrAdapterError('OCR_UNAVAILABLE'); };
-      const vision = new VisionClient(visionRunner);
-      const paddle = new PaddleClient(async () => { throw new OcrAdapterError('OCR_UNAVAILABLE'); }, process.env.FLOWPASS_PADDLE_PREFLIGHT === 'passed');
-      dependencyStatus.ocr = process.env.FLOWPASS_VISION_OCR_PATH ? 'ready' : 'disabled';
       const handlers = {
-        ocr: async (job: DurableJob) => { await runOcrJob(job, { workerId }, { database, crypto, vault, ocr: { vision, paddle } }); },
-        retention: async (job: DurableJob) => { await runRetentionJob(job, { workerId }, { database, crypto }); },
         line_webhook: async (job: DurableJob) => { processLineEvent(job, { database }); },
         ...(lineClient ? { line_notification: async (job: DurableJob) => { await sendLineNotification(job, { database, crypto, client: lineClient, liffId: runtimeConfig.liffId }); } } : {}),
         ...(client ? { ai_draft: async (job: DurableJob) => { await generatePassport(job, { workerId }, { database, crypto, client: client! }); } } : {}),
@@ -103,17 +87,12 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
         // worker cannot lease the same AI draft while inference is active.
         leaseDurationMs: 960_000,
       });
-      const retentionJobs = new JobRepository(database);
+      const jobBridge = new JobRepository(database);
       const enqueueLineNotifications = () => {
         if (!lineClient) return;
         const pending = database.prepare("SELECT id FROM notification_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 20").all() as Array<{ id: string }>;
-        for (const row of pending) retentionJobs.enqueue({ systemId: 'line-notification-bridge' }, { jobType: 'line_notification', payload: { notificationJobId: row.id }, uniqueKey: `line-notification:${row.id}`, maxAttempts: 3 });
+        for (const row of pending) jobBridge.enqueue({ systemId: 'line-notification-bridge' }, { jobType: 'line_notification', payload: { notificationJobId: row.id }, uniqueKey: `line-notification:${row.id}`, maxAttempts: 3 });
       };
-      const enqueueRetention = () => {
-        const day = new Date().toISOString().slice(0, 10);
-        retentionJobs.enqueue({ systemId: 'retention-scheduler' }, { jobType: 'retention', payload: { day }, uniqueKey: `retention:${day}`, maxAttempts: 5 });
-      };
-      enqueueRetention();
       const tick = () => {
         if (isMaintenanceMode(database)) return;
         enqueueLineNotifications();
@@ -121,9 +100,8 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       };
       dependencyStatus.processing = 'ready';
       const timer = setInterval(tick, 250);
-      const retentionTimer = setInterval(enqueueRetention, 60 * 60 * 1000);
-      process.once('SIGINT', () => { clearInterval(timer); clearInterval(retentionTimer); });
-      process.once('SIGTERM', () => { clearInterval(timer); clearInterval(retentionTimer); });
+      process.once('SIGINT', () => { clearInterval(timer); });
+      process.once('SIGTERM', () => { clearInterval(timer); });
     } catch {
       dependencyStatus.processing = 'failed';
       // Keep health available and leave jobs queued for an operator retry.

@@ -409,89 +409,6 @@ CREATE TABLE documents (
   row_version INTEGER NOT NULL CHECK (row_version >= 1)
 );
 
-CREATE TABLE ocr_runs (
-  id TEXT NOT NULL PRIMARY KEY CHECK (
-    length(id) = 36
-    AND length(CAST(id AS BLOB)) = 36
-    AND id = lower(id)
-    AND id GLOB '????????-????-7???-[89ab]???-????????????'
-    AND id NOT GLOB '*[^0-9a-f-]*'
-    AND length(replace(id, '-', '')) = 32
-  ),
-  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
-  engine TEXT NOT NULL CHECK (engine IN ('vision', 'paddleocr', 'manual')),
-  engine_version TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed', 'manual_review')),
-  result_enc TEXT,
-  result_sha256 TEXT,
-  failure_code TEXT,
-  started_at TEXT CHECK (started_at IS strftime('%Y-%m-%dT%H:%M:%fZ', started_at)),
-  finished_at TEXT CHECK (finished_at IS strftime('%Y-%m-%dT%H:%M:%fZ', finished_at)),
-  created_at TEXT NOT NULL CHECK (created_at IS strftime('%Y-%m-%dT%H:%M:%fZ', created_at))
-);
-
-CREATE TABLE document_fields (
-  id TEXT NOT NULL PRIMARY KEY CHECK (
-    length(id) = 36
-    AND length(CAST(id AS BLOB)) = 36
-    AND id = lower(id)
-    AND id GLOB '????????-????-7???-[89ab]???-????????????'
-    AND id NOT GLOB '*[^0-9a-f-]*'
-    AND length(replace(id, '-', '')) = 32
-  ),
-  document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE RESTRICT,
-  field_name TEXT NOT NULL,
-  original_value_enc TEXT,
-  normalized_value_enc TEXT,
-  normalized_value_hmac TEXT,
-  confidence REAL CHECK (confidence BETWEEN 0 AND 1),
-  source_ocr_run_id TEXT REFERENCES ocr_runs(id) ON DELETE RESTRICT,
-  source_page INTEGER,
-  source_box_enc TEXT,
-  parser_reason_code TEXT,
-  -- The contract names this pointer without an FK annotation.
-  effective_review_id TEXT,
-  created_at TEXT NOT NULL CHECK (created_at IS strftime('%Y-%m-%dT%H:%M:%fZ', created_at)),
-  UNIQUE (document_id, field_name, source_ocr_run_id)
-);
-
-CREATE TABLE document_field_reviews (
-  id TEXT NOT NULL PRIMARY KEY CHECK (
-    length(id) = 36
-    AND length(CAST(id AS BLOB)) = 36
-    AND id = lower(id)
-    AND id GLOB '????????-????-7???-[89ab]???-????????????'
-    AND id NOT GLOB '*[^0-9a-f-]*'
-    AND length(replace(id, '-', '')) = 32
-  ),
-  document_field_id TEXT NOT NULL REFERENCES document_fields(id) ON DELETE RESTRICT,
-  review_kind TEXT NOT NULL CHECK (review_kind IN (
-    'applicant_correction', 'admin_verification', 'admin_rejection'
-  )),
-  value_enc TEXT,
-  value_hmac TEXT,
-  decision TEXT NOT NULL CHECK (decision IN ('corrected', 'verified', 'rejected')),
-  reason_enc TEXT,
-  actor_type TEXT NOT NULL,
-  actor_id TEXT NOT NULL,
-  created_at TEXT NOT NULL CHECK (created_at IS strftime('%Y-%m-%dT%H:%M:%fZ', created_at))
-);
-
-CREATE TABLE invoice_fingerprints (
-  id TEXT NOT NULL PRIMARY KEY CHECK (
-    length(id) = 36
-    AND length(CAST(id AS BLOB)) = 36
-    AND id = lower(id)
-    AND id GLOB '????????-????-7???-[89ab]???-????????????'
-    AND id NOT GLOB '*[^0-9a-f-]*'
-    AND length(replace(id, '-', '')) = 32
-  ),
-  document_id TEXT NOT NULL UNIQUE REFERENCES documents(id) ON DELETE RESTRICT,
-  case_id TEXT NOT NULL REFERENCES cases(id) ON DELETE RESTRICT,
-  fingerprint_hmac TEXT NOT NULL,
-  created_at TEXT NOT NULL CHECK (created_at IS strftime('%Y-%m-%dT%H:%M:%fZ', created_at))
-);
-
 CREATE TABLE rule_evaluations (
   id TEXT NOT NULL PRIMARY KEY CHECK (
     length(id) = 36
@@ -543,7 +460,7 @@ CREATE TABLE jobs (
     AND id NOT GLOB '*[^0-9a-f-]*'
     AND length(replace(id, '-', '')) = 32
   ),
-  job_type TEXT NOT NULL CHECK (job_type IN ('ai_draft', 'ocr', 'line_webhook', 'line_notification', 'retention')),
+  job_type TEXT NOT NULL CHECK (job_type IN ('ai_draft', 'line_webhook', 'line_notification')),
   payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
   state TEXT NOT NULL CHECK (state IN ('queued', 'leased', 'completed', 'failed_terminal')),
   unique_key TEXT NOT NULL UNIQUE,

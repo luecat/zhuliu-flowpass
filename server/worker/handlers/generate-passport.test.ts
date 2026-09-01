@@ -29,7 +29,7 @@ describe('generate passport worker boundary', () => {
   });
   afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
   it('rejects non-AI jobs before touching persistence or the model', async () => {
-    await expect(generatePassport({ id: 'job', jobType: 'ocr', payload: {}, state: 'leased', uniqueKey: 'x', attempts: 1, maxAttempts: 1, availableAt: '', leaseOwner: 'w', leaseUntil: null, lastErrorCode: null, createdAt: '', completedAt: null }, { workerId: 'w' }, { database: {} as never, crypto: {} as never, client: { complete: async () => { throw new Error('must not call'); } } })).rejects.toThrow('unsupported job type');
+    await expect(generatePassport({ id: 'job', jobType: 'line_webhook', payload: {}, state: 'leased', uniqueKey: 'x', attempts: 1, maxAttempts: 1, availableAt: '', leaseOwner: 'w', leaseUntil: null, lastErrorCode: null, createdAt: '', completedAt: null }, { workerId: 'w' }, { database: {} as never, crypto: {} as never, client: { complete: async () => { throw new Error('must not call'); } } })).rejects.toThrow('unsupported job type');
   });
 
   it('decrypts the answer in the worker and finalizes through passport lifecycle metadata', async () => {

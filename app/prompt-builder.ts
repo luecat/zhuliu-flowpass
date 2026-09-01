@@ -133,7 +133,7 @@ const BASE_TEMPLATE = {
       'Never approve or deny a subsidy, determine eligibility, validate an invoice, or make an administrative disposition.',
       'Never assign an opaque risk score. Explain each suggested action with the concrete flow condition that triggered it.',
       'Never request or retain original content such as photos, recordings, documents, credentials, prompts, or other sensitive work material. Describe categories and flows only.',
-      'Do not treat OCR output, applicant statements, or tool metadata as independently verified facts.',
+      'Do not treat applicant statements, or tool metadata as independently verified facts.',
     ],
     interpretation_rules: [
       'Treat task.user_inputs as four separate answers. Do not merge them into a new narrative or silently add details.',

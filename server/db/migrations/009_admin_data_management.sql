@@ -147,14 +147,6 @@ DROP TRIGGER passport_confirmations_no_delete;
 CREATE TRIGGER passport_confirmations_no_delete BEFORE DELETE ON passport_confirmations
 WHEN NOT EXISTS (SELECT 1 FROM admin_data_mutation_guards WHERE table_name = 'passport_confirmations' AND record_id = OLD.id AND action = 'delete' AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 BEGIN SELECT RAISE(ABORT, 'passport_confirmations are immutable'); END;
-DROP TRIGGER ocr_runs_no_delete;
-CREATE TRIGGER ocr_runs_no_delete BEFORE DELETE ON ocr_runs
-WHEN NOT EXISTS (SELECT 1 FROM admin_data_mutation_guards WHERE table_name = 'ocr_runs' AND record_id = OLD.id AND action = 'delete' AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-BEGIN SELECT RAISE(ABORT, 'ocr_runs are immutable'); END;
-DROP TRIGGER document_field_reviews_no_delete;
-CREATE TRIGGER document_field_reviews_no_delete BEFORE DELETE ON document_field_reviews
-WHEN NOT EXISTS (SELECT 1 FROM admin_data_mutation_guards WHERE table_name = 'document_field_reviews' AND record_id = OLD.id AND action = 'delete' AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-BEGIN SELECT RAISE(ABORT, 'document_field_reviews are immutable'); END;
 DROP TRIGGER rule_evaluations_no_delete;
 CREATE TRIGGER rule_evaluations_no_delete BEFORE DELETE ON rule_evaluations
 WHEN NOT EXISTS (SELECT 1 FROM admin_data_mutation_guards WHERE table_name = 'rule_evaluations' AND record_id = OLD.id AND action = 'delete' AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))

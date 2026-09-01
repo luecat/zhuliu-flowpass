@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FieldCrypto, type Keyring } from '../crypto/field-crypto';
-import { encryptDatabaseText } from '../db/repositories/encrypted-fields';
 import { openDatabase } from '../db/connection';
 import { migrateDatabase } from '../db/migrate';
 import { createCaseService } from './case-service';
@@ -52,7 +51,7 @@ describe('submission service', () => {
   });
   afterEach(() => { db.close(); rmSync(dir, { recursive: true, force: true }); });
 
-  it('submits once after confirmation, evaluates OCR evidence and takes server transaction time', () => {
+  it('submits once after confirmation and takes server transaction time', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
@@ -61,28 +60,12 @@ describe('submission service', () => {
     const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
     lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
     const invoiceDocumentId = '0198f050-0000-7000-8000-000000000020';
-    const duplicateDocumentId = '0198f050-0000-7000-8000-000000000019';
-    const ocrRunId = '0198f050-0000-7000-8000-000000000022';
     savePurchaseDetails(db, crypto, created.case.id);
-    insertReadyDocument(db, created.case.id, duplicateDocumentId, 'purchase_proof');
     insertReadyDocument(db, created.case.id, invoiceDocumentId, 'purchase_proof');
     insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000040', 'identity_front');
     insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000041', 'identity_back');
     insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000042', 'passbook_cover');
     insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000043', 'affidavit');
-    db.prepare('INSERT INTO ocr_runs (id,document_id,engine,engine_version,status,result_enc,result_sha256,failure_code,started_at,finished_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(ocrRunId, invoiceDocumentId, 'manual', 'test', 'completed', null, null, null, NOW, NOW, NOW);
-    const fields = [
-      ['invoice_number', 'AB123456'],
-      ['invoice_at', '2026-08-30T00:00:00Z'],
-      ['purchase_at', '2026-08-30T00:00:00Z'],
-      ['amount_minor', '100000'],
-      ['currency', 'TWD'],
-    ] as const;
-    fields.forEach(([fieldName, value], index) => {
-      const fieldId = `0198f050-0000-7000-8000-${String(30 + index).padStart(12, '0')}`;
-      db.prepare('INSERT INTO document_fields (id,document_id,field_name,original_value_enc,normalized_value_enc,normalized_value_hmac,confidence,source_ocr_run_id,source_page,source_box_enc,parser_reason_code,effective_review_id,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)').run(fieldId, invoiceDocumentId, fieldName, encryptDatabaseText(crypto, 'document_fields', 'original_value_enc', fieldId, value), encryptDatabaseText(crypto, 'document_fields', 'normalized_value_enc', fieldId, value), crypto.hmacLookup(value, 'document-normalized-value'), 0.95, ocrRunId, 1, null, 'fixture', null, NOW);
-    });
-    db.prepare('INSERT INTO invoice_fingerprints (id,document_id,case_id,fingerprint_hmac,created_at) VALUES (?,?,?,?,?)').run('0198f050-0000-7000-8000-000000000024', duplicateDocumentId, created.case.id, crypto.hmacLookup('AB123456', 'invoice-fingerprint'), NOW);
     const service = createSubmissionService({ database: db, crypto, clock: () => new Date('2026-08-30T01:02:03.000Z'), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'submit-request' });
     const confirmed = lifecycle.getForApplicant({ applicantId: IDS.applicant, caseId: created.case.id });
     if (!confirmed) throw new Error('confirmed passport missing');
@@ -94,10 +77,8 @@ describe('submission service', () => {
     expect((db.prepare('SELECT COUNT(*) AS count FROM case_state_transitions WHERE case_id=? AND to_state=\'submitted\'').get(created.case.id) as { count: number }).count).toBe(1);
     expect((db.prepare('SELECT COUNT(*) AS count FROM notification_jobs WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(1);
     expect((db.prepare('SELECT COUNT(*) AS count FROM rule_evaluations WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(4);
-    expect((db.prepare('SELECT outcome FROM rule_evaluations WHERE case_id=? AND evaluation_kind=\'invoice\' ORDER BY created_at DESC, id DESC LIMIT 1').get(created.case.id) as { outcome: string }).outcome).toBe('needs_review');
+    expect((db.prepare('SELECT outcome FROM rule_evaluations WHERE case_id=? AND evaluation_kind=\'invoice\' ORDER BY created_at DESC, id DESC LIMIT 1').get(created.case.id) as { outcome: string }).outcome).toBe('missing');
     expect((db.prepare('SELECT calculated_amount_twd FROM subsidy_calculations WHERE case_id=?').get(created.case.id) as { calculated_amount_twd: number }).calculated_amount_twd).toBe(500);
-    expect((db.prepare('SELECT COUNT(*) AS count FROM invoice_fingerprints WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(2);
-    expect((db.prepare('SELECT result_json FROM rule_evaluations WHERE case_id=?').all(created.case.id) as Array<{ result_json: string }>).every((row) => !row.result_json.includes('AB123456'))).toBe(true);
     expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: confirmed.version.id, ifMatch: '"4"' })).toThrowError(SubmissionCommandError);
   });
 
@@ -113,7 +94,7 @@ describe('submission service', () => {
     expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"9"' })).toThrowError(SubmissionCommandError);
   });
 
-  it('requires every attachment but does not wait for OCR completion', () => {
+  it('requires every attachment before submission', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.docsCycle, idempotencyKey: 'case' });

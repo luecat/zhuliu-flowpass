@@ -23,7 +23,7 @@ describe('packageRelease', () => {
     expect(readFileSync(join(result.releaseDir, 'node_modules', 'better-sqlite3', 'package.json'), 'utf8')).toBe('{}');
     expect(lstatSync(join(result.releaseDir, 'runtime')).isDirectory()).toBe(true);
     const manifest = JSON.parse(readFileSync(result.manifest, 'utf8')) as { format: string; buildId: string; sourceDirty: boolean; dependencyLockSha256: string; migrationRange: string; entries: Array<{ path: string }> };
-    expect(manifest.format).toBe('flowpass-release-v1'); expect(manifest.buildId).toBe('build-123'); expect(manifest.sourceDirty).toBe(false); expect(manifest.dependencyLockSha256).toMatch(/^[a-f0-9]{64}$/); expect(manifest.migrationRange).toBe('001_core..009_admin_data_management'); expect(manifest.entries.some((entry) => entry.path === 'public/server.js')).toBe(true);
+    expect(manifest.format).toBe('flowpass-release-v1'); expect(manifest.buildId).toBe('build-123'); expect(manifest.sourceDirty).toBe(false); expect(manifest.dependencyLockSha256).toMatch(/^[a-f0-9]{64}$/); expect(manifest.migrationRange).toBe('001_core..010_drop_ocr'); expect(manifest.entries.some((entry) => entry.path === 'public/server.js')).toBe(true);
     expect(lstatSync(join(releaseRoot, 'current')).isSymbolicLink()).toBe(true);
     expect(() => packageRelease({ projectRoot, releaseRoot, releaseId: '20260831000100' })).toThrow('release already exists');
   });

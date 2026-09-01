@@ -12,9 +12,7 @@ import {
   insertEncryptedCaseStateTransitionForAdmin,
 } from './cases';
 import {
-  insertEncryptedDocumentFieldForSystem,
   insertEncryptedDocumentForApplicant,
-  insertInvoiceFingerprintForSystem,
 } from './documents';
 import {
   decryptLineSubjectForAdmin,
@@ -47,8 +45,6 @@ const IDS = {
   passport: '0198f060-0000-7000-8000-000000000009',
   passportVersion: '0198f060-0000-7000-8000-000000000010',
   document: '0198f060-0000-7000-8000-000000000011',
-  documentField: '0198f060-0000-7000-8000-000000000012',
-  invoiceFingerprint: '0198f060-0000-7000-8000-000000000013',
   task: '0198f060-0000-7000-8000-000000000014',
   notification: '0198f060-0000-7000-8000-000000000015',
   audit: '0198f060-0000-7000-8000-000000000016',
@@ -58,7 +54,6 @@ const PRIVATE = {
   lineSubject: 'LINE-SUBJECT-PRIVATE-060',
   answer: 'ANSWER-PRIVATE-060',
   passport: 'PASSPORT-PAYLOAD-PRIVATE-060',
-  invoice: 'INVOICE-PRIVATE-060',
   filename: 'DOCUMENT-FILENAME-PRIVATE-060.pdf',
   instruction: 'TASK-INSTRUCTION-PRIVATE-060',
   response: 'IDEMPOTENCY-RESPONSE-PRIVATE-060',
@@ -200,26 +195,6 @@ describe('encrypted repository persistence boundaries', () => {
       createdAt: STAMP,
       rowVersion: 1,
     });
-    insertEncryptedDocumentFieldForSystem(database, systemScope, crypto, {
-      id: IDS.documentField,
-      documentId: IDS.document,
-      fieldName: 'invoice_number',
-      originalValue: PRIVATE.invoice,
-      normalizedValue: PRIVATE.invoice,
-      confidence: 0.9,
-      sourceOcrRunId: null,
-      sourcePage: 1,
-      sourceBox: '{"x":1}',
-      parserReasonCode: null,
-      createdAt: STAMP,
-    });
-    insertInvoiceFingerprintForSystem(database, systemScope, crypto, {
-      id: IDS.invoiceFingerprint,
-      documentId: IDS.document,
-      caseId: IDS.case,
-      normalizedInvoiceValue: PRIVATE.invoice,
-      createdAt: STAMP,
-    });
     insertEncryptedCaseTaskForAdmin(database, adminScope, crypto, {
       id: IDS.task,
       caseId: IDS.case,
@@ -267,9 +242,6 @@ describe('encrypted repository persistence boundaries', () => {
            (SELECT reason_enc FROM case_state_transitions WHERE id = ?) AS reason_enc,
            (SELECT payload_enc FROM passport_versions WHERE id = ?) AS payload_enc,
            (SELECT original_name_enc FROM documents WHERE id = ?) AS original_name_enc,
-           (SELECT original_value_enc FROM document_fields WHERE id = ?) AS original_value_enc,
-           (SELECT normalized_value_hmac FROM document_fields WHERE id = ?) AS normalized_value_hmac,
-           (SELECT fingerprint_hmac FROM invoice_fingerprints WHERE id = ?) AS fingerprint_hmac,
            (SELECT instructions_enc FROM case_tasks WHERE id = ?) AS instructions_enc,
            (SELECT response_enc FROM api_idempotency_keys WHERE scope = ? AND key = ?) AS response_enc,
            (SELECT detail_enc FROM audit_logs WHERE id = ?) AS detail_enc`,
@@ -281,9 +253,6 @@ describe('encrypted repository persistence boundaries', () => {
         IDS.transition,
         IDS.passportVersion,
         IDS.document,
-        IDS.documentField,
-        IDS.documentField,
-        IDS.invoiceFingerprint,
         IDS.task,
         `applicant:${IDS.applicant}:POST:/api/v1/cases`,
         'idem-060',
@@ -295,10 +264,6 @@ describe('encrypted repository persistence boundaries', () => {
       expect(serializedRows).not.toContain(sentinel);
     }
     expect(rawRows.line_subject_hmac).toBe(crypto.hmacLookup(PRIVATE.lineSubject, 'line-subject'));
-    expect(rawRows.normalized_value_hmac).toBe(
-      crypto.hmacLookup(PRIVATE.invoice, 'document-normalized-value'),
-    );
-    expect(rawRows.fingerprint_hmac).toBe(crypto.hmacLookup(PRIVATE.invoice, 'invoice-fingerprint'));
 
     const systemLookup = findLineIdentityForSystemBySubject(
       database,
@@ -419,7 +384,7 @@ describe('encrypted repository persistence boundaries', () => {
         kind: 'transition',
         previousState: 'draft',
         nextState: 'submitted',
-        reasonCode: PRIVATE.invoice,
+        reasonCode: 'REASON-PRIVATE-060',
       },
       { kind: 'field-change', field: PRIVATE.lineSubject, fieldCount: 1, outcome: 'ok' },
       { kind: 'field-change', field: 'document', fieldCount: 0, outcome: 'ok' },

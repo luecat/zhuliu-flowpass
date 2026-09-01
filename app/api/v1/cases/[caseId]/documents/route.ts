@@ -4,6 +4,7 @@ import { getCaseForApplicant } from '../../../../../../server/db/repositories/ca
 import { isValidMutationKey } from '../../../../../../server/public/public-mutations';
 import { getPublicRuntime } from '../../../../../../server/public/runtime';
 import { MAX_MULTIPART_BODY_BYTES } from '../../../../../../server/domain/file-validation';
+import { DocumentRequirementKeySchema } from '../../../../../../shared/purchase-details-contract';
 
 function cookie(request: Request, name: string): string | null {
   for (const part of (request.headers.get('cookie') ?? '').split(';')) {
@@ -63,10 +64,12 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
   try { form = await request.formData(); } catch { return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId)); }
   const file = form.get('file');
   const rawKind = form.get('kind');
-  if (!isUploadFile(file) || typeof rawKind !== 'string' || !['invoice', 'eligibility_proof', 'supplement', 'other'].includes(rawKind)) return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
+  const rawRequirementKey = form.get('requirementKey');
+  const requirementKey = DocumentRequirementKeySchema.safeParse(rawRequirementKey);
+  if (!isUploadFile(file) || typeof rawKind !== 'string' || !['invoice', 'eligibility_proof', 'supplement', 'other'].includes(rawKind) || !requirementKey.success) return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
   const { caseId } = await context.params;
   try {
-    const result = await createDocumentService({ database: runtime.database, crypto: runtime.crypto, vault: runtime.documentVault, clock: runtime.clock, requestIdGenerator: runtime.requestIdGenerator }).upload({ applicantId: csrf.applicantId, caseId, kind: rawKind as DocumentKind, originalName: file.name || 'upload', ...(typeof file.stream === 'function' ? { stream: file.stream() } : { bytes: new Uint8Array(await file.arrayBuffer()) }), ifMatch, idempotencyKey, requestId });
+    const result = await createDocumentService({ database: runtime.database, crypto: runtime.crypto, vault: runtime.documentVault, clock: runtime.clock, requestIdGenerator: runtime.requestIdGenerator }).upload({ applicantId: csrf.applicantId, caseId, kind: rawKind as DocumentKind, requirementKey: requirementKey.data, originalName: file.name || 'upload', ...(typeof file.stream === 'function' ? { stream: file.stream() } : { bytes: new Uint8Array(await file.arrayBuffer()) }), ifMatch, idempotencyKey, requestId });
     const response = apiSuccess(result, requestId, result.document.rowVersion);
     return toJsonResponse(response, { status: 202, headers: { ETag: response.meta.etag ?? '', 'Cache-Control': 'no-store' } });
   } catch (error) { return failure(error, requestId); }

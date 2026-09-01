@@ -4,6 +4,7 @@ import { createCaseService, CaseCommandError } from '../../../../server/domain/c
 import { RateLimitAction, RateLimiter } from '../../../../server/domain/line-session-service';
 import { isValidMutationKey, readApplicantMutation } from '../../../../server/public/public-mutations';
 import { getPublicRuntime } from '../../../../server/public/runtime';
+import { createPublicRouteHandlers } from '../../../../server/public/public-routes';
 
 const BodySchema = z.object({ programCycleId: z.string().min(1).max(128) }).strict();
 
@@ -15,6 +16,18 @@ function cookie(request: Request, name: string): string | null {
 function failure(error: CaseCommandError, requestId: string) {
   const code = error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : error.code === 'ETAG_MISMATCH' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'IDEMPOTENCY_KEY_REUSED' ? ApiErrorCode.IDEMPOTENCY_KEY_REUSED : ApiErrorCode.INVALID_REQUEST;
   return toJsonResponse(apiFailure(code, requestId));
+}
+
+export async function GET(request: Request): Promise<Response> {
+  const runtime = getPublicRuntime();
+  const requestId = runtime?.requestIdGenerator?.() ?? crypto.randomUUID();
+  if (!runtime) return toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId));
+  return createPublicRouteHandlers({
+    database: runtime.database,
+    crypto: runtime.crypto,
+    sessionReader: runtime.lineSessions,
+    requestIdGenerator: runtime.requestIdGenerator,
+  }).listCases(request);
 }
 
 export async function POST(request: Request): Promise<Response> {

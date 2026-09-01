@@ -16,6 +16,7 @@ export async function GET(request: Request, context: RouteContext): Promise<Resp
   const { caseId } = await context.params;
   return createPublicRouteHandlers({
     database: runtime.database,
+    crypto: runtime.crypto,
     sessionReader: runtime.lineSessions,
     requestIdGenerator: runtime.requestIdGenerator,
   }).getCase(request, caseId);

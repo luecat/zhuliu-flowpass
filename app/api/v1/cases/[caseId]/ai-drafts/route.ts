@@ -3,6 +3,7 @@ import { ApiErrorCode, apiFailure, apiSuccess, parseQuotedEtag, toJsonResponse }
 import { createAiDraftService, AiDraftCommandError } from '../../../../../../server/domain/ai-draft-service';
 import { AiDraftAdmissionGuard } from '../../../../../../server/domain/line-session-service';
 import { getCaseForApplicant } from '../../../../../../server/db/repositories/cases';
+import { getApplicantActiveAiDraftJob } from '../../../../../../server/db/repositories/jobs';
 import { isValidMutationKey, readApplicantMutation, reserveApplicantMutation, finalizeApplicantMutation, deleteApplicantMutationReservation } from '../../../../../../server/public/public-mutations';
 import { getPublicRuntime } from '../../../../../../server/public/runtime';
 
@@ -33,6 +34,12 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
     const current = getCaseForApplicant(runtime.database, { applicantId: csrf.applicantId }, caseId);
     if (!current) throw new AiDraftCommandError('NOT_FOUND');
     if (current.rowVersion !== parseQuotedEtag(ifMatch)) throw new AiDraftCommandError('ETAG_MISMATCH');
+    const active = getApplicantActiveAiDraftJob(runtime.database, { applicantId: csrf.applicantId }, caseId);
+    if (active) {
+      const response = apiSuccess({ jobId: active.id, state: active.state }, requestId);
+      if (!finalizeApplicantMutation({ database: runtime.database, crypto: runtime.crypto, reservation, idempotencyKey: key, status: 202, publicBody: JSON.stringify(response), now })) throw new Error('idempotency finalization failed');
+      return toJsonResponse(response, { status: 202, headers: { 'Cache-Control': 'no-store' } });
+    }
     const service = createAiDraftService({ database: runtime.database, crypto: runtime.crypto, modelId: process.env.FLOWPASS_MODEL_ID ?? 'unconfigured', clock: runtime.clock, admission: new AiDraftAdmissionGuard(runtime.database, runtime.crypto, runtime.clock) });
     const result = service.enqueue({ applicantId: csrf.applicantId, caseId, operation: parsed.data.operation, retryNonce: parsed.data.retry ? key ?? undefined : undefined, expectedRowVersion: parseQuotedEtag(ifMatch)! });
     const response = apiSuccess({ jobId: result.job.id, state: result.job.state }, requestId);
@@ -40,7 +47,7 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
     return toJsonResponse(response, { status: 202, headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     deleteApplicantMutationReservation({ database: runtime.database, crypto: runtime.crypto, reservation, idempotencyKey: key });
-    if (error instanceof AiDraftCommandError) { if (error.code === 'NOT_FOUND') return errorResponse(ApiErrorCode.NOT_FOUND, requestId); if (error.code === 'ETAG_MISMATCH') return errorResponse(ApiErrorCode.ETAG_MISMATCH, requestId); if (error.code === 'INVALID_STATE') return errorResponse(ApiErrorCode.INVALID_STATE, requestId); if (error.code === 'AI_INPUT_TOO_LARGE') return errorResponse(ApiErrorCode.AI_INPUT_TOO_LARGE, requestId); if (error.code === 'ACTIVE_JOB') return errorResponse(ApiErrorCode.RATE_LIMITED, requestId, 10); if (error.code === 'RATE_LIMITED') return errorResponse(ApiErrorCode.RATE_LIMITED, requestId); }
+    if (error instanceof AiDraftCommandError) { if (error.code === 'NOT_FOUND') return errorResponse(ApiErrorCode.NOT_FOUND, requestId); if (error.code === 'ETAG_MISMATCH') return errorResponse(ApiErrorCode.ETAG_MISMATCH, requestId); if (error.code === 'INVALID_STATE') return errorResponse(ApiErrorCode.INVALID_STATE, requestId); if (error.code === 'AI_INPUT_TOO_LARGE') return errorResponse(ApiErrorCode.AI_INPUT_TOO_LARGE, requestId); if (error.code === 'AI_INPUT_UNSAFE') return errorResponse(ApiErrorCode.AI_INPUT_UNSAFE, requestId); if (error.code === 'ACTIVE_JOB') return errorResponse(ApiErrorCode.RATE_LIMITED, requestId, 10); if (error.code === 'RATE_LIMITED') return errorResponse(ApiErrorCode.RATE_LIMITED, requestId); }
     return errorResponse(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId);
   }
 }

@@ -3,8 +3,9 @@ import { configurePublicRuntime, clearPublicRuntime } from '../../../../../../se
 import { vi } from 'vitest';
 import { POST } from './route';
 
-const routeMocks = vi.hoisted(() => ({ mode: 'success' as 'success' | 'not-found' | 'etag' | 'rate' }));
+const routeMocks = vi.hoisted(() => ({ mode: 'success' as 'success' | 'not-found' | 'etag' | 'rate' | 'active' }));
 vi.mock('../../../../../../server/db/repositories/cases', () => ({ getCaseForApplicant: () => routeMocks.mode === 'not-found' ? null : { id: 'case', rowVersion: 1 } }));
+vi.mock('../../../../../../server/db/repositories/jobs', () => ({ getApplicantActiveAiDraftJob: () => routeMocks.mode === 'active' ? { id: 'active-job', state: 'leased', createdAt: '2026-08-30T00:00:00.000Z', completedAt: null } : null }));
 vi.mock('../../../../../../server/domain/ai-draft-service', () => {
   class MockAiDraftCommandError extends Error { constructor(readonly code: string) { super(code); } }
   return { AiDraftCommandError: MockAiDraftCommandError, createAiDraftService: () => ({ enqueue: () => {
@@ -38,6 +39,14 @@ describe('AI draft route boundary', () => {
     expect(JSON.stringify(await response.json())).not.toContain('material');
     routeMocks.mode = 'not-found';
     expect((await POST(request(), { params: Promise.resolve({ caseId: 'case' }) })).status).toBe(404);
+  });
+
+  it('reconnects to the current applicant-owned active draft job', async () => {
+    configurePublicRuntime(runtime() as never);
+    routeMocks.mode = 'active';
+    const response = await POST(request(), { params: Promise.resolve({ caseId: 'case' }) });
+    expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({ data: { jobId: 'active-job', state: 'leased' } });
   });
 
   it('rejects wrong origin, missing If-Match and admission rate limits before creating a job', async () => {

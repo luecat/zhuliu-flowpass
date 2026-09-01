@@ -1,4 +1,5 @@
-'use client';
-import { useCallback, useEffect, useMemo, useState } from 'react'; import { PublicApiClient, PublicApiError } from '../../lib/public-api';
-type Task = { id: string; caseId: string; rowVersion: number; caseRowVersion: number; title: string; taskType: string; dueAt: string | null; status: string };
-export default function TasksPage() { const api = useMemo(() => new PublicApiClient(), []); const [tasks, setTasks] = useState<Task[]>([]); const [message, setMessage] = useState(''); const [busy, setBusy] = useState<string | null>(null); const load = useCallback(() => void api.read<{ tasks: Task[] }>('/api/v1/tasks').then((value) => setTasks(value.tasks)).catch(() => setMessage('待辦事項暫時無法載入，請稍後再試。')), [api]); useEffect(() => { load(); }, [load]); async function complete(task: Task) { setBusy(task.id); setMessage(''); try { await api.mutate(`/api/v1/tasks/${encodeURIComponent(task.id)}/complete`, { method: 'POST', ifMatch: `"${task.rowVersion}"`, body: { action: task.taskType } }); setMessage('這項待辦已完成。'); load(); } catch (error) { setMessage(error instanceof PublicApiError && error.code === 'ETAG_MISMATCH' ? '待辦有新進度，請重新整理後再完成。' : '這項待辦目前無法完成，請重新整理後再試。'); } finally { setBusy(null); } } return <section><h1>待辦事項</h1>{message && <p role="status">{message}</p>}{tasks.length === 0 ? <p>目前沒有待辦事項。</p> : <ul>{tasks.map((task) => <li key={task.id}><strong>{task.title}</strong><span> · {task.taskType} · {task.dueAt ?? '沒有期限'}</span>{task.taskType === 'provide_document' && <p>請依照上方說明補上文件後，再完成這項待辦。</p>}<button type="button" onClick={() => void complete(task)} disabled={busy !== null}>標記為已完成</button></li>)}</ul>}</section>; }
+import { redirect } from 'next/navigation';
+
+export default function TasksPage() {
+  redirect('/app/passports');
+}

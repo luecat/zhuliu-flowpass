@@ -3,15 +3,14 @@ import { acceptLineWebhookEvents } from '../../../server/services/line-webhook-s
 import { getPublicRuntime } from '../../../server/public/runtime';
 
 export async function POST(request: Request): Promise<Response> {
-  const secret = process.env.FLOWPASS_LINE_CHANNEL_SECRET;
-  if (!secret) return Response.json({ error: 'LINE webhook is not configured' }, { status: 503 });
+  const runtime = getPublicRuntime();
+  const secret = runtime?.lineChannelSecret;
+  if (!runtime || !secret) return Response.json({ error: 'LINE webhook is not configured' }, { status: 503 });
   const raw = new Uint8Array(await request.arrayBuffer());
   if (!verifyLineWebhookSignature(raw, request.headers.get('x-line-signature'), secret)) return Response.json({ error: 'invalid signature' }, { status: 401 });
   let body: unknown;
   try { body = JSON.parse(new TextDecoder().decode(raw)); } catch { return Response.json({ error: 'invalid payload' }, { status: 400 }); }
   const events = body && typeof body === 'object' && Array.isArray((body as Record<string, unknown>).events) ? (body as { events: unknown[] }).events : [];
-  const runtime = getPublicRuntime();
-  if (!runtime) return Response.json({ error: 'service unavailable' }, { status: 503 });
   const result = acceptLineWebhookEvents({ database: runtime.database, clock: runtime.clock }, events);
   return Response.json({ accepted: result.accepted, duplicates: result.duplicates });
 }

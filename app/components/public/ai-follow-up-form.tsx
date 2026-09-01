@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { followUpApplicantCopy } from './applicant-copy';
 
 export interface AiFollowUpQuestion {
   id: string;
@@ -57,12 +58,13 @@ export function AiFollowUpForm({
         <h2>讓護照更貼近你的實際流程</h2>
         <p>每張卡片都說明為什麼需要這個答案，逐張填寫即可。</p>
       </div>
-      {questions.map((question, index) => (
-        <article className="ai-follow-up-card" data-testid="ai-follow-up-card" key={question.id}>
+      {questions.map((question, index) => {
+        const copy = followUpApplicantCopy(question.questionKey, question.prompt, question.reason);
+        return <article className="ai-follow-up-card" data-testid="ai-follow-up-card" key={question.id}>
           <div className="ai-follow-up-meta"><span>Q{String(index + 1).padStart(2, '0')}</span><span>{question.priority === 'high' ? '高優先' : question.priority === 'medium' ? '中優先' : '低優先'}</span>{question.required && <b>必填</b>}</div>
-          <h3>{question.prompt}</h3>
-          <p className="ai-follow-up-reason">為什麼需要：{question.reason}</p>
-          <label htmlFor={`follow-up-${question.id}`}>{question.prompt}</label>
+          <h3>{copy.prompt}</h3>
+          <p className="ai-follow-up-reason">為什麼要問：{copy.reason}</p>
+          <label className="sr-only" htmlFor={`follow-up-${question.id}`}>{copy.prompt}</label>
           {question.answerSchema.type === 'single_choice' && Array.isArray(question.answerSchema.choices) ? (
             <select id={`follow-up-${question.id}`} value={answers[question.id] ?? ''} disabled={!question.required} aria-required={question.required} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))}>
               <option value="">請選擇</option>
@@ -70,7 +72,7 @@ export function AiFollowUpForm({
             </select>
           ) : question.answerSchema.type === 'multi_choice' && Array.isArray(question.answerSchema.choices) ? (
             <fieldset disabled={!question.required}>
-              <legend className="sr-only">{question.prompt}</legend>
+              <legend className="sr-only">{copy.prompt}</legend>
               {question.answerSchema.choices.map((choice) => {
                 let selected: string[] = [];
                 try { const parsed = JSON.parse(answers[question.id] ?? '[]'); if (Array.isArray(parsed)) selected = parsed.filter((item): item is string => typeof item === 'string'); } catch { /* empty selection */ }
@@ -84,11 +86,11 @@ export function AiFollowUpForm({
           ) : question.answerSchema.type === 'date' ? (
             <input id={`follow-up-${question.id}`} type="date" value={answers[question.id] ?? ''} disabled={!question.required} aria-required={question.required} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} />
           ) : (
-            <textarea id={`follow-up-${question.id}`} value={answers[question.id] ?? ''} maxLength={question.answerSchema.maxLength ?? 4_000} aria-required={question.required} disabled={!question.required} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} rows={3} />
+            <textarea id={`follow-up-${question.id}`} value={answers[question.id] ?? ''} placeholder={copy.placeholder} maxLength={question.answerSchema.maxLength ?? 4_000} aria-required={question.required} disabled={!question.required} onChange={(event) => setAnswers((current) => ({ ...current, [question.id]: event.target.value }))} rows={3} />
           )}
           {!question.required && <small>此項為參考資訊，會在需要時再由系統提出。</small>}
-        </article>
-      ))}
+        </article>;
+      })}
       {error && <p id="ai-follow-up-error" role="alert">{error}</p>}
       <button className="primary-action" type="submit" disabled={submitting}>{submitting ? '儲存中…' : '儲存追問答案'}</button>
     </form>

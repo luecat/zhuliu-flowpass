@@ -1,125 +1,260 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  PurchaseDetailsSchema,
+  type DocumentRequirementKey,
+  type PurchaseDetails,
+} from '../../../shared/purchase-details-contract';
 import { PublicApiClient, PublicApiError } from '../../lib/public-api';
 
 type DocumentKind = 'invoice' | 'eligibility_proof' | 'supplement' | 'other';
-interface DocumentRecord { id: string; kind: DocumentKind; mediaType: string; byteSize: number; status: string; rowVersion: number; }
-interface DocumentFieldRecord { id: string; documentId: string; fieldName: string; originalValue: string | null; normalizedValue: string | null; effectiveValue: string | null; confidence: number | null; sourcePage: number | null; sourceBox: { x: number; y: number; width: number; height: number } | null; parserReasonCode: string | null; }
-interface RuleEvaluationRecord { evaluationKind: string; outcome: string; createdAt: string; }
+
+interface DocumentRecord {
+  id: string;
+  kind: DocumentKind;
+  requirementKey: DocumentRequirementKey | null;
+  mediaType: string;
+  byteSize: number;
+  status: string;
+  rowVersion: number;
+}
+
+interface PurchaseDetailsDraft {
+  billingCycle: 'annual' | 'monthly';
+  billingPeriods: string;
+  softwareFunction: 'general' | 'imaging' | 'office' | 'learning' | 'other';
+  otherFunction: string;
+  softwareName: string;
+  companyName: string;
+  purchaseDate: string;
+  payerType: 'self_card' | 'representative';
+  originalCurrency: 'TWD' | 'USD' | 'JPY' | 'EUR' | 'AUD' | 'HKD' | 'OTHER';
+  otherCurrency: string;
+  originalExpense: string;
+  convertedTwd: string;
+  specialStatus: boolean;
+}
+
+interface RequirementSpec {
+  key: DocumentRequirementKey;
+  kind: DocumentKind;
+  label: string;
+  hint: string;
+}
 
 const MAX_BYTES = 12 * 1024 * 1024;
+const ACCEPTED_FILES = '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf';
 
-function caseIdFromLocation(): string | null {
-  if (typeof window === 'undefined') return null;
-  return new URLSearchParams(window.location.search).get('caseId');
+const EMPTY_DETAILS: PurchaseDetailsDraft = {
+  billingCycle: 'annual', billingPeriods: '', softwareFunction: 'general', otherFunction: '',
+  softwareName: '', companyName: '', purchaseDate: '', payerType: 'self_card',
+  originalCurrency: 'TWD', otherCurrency: '', originalExpense: '', convertedTwd: '',
+  specialStatus: false,
+};
+
+const REQUIREMENTS: Record<DocumentRequirementKey, RequirementSpec> = {
+  identity_front: { key: 'identity_front', kind: 'eligibility_proof', label: '身分證正面', hint: '照片需清楚、完整且沒有反光。' },
+  identity_back: { key: 'identity_back', kind: 'eligibility_proof', label: '身分證反面', hint: '照片需清楚、完整且沒有反光。' },
+  special_status_proof: { key: 'special_status_proof', kind: 'eligibility_proof', label: '特定對象或文化語言保存者證明', hint: '請上傳可辨識身分或資格的有效證明。' },
+  purchase_proof: { key: 'purchase_proof', kind: 'invoice', label: '購買憑證或發票', hint: '需看得到購買人、軟體名稱、日期、期間、金額與付款方式。' },
+  passbook_cover: { key: 'passbook_cover', kind: 'supplement', label: '存摺封面影本', hint: '需看得到戶名與帳號，內容請保持完整。' },
+  affidavit: { key: 'affidavit', kind: 'other', label: '切結書', hint: '請由申請人親筆簽名後拍照或掃描上傳。' },
+  representative_affidavit: { key: 'representative_affidavit', kind: 'other', label: '代付切結書', hint: '由父母、配偶或法定代理人代付時，需要雙方簽名。' },
+  supplement_other: { key: 'supplement_other', kind: 'supplement', label: '其他補充文件', hint: '請依審核人員的說明上傳完整文件。' },
+};
+
+function draftFromDetails(details: PurchaseDetails): PurchaseDetailsDraft {
+  return {
+    ...details,
+    billingPeriods: details.billingPeriods === null ? '' : String(details.billingPeriods),
+    otherFunction: details.otherFunction ?? '',
+    otherCurrency: details.otherCurrency ?? '',
+    convertedTwd: String(details.convertedTwd),
+  };
+}
+
+function parseDraft(draft: PurchaseDetailsDraft) {
+  return PurchaseDetailsSchema.safeParse({
+    billingCycle: draft.billingCycle,
+    billingPeriods: draft.billingCycle === 'annual' ? null : Number(draft.billingPeriods),
+    softwareFunction: draft.softwareFunction,
+    otherFunction: draft.softwareFunction === 'other' ? draft.otherFunction : null,
+    softwareName: draft.softwareName,
+    companyName: draft.companyName,
+    purchaseDate: draft.purchaseDate,
+    payerType: draft.payerType,
+    originalCurrency: draft.originalCurrency,
+    otherCurrency: draft.originalCurrency === 'OTHER' ? draft.otherCurrency : null,
+    originalExpense: draft.originalExpense,
+    convertedTwd: Number(draft.convertedTwd),
+    specialStatus: draft.specialStatus,
+  });
+}
+
+function sameDetails(left: PurchaseDetails | null, right: PurchaseDetails): boolean {
+  return left !== null && JSON.stringify(left) === JSON.stringify(right);
 }
 
 function formatBytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-export function DocumentReview({ suppliedCaseId }: { suppliedCaseId?: string } = {}) {
-  const [caseId, setCaseId] = useState<string | null>(suppliedCaseId ?? caseIdFromLocation());
+export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false }: {
+  suppliedCaseId?: string;
+  onSubmit?: () => void;
+  submitting?: boolean;
+} = {}) {
+  const caseId = suppliedCaseId ?? null;
   const api = useMemo(() => new PublicApiClient(), []);
+  const [draft, setDraft] = useState<PurchaseDetailsDraft>(EMPTY_DETAILS);
+  const [savedDetails, setSavedDetails] = useState<PurchaseDetails | null>(null);
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
-  const [fields, setFields] = useState<DocumentFieldRecord[]>([]);
-  const [fieldEdits, setFieldEdits] = useState<Record<string, string>>({});
-  const [file, setFile] = useState<File | null>(null);
-  const [kind, setKind] = useState<DocumentKind>('invoice');
-  const [progress, setProgress] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [activeRequirement, setActiveRequirement] = useState<DocumentRequirementKey | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
-  const [caseState, setCaseState] = useState<string>('draft');
-  const [evaluations, setEvaluations] = useState<RuleEvaluationRecord[]>([]);
 
-  useEffect(() => {
-    const onCaseReady = (event: Event) => {
-      const detail = (event as CustomEvent<{ caseId?: unknown }>).detail;
-      if (typeof detail?.caseId === 'string' && detail.caseId) setCaseId(detail.caseId);
-    };
-    window.addEventListener('flowpass-case-ready', onCaseReady);
-    return () => window.removeEventListener('flowpass-case-ready', onCaseReady);
-  }, []);
+  const parsedDraft = useMemo(() => parseDraft(draft), [draft]);
+  const detailsSaved = parsedDraft.success && sameDetails(savedDetails, parsedDraft.data);
+  const requiredSpecs = useMemo(() => [
+    REQUIREMENTS.identity_front,
+    REQUIREMENTS.identity_back,
+    ...(draft.specialStatus ? [REQUIREMENTS.special_status_proof] : []),
+    REQUIREMENTS.purchase_proof,
+    REQUIREMENTS.passbook_cover,
+    REQUIREMENTS.affidavit,
+    ...(draft.payerType === 'representative' ? [REQUIREMENTS.representative_affidavit] : []),
+  ], [draft.payerType, draft.specialStatus]);
+  const latestDocument = useCallback((requirementKey: DocumentRequirementKey) => (
+    documents.find((document) => document.requirementKey === requirementKey && document.status !== 'deleted') ?? null
+  ), [documents]);
+  const completedCount = requiredSpecs.filter((spec) => latestDocument(spec.key)?.status === 'ready').length;
+  const readyToSubmit = detailsSaved && completedCount === requiredSpecs.length;
 
-  const load = useCallback(async () => {
+  const loadDocuments = useCallback(async () => {
     if (!caseId) return;
-    try {
-      const [result, current, fieldResult, ruleResult] = await Promise.all([
-        api.read<{ documents: DocumentRecord[] }>(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`),
-        api.read<{ state: string }>(`/api/v1/cases/${encodeURIComponent(caseId)}`),
-        api.read<{ fields: DocumentFieldRecord[] }>(`/api/v1/cases/${encodeURIComponent(caseId)}/document-fields`),
-        api.read<{ evaluations: RuleEvaluationRecord[] }>(`/api/v1/cases/${encodeURIComponent(caseId)}/rules`).catch(() => ({ evaluations: [] })),
-      ]);
-      setDocuments(result.documents);
-      setFields(fieldResult.fields);
-      setCaseState(current.state);
-      setEvaluations(ruleResult.evaluations);
-      setMessage('');
-    } catch (error) {
-      setMessage(error instanceof PublicApiError && error.status === 404 ? '尚未建立申請草稿，完成前面的問題後即可上傳。' : '文件清單暫時無法載入。');
-    }
+    const result = await api.read<{ documents: DocumentRecord[] }>(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`);
+    setDocuments(result.documents);
   }, [api, caseId]);
 
-  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => {
+    if (!caseId) return;
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void Promise.all([
+        api.read<{ details: PurchaseDetails | null }>(`/api/v1/cases/${encodeURIComponent(caseId)}/purchase-details`),
+        api.read<{ documents: DocumentRecord[] }>(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`),
+      ]).then(([detailsResult, documentResult]) => {
+        if (!active) return;
+        setSavedDetails(detailsResult.details);
+        if (detailsResult.details) setDraft(draftFromDetails(detailsResult.details));
+        setDocuments(documentResult.documents);
+        setMessage('');
+      }).catch(() => {
+        if (active) setMessage('附件資料暫時無法載入，請稍後再試。');
+      }).finally(() => {
+        if (active) setLoading(false);
+      });
+    }, 0);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [api, caseId]);
 
-  async function upload() {
-    if (!caseId || !file) return;
-    if (file.size > MAX_BYTES) { setMessage('單一檔案不可超過 12 MiB。'); return; }
-    setBusy(true); setProgress(0); setMessage('');
+  function updateDraft<K extends keyof PurchaseDetailsDraft>(key: K, value: PurchaseDetailsDraft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setConfirmed(false);
+    setMessage('');
+  }
+
+  async function saveDetails() {
+    if (!caseId) return;
+    const parsed = parseDraft(draft);
+    if (!parsed.success) { setMessage('請先完成所有必填的購買資料。'); return; }
+    setSaving(true); setMessage('');
     try {
       const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
-      await api.upload(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`, { file, kind, ifMatch: `"${current.rowVersion}"`, onProgress: setProgress });
-      setFile(null); setMessage('文件已安全保存，接下來會進入處理流程。'); await load();
+      const result = await api.mutate<{ details: PurchaseDetails }>(`/api/v1/cases/${encodeURIComponent(caseId)}/purchase-details`, { method: 'PUT', ifMatch: `"${current.rowVersion}"`, body: parsed.data });
+      setSavedDetails(result.details);
+      setDraft(draftFromDetails(result.details));
+      setMessage('購買資料已儲存。');
+    } catch (error) {
+      setMessage(error instanceof PublicApiError && error.code === 'ETAG_MISMATCH' ? '資料剛剛有更新，請再儲存一次。' : '購買資料尚未儲存，請稍後再試。');
+    } finally { setSaving(false); }
+  }
+
+  async function upload(spec: RequirementSpec, file: File | null) {
+    if (!caseId || !file) return;
+    if (file.size > MAX_BYTES) { setMessage('單一檔案不可超過 12 MiB。'); return; }
+    setActiveRequirement(spec.key); setUploadProgress(0); setMessage('');
+    try {
+      const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
+      await api.upload(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`, { file, kind: spec.kind, requirementKey: spec.key, ifMatch: `"${current.rowVersion}"`, onProgress: setUploadProgress });
+      await loadDocuments();
+      setMessage(`${spec.label}已上傳。`);
     } catch (error) {
       if (error instanceof PublicApiError && error.code === 'FILE_TOO_LARGE') setMessage('單一檔案不可超過 12 MiB。');
       else if (error instanceof PublicApiError && error.code === 'UNSUPPORTED_FILE') setMessage('只接受 JPEG、PNG 或非加密 PDF。');
-      else if (error instanceof PublicApiError && error.code === 'INVALID_REQUEST') setMessage('檔案格式或大小不符合規定。');
-      else setMessage('文件尚未上傳，請稍後重試。');
-    } finally { setBusy(false); }
+      else setMessage(`${spec.label}尚未上傳，請重新選擇檔案。`);
+    } finally { setActiveRequirement(null); setUploadProgress(0); }
   }
 
-  async function remove(documentId: string) {
+  async function remove(document: DocumentRecord, label: string) {
     if (!caseId) return;
-    setBusy(true); setMessage('');
+    setActiveRequirement(document.requirementKey); setConfirmed(false); setMessage('');
     try {
       const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
-      await api.mutate(`/api/v1/cases/${encodeURIComponent(caseId)}/documents?documentId=${encodeURIComponent(documentId)}`, { method: 'DELETE', ifMatch: `"${current.rowVersion}"` });
-      setMessage('文件已移除。'); await load();
-    } catch { setMessage('文件目前不能移除，請重新整理後再試。'); } finally { setBusy(false); }
+      await api.mutate(`/api/v1/cases/${encodeURIComponent(caseId)}/documents?documentId=${encodeURIComponent(document.id)}`, { method: 'DELETE', ifMatch: `"${current.rowVersion}"` });
+      await loadDocuments();
+      setMessage(`${label}已移除。`);
+    } catch { setMessage('檔案目前無法移除，請稍後再試。'); } finally { setActiveRequirement(null); }
   }
 
-  async function correctField(field: DocumentFieldRecord) {
-    const value = fieldEdits[field.id]?.trim();
-    if (!caseId || !value) return;
-    setBusy(true); setMessage('正在保存欄位修正…');
-    try {
-      const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
-      await api.mutate(`/api/v1/cases/${encodeURIComponent(caseId)}/document-fields/${encodeURIComponent(field.id)}`, { method: 'PATCH', ifMatch: `"${current.rowVersion}"`, body: { value } });
-      setMessage('欄位修正已保存。'); await load();
-    } catch { setMessage('欄位修正未保存，請重新整理後再試。'); } finally { setBusy(false); }
-  }
+  if (!caseId) return null;
+  if (loading) return <p className="pending-note" role="status">正在載入附件資料…</p>;
 
-  if (!caseId) return <section className="document-review" aria-labelledby="documents-title"><h2 id="documents-title">附件</h2><p className="pending-note">建立申請草稿後，這裡會提供安全上傳入口。</p></section>;
-  return <section className="document-review" aria-labelledby="documents-title">
-    <h2 id="documents-title">附件</h2>
-    <p className="field-hint">接受 JPEG、PNG 或非加密 PDF；單檔上限 12 MiB。系統會以檔案內容判斷格式，不以副檔名決定。</p>
-    <p className="field-hint">OCR 只提供辨識草稿；每個欄位都會保留來源頁面、位置與原始值，請在送出前逐欄確認。</p>
-    <dl className="document-rule-summary" aria-label="時間與補助狀態"><div><dt>申請時間</dt><dd>{evaluations.find((item) => item.evaluationKind === 'submission')?.outcome === 'pass' ? '符合' : evaluations.length ? '待確認' : '待確認'}</dd></div><div><dt>發票時間</dt><dd>{evaluations.find((item) => item.evaluationKind === 'invoice')?.outcome === 'pass' ? '已確認' : '待確認'}</dd></div><div><dt>購買期間</dt><dd>{evaluations.find((item) => item.evaluationKind === 'invoice' && item.outcome === 'pass') ? '符合' : evaluations.length ? '待確認' : '待規則檢查'}</dd></div><div><dt>預估補助</dt><dd>{evaluations.find((item) => item.evaluationKind === 'subsidy')?.outcome === 'pass' ? '已試算，最終以人工審核為準' : '待人工審核'}</dd></div></dl>
-    {message && <p className="pending-note" role="status">{message}</p>}
-    <div className="document-upload-form">
-      <label htmlFor="document-kind">文件用途</label>
-      <select id="document-kind" value={kind} onChange={(event) => setKind(event.target.value as DocumentKind)} disabled={busy}>
-        <option value="invoice">發票或購買證明</option><option value="eligibility_proof">資格證明</option><option value="supplement">補件</option><option value="other">其他</option>
-      </select>
-      <label htmlFor="document-file">選擇檔案</label>
-      <input id="document-file" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" onChange={(event) => setFile(event.target.files?.[0] ?? null)} disabled={busy} />
-      {file && <p className="field-hint">{file.name} · {formatBytes(file.size)}</p>}
-      <button type="button" onClick={() => void upload()} disabled={busy || !file}>{busy ? `上傳中 ${progress}%` : '上傳文件'}</button>
-    </div>
-    <ul className="document-list" aria-label="已上傳文件">
-      {documents.map((document) => <li key={document.id}><span>{document.kind} · {document.mediaType} · {formatBytes(document.byteSize)}</span><span>{document.status === 'ready' ? '已保存' : document.status === 'deleted' ? '已移除' : '處理中'}</span>{document.status !== 'deleted' && caseState === 'draft' && <button type="button" onClick={() => void remove(document.id)} disabled={busy}>上傳前移除</button>}</li>)}
-    </ul>
-    {fields.length > 0 && <section aria-labelledby="ocr-fields-title"><h3 id="ocr-fields-title">OCR 欄位確認</h3><p className="field-hint">原始辨識值會保留；修正會新增一筆紀錄，不會覆寫歷史。</p><ul className="document-field-list">{fields.map((field) => <li key={field.id}><div><strong>{field.fieldName}</strong><span>原始：{field.originalValue ?? '待確認'} · 信心度：{field.confidence === null ? '—' : `${Math.round(field.confidence * 100)}%`}</span>{field.sourcePage !== null && <span>來源第 {field.sourcePage} 頁{field.sourceBox ? ' · 有位置資訊' : ''}</span>}</div><input aria-label={`${field.fieldName} 修正值`} value={fieldEdits[field.id] ?? field.effectiveValue ?? field.normalizedValue ?? ''} onChange={(event) => setFieldEdits((previous) => ({ ...previous, [field.id]: event.target.value }))} disabled={busy} /><button type="button" onClick={() => void correctField(field)} disabled={busy || !(fieldEdits[field.id] ?? '').trim()}>保存欄位修正</button></li>)}</ul></section>}
-  </section>;
+  return (
+    <section className="document-review attachment-step" aria-labelledby="documents-title">
+      <header className="attachment-step-header">
+        <p className="eyebrow">第 2 部分</p>
+        <h2 id="documents-title">購買資料與附件</h2>
+        <p>先填寫購買資料，再逐項上傳文件。完成後即可正式送出申請。</p>
+      </header>
+      {message && <p className="pending-note attachment-message" role="status">{message}</p>}
+
+      <section className="attachment-section-card" aria-labelledby="purchase-details-title">
+        <div className="attachment-section-heading"><div><span>1</span><h3 id="purchase-details-title">填寫購買資料</h3></div><strong className={detailsSaved ? 'attachment-status is-complete' : 'attachment-status'}>{detailsSaved ? '已儲存' : '尚未完成'}</strong></div>
+        <form className="purchase-details-form" onSubmit={(event) => { event.preventDefault(); void saveDetails(); }}>
+          <fieldset><legend>繳費制度 <span aria-hidden="true">＊</span></legend><div className="choice-row"><label><input type="radio" name="billing-cycle" checked={draft.billingCycle === 'annual'} onChange={() => updateDraft('billingCycle', 'annual')} />年費制</label><label><input type="radio" name="billing-cycle" checked={draft.billingCycle === 'monthly'} onChange={() => updateDraft('billingCycle', 'monthly')} />月費制</label></div>{draft.billingCycle === 'monthly' && <label className="inline-number-field">共 <input aria-label="月費期數" type="number" min="1" max="120" inputMode="numeric" value={draft.billingPeriods} onChange={(event) => updateDraft('billingPeriods', event.target.value)} /> 期</label>}</fieldset>
+          <fieldset><legend>軟體功能 <span aria-hidden="true">＊</span></legend><div className="choice-grid">{([['general', '通用型'], ['imaging', '影像類'], ['office', '辦公類'], ['learning', '學習類'], ['other', '其他類']] as const).map(([value, label]) => <label key={value}><input type="radio" name="software-function" checked={draft.softwareFunction === value} onChange={() => updateDraft('softwareFunction', value)} />{label}</label>)}</div>{draft.softwareFunction === 'other' && <label>其他功能名稱<input value={draft.otherFunction} maxLength={100} onChange={(event) => updateDraft('otherFunction', event.target.value)} /></label>}</fieldset>
+          <div className="purchase-field-grid"><label>軟體名稱 <span aria-hidden="true">＊</span><input value={draft.softwareName} maxLength={200} autoComplete="off" onChange={(event) => updateDraft('softwareName', event.target.value)} /></label><label>軟體公司名稱 <span aria-hidden="true">＊</span><input value={draft.companyName} maxLength={200} autoComplete="organization" onChange={(event) => updateDraft('companyName', event.target.value)} /></label><label>購買日期 <span aria-hidden="true">＊</span><input type="date" value={draft.purchaseDate} onChange={(event) => updateDraft('purchaseDate', event.target.value)} /></label></div>
+          <fieldset><legend>付款人 <span aria-hidden="true">＊</span></legend><div className="choice-stack"><label><input type="radio" name="payer" checked={draft.payerType === 'self_card'} onChange={() => updateDraft('payerType', 'self_card')} />本人信用卡</label><label><input type="radio" name="payer" checked={draft.payerType === 'representative'} onChange={() => updateDraft('payerType', 'representative')} />父母、配偶或法定代理人代付</label></div></fieldset>
+          <fieldset><legend>原始費用幣別 <span aria-hidden="true">＊</span></legend><div className="choice-grid currency-choices">{([['TWD', '新臺幣'], ['USD', '美金'], ['JPY', '日圓'], ['EUR', '歐元'], ['AUD', '澳幣'], ['HKD', '港幣'], ['OTHER', '其他']] as const).map(([value, label]) => <label key={value}><input type="radio" name="currency" checked={draft.originalCurrency === value} onChange={() => updateDraft('originalCurrency', value)} />{label}</label>)}</div>{draft.originalCurrency === 'OTHER' && <label>其他幣別<input value={draft.otherCurrency} maxLength={24} onChange={(event) => updateDraft('otherCurrency', event.target.value)} /></label>}</fieldset>
+          <div className="purchase-field-grid"><label>原始費用 <span aria-hidden="true">＊</span><input type="text" inputMode="decimal" placeholder="例如 29.99" value={draft.originalExpense} onChange={(event) => updateDraft('originalExpense', event.target.value)} /></label><label>換算新臺幣 <span aria-hidden="true">＊</span><input type="number" min="1" max="100000000" inputMode="numeric" placeholder="請填整數" value={draft.convertedTwd} onChange={(event) => updateDraft('convertedTwd', event.target.value)} /></label></div>
+          <fieldset><legend>資格證明</legend><label className="checkbox-card"><input type="checkbox" checked={draft.specialStatus} onChange={(event) => updateDraft('specialStatus', event.target.checked)} /><span><strong>我是特定對象或文化語言保存者</strong><small>勾選後，需要再上傳相關資格證明。</small></span></label></fieldset>
+          <button type="submit" className="secondary-action" disabled={saving || detailsSaved}>{saving ? '儲存中…' : detailsSaved ? '購買資料已儲存' : '儲存購買資料'}</button>
+        </form>
+      </section>
+
+      <section className="attachment-section-card" aria-labelledby="required-files-title">
+        <div className="attachment-section-heading"><div><span>2</span><h3 id="required-files-title">上傳必要文件</h3></div><strong className="attachment-progress">{completedCount} / {requiredSpecs.length}</strong></div>
+        <p className="field-hint">接受 JPEG、PNG 或非加密 PDF，單檔上限 12 MiB。</p>
+        <div className="attachment-requirement-list">
+          {requiredSpecs.map((spec, index) => {
+            const document = latestDocument(spec.key); const isBusy = activeRequirement === spec.key; const isReady = document?.status === 'ready';
+            return <article className={isReady ? 'attachment-requirement is-complete' : 'attachment-requirement'} key={spec.key}><div className="attachment-requirement-copy"><span className="attachment-check" aria-hidden="true">{isReady ? '✓' : index + 1}</span><div><h4>{spec.label}<em>必要</em></h4><p>{spec.hint}</p>{document && <small>{isReady ? `已上傳 · ${formatBytes(document.byteSize)}` : '檔案處理中'}</small>}</div></div><div className="attachment-requirement-actions"><label className="file-picker-button">{isBusy ? `上傳中 ${uploadProgress}%` : document ? '重新上傳' : '選擇檔案'}<input type="file" accept={ACCEPTED_FILES} disabled={activeRequirement !== null || submitting} onChange={(event) => { const selected = event.target.files?.[0] ?? null; event.currentTarget.value = ''; void upload(spec, selected); }} /></label>{document && <button type="button" className="text-action" disabled={activeRequirement !== null || submitting} onClick={() => void remove(document, spec.label)}>移除</button>}</div></article>;
+          })}
+        </div>
+      </section>
+
+      <section className="attachment-submit-card" aria-labelledby="formal-submit-title">
+        <h3 id="formal-submit-title">正式送出</h3>
+        {!detailsSaved && <p>請先儲存完整的購買資料。</p>}
+        {detailsSaved && completedCount < requiredSpecs.length && <p>還有 {requiredSpecs.length - completedCount} 項必要文件尚未上傳。</p>}
+        {readyToSubmit && <label className="final-confirmation"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我已確認購買資料與附件內容正確。</span></label>}
+        <button type="button" className="primary-action" disabled={!readyToSubmit || !confirmed || submitting || activeRequirement !== null} onClick={onSubmit}>{submitting ? '正式送出中…' : '正式送出申請'}</button>
+      </section>
+    </section>
+  );
 }

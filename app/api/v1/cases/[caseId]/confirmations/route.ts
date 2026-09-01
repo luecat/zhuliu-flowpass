@@ -15,7 +15,7 @@ const BodySchema = z.object({
 function cookie(request: Request, name: string): string | null { for (const part of (request.headers.get('cookie') ?? '').split(';')) { const [key, ...value] = part.trim().split('='); if (key === name) return value.join('=') || null; } return null; }
 function errorResponse(error: PassportLifecycleError | AiDraftCommandError, requestId: string): Response {
   if (error instanceof AiDraftCommandError) {
-    const code = error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'ETAG_MISMATCH' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : error.code === 'ACTIVE_JOB' || error.code === 'RATE_LIMITED' ? ApiErrorCode.RATE_LIMITED : ApiErrorCode.AI_INPUT_TOO_LARGE;
+    const code = error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'ETAG_MISMATCH' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : error.code === 'AI_INPUT_UNSAFE' ? ApiErrorCode.AI_INPUT_UNSAFE : error.code === 'ACTIVE_JOB' || error.code === 'RATE_LIMITED' ? ApiErrorCode.RATE_LIMITED : ApiErrorCode.AI_INPUT_TOO_LARGE;
     return toJsonResponse(apiFailure(code, requestId));
   }
   const code = error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'ETAG_MISMATCH' || error.code === 'STALE_VERSION' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'PASSPORT_NOT_READY' ? ApiErrorCode.PASSPORT_NOT_READY : error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : ApiErrorCode.INVALID_REQUEST;

@@ -2412,6 +2412,19 @@ textarea::placeholder {
   box-shadow: 0 18px 48px rgba(31, 31, 35, 0.1);
 }
 
+.liff-session-gate {
+  display: grid;
+  min-height: 52vh;
+  align-content: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.liff-session-gate h1,
+.liff-session-gate p {
+  margin: 0;
+}
+
 .applicant-home h1,
 .application-wizard h1 {
   margin: 8px 0 12px;
@@ -2568,3 +2581,649 @@ textarea::placeholder {
 .application-wizard dl div { border-top: 1px solid #d2d9d3; padding: 14px 0; }
 .application-wizard dt { font-weight: 700; }
 .application-wizard dd { margin: 6px 0 0; white-space: pre-wrap; }
+
+/* Final LIFF application rhythm: the question itself is the only page title. */
+.application-wizard .question-progress {
+  margin: 0 0 14px;
+  color: #66736b;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.application-wizard .question-progress + h1 {
+  margin: 0 0 22px;
+}
+
+.application-wizard textarea {
+  margin-top: 0;
+}
+
+.application-wizard textarea::placeholder {
+  color: #8a958e;
+}
+
+.application-wizard h2 {
+  margin: 0;
+  font-size: clamp(26px, 6vw, 36px);
+}
+
+.application-wizard h2 + dl {
+  margin-top: 8px;
+}
+
+.application-wizard h2 + dl > div:first-child {
+  border-top: 3px solid #98ad9d;
+}
+
+.passport-review-panel {
+  width: min(100%, 620px);
+  margin: 24px auto 0;
+}
+
+.application-wizard--waiting,
+.passport-review-panel--waiting {
+  display: grid;
+  min-height: 180px;
+  place-items: center;
+}
+
+.ai-waiting-status {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  color: #66736b;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.ai-waiting-status strong {
+  color: #1f2a24;
+  font-size: 1.2rem;
+}
+
+.passport-review-panel > h2 {
+  margin: 0 0 14px;
+  color: #1f2a24;
+  font-size: clamp(26px, 6vw, 36px);
+}
+
+.applicant-passport-summary {
+  display: grid;
+  gap: 22px;
+  padding: clamp(22px, 6vw, 34px);
+  border: 1px solid #d8e4ea;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 18px 44px rgba(26, 49, 42, 0.08);
+}
+
+.applicant-passport-summary > header h2 {
+  margin: 7px 0 8px;
+  color: #19324a;
+  font-size: clamp(28px, 8vw, 42px);
+  line-height: 1.14;
+  letter-spacing: -0.035em;
+}
+
+.applicant-passport-summary > header > p:last-child,
+.applicant-passport-outcome strong,
+.applicant-flow-list p,
+.applicant-safety-list p,
+.applicant-next-step {
+  color: #66706f;
+  line-height: 1.65;
+}
+
+.applicant-passport-summary > header > p:last-child { margin: 0; }
+
+.applicant-passport-outcome {
+  display: grid;
+  gap: 5px;
+  padding: 14px 0;
+  border-block: 2px solid #9eb5a8;
+}
+
+.applicant-passport-outcome span,
+.applicant-passport-heading span {
+  color: #61726b;
+  font-size: 13px;
+}
+
+.applicant-passport-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.applicant-passport-heading h3,
+.applicant-safety-list h3 { margin: 0; font-size: 22px; }
+
+.applicant-flow-list,
+.applicant-safety-list { display: grid; gap: 12px; margin-top: 14px; }
+
+.applicant-flow-list { gap: 7px; }
+
+.applicant-flow-arrow {
+  display: grid;
+  min-height: 18px;
+  place-items: center;
+  color: #78998b;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.applicant-flow-list article,
+.applicant-safety-list article {
+  padding: 15px;
+  border: 1px solid #dce7e2;
+  border-radius: 14px;
+  background: #f8fbf9;
+}
+
+.applicant-flow-list article > div { display: flex; align-items: center; gap: 9px; overflow-x: auto; }
+.applicant-flow-list article > div strong { min-width: max-content; color: #24453b; }
+.applicant-flow-list article > div span { color: #88a397; }
+.applicant-flow-list p,
+.applicant-safety-list p { margin: 8px 0 0; }
+.applicant-flow-list small { display: inline-block; margin-top: 8px; color: #8b6409; }
+
+.applicant-next-step {
+  margin: 0;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: #eef7f2;
+}
+
+.applicant-passport-controls { display: grid; gap: 14px; }
+.applicant-passport-controls label { display: flex; align-items: center; gap: 10px; color: #43524d; }
+.applicant-passport-controls input { width: 20px; height: 20px; }
+.applicant-passport-controls .primary-action { width: 100%; min-height: 56px; }
+
+.submission-success {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  padding: clamp(30px, 8vw, 48px);
+  text-align: center;
+}
+
+.submission-success-mark {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  border-radius: 999px;
+  background: #267653;
+  color: #fff;
+  font-size: 34px;
+  font-weight: 800;
+}
+
+.submission-success h2,
+.submission-success p { margin: 0; }
+.submission-success h2 { line-height: 1.2; }
+.submission-success p { max-width: 32rem; color: #61726b; line-height: 1.7; }
+.submission-success .primary-action {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.attachment-workflow {
+  display: grid;
+  gap: 18px;
+}
+
+.application-step-complete {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid #cfe3d7;
+  border-radius: 18px;
+  background: #f3faf6;
+}
+
+.application-step-complete > span {
+  display: grid;
+  flex: 0 0 42px;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 999px;
+  background: #267653;
+  color: #fff;
+  font-size: 24px;
+  font-weight: 850;
+}
+
+.application-step-complete h2,
+.application-step-complete p { margin: 0; }
+.application-step-complete h2 { margin-top: 3px; font-size: 21px; }
+.application-step-complete div > p:last-child { margin-top: 4px; color: #61726b; line-height: 1.5; }
+
+.attachment-step,
+.attachment-step-header,
+.attachment-section-card,
+.purchase-details-form,
+.attachment-requirement-list,
+.attachment-submit-card { display: grid; }
+
+.attachment-step { gap: 18px; }
+.attachment-step-header { gap: 7px; padding: 6px 4px 0; }
+.attachment-step-header h2,
+.attachment-step-header p { margin: 0; }
+.attachment-step-header h2 { color: #19324a; font-size: clamp(28px, 7vw, 38px); line-height: 1.2; }
+.attachment-step-header > p:last-child { color: #61726b; line-height: 1.65; }
+
+.attachment-message {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eef7f2;
+  line-height: 1.5;
+}
+
+.attachment-section-card,
+.attachment-submit-card {
+  gap: 18px;
+  padding: clamp(18px, 5vw, 26px);
+  border: 1px solid #d8e4df;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(26, 49, 42, 0.06);
+}
+
+.attachment-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.attachment-section-heading > div { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.attachment-section-heading > div > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: #e5f2eb;
+  color: #246d4e;
+  font-weight: 850;
+}
+.attachment-section-heading h3 { margin: 0; font-size: 21px; line-height: 1.25; }
+
+.attachment-status,
+.attachment-progress {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f1f3f2;
+  color: #69736e;
+  font-size: 12px;
+  font-weight: 800;
+}
+.attachment-status.is-complete,
+.attachment-progress { background: #e4f5ec; color: #1e704e; }
+
+.purchase-details-form { gap: 20px; }
+.purchase-details-form fieldset {
+  display: grid;
+  gap: 11px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.purchase-details-form legend,
+.purchase-details-form > label,
+.purchase-field-grid > label,
+.purchase-details-form fieldset > label:not(.checkbox-card) {
+  color: #24352e;
+  font-weight: 780;
+}
+.purchase-details-form legend { margin-bottom: 4px; }
+.purchase-details-form legend span,
+.purchase-details-form label > span[aria-hidden="true"] { color: #2a8cbe; }
+
+.choice-row,
+.choice-grid,
+.choice-stack { display: flex; flex-wrap: wrap; gap: 9px 16px; }
+.choice-stack { flex-direction: column; }
+.choice-row label,
+.choice-grid label,
+.choice-stack label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  color: #35443e;
+  font-weight: 650;
+}
+.choice-row input,
+.choice-grid input,
+.choice-stack input,
+.checkbox-card input,
+.final-confirmation input { width: 20px; height: 20px; flex: 0 0 20px; accent-color: #267653; }
+
+.purchase-field-grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.purchase-field-grid > label,
+.purchase-details-form fieldset > label:not(.checkbox-card) { display: grid; gap: 8px; }
+.purchase-details-form input[type="text"],
+.purchase-details-form input[type="number"],
+.purchase-details-form input[type="date"],
+.purchase-details-form input:not([type]) {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid #cbd8d1;
+  border-radius: 11px;
+  background: #fff;
+  color: #1f2a24;
+  font: inherit;
+}
+.purchase-details-form input:focus { outline: 3px solid rgba(38, 118, 83, 0.16); border-color: #267653; }
+.inline-number-field { display: flex !important; grid-template-columns: auto 86px auto; align-items: center; justify-content: flex-start; }
+.inline-number-field input { width: 86px !important; }
+
+.checkbox-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid #d8e4df;
+  border-radius: 13px;
+  background: #f8fbf9;
+}
+.checkbox-card span { display: grid; gap: 3px; }
+.checkbox-card small { color: #68766f; font-weight: 500; line-height: 1.45; }
+.purchase-details-form > .secondary-action { width: 100%; cursor: pointer; }
+.purchase-details-form > .secondary-action:disabled { cursor: not-allowed; opacity: 0.58; }
+
+.attachment-requirement-list { gap: 11px; }
+.attachment-requirement {
+  display: grid;
+  gap: 14px;
+  padding: 15px;
+  border: 1px solid #dce5e0;
+  border-radius: 15px;
+  background: #fbfcfb;
+}
+.attachment-requirement.is-complete { border-color: #b9ddc8; background: #f5fbf7; }
+.attachment-requirement-copy { display: flex; align-items: flex-start; gap: 11px; }
+.attachment-check {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 999px;
+  background: #eef1ef;
+  color: #66736c;
+  font-size: 13px;
+  font-weight: 850;
+}
+.is-complete .attachment-check { background: #267653; color: #fff; }
+.attachment-requirement h4,
+.attachment-requirement p { margin: 0; }
+.attachment-requirement h4 { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 16px; }
+.attachment-requirement h4 em { padding: 2px 6px; border-radius: 5px; background: #e7f3fb; color: #1479ac; font-size: 11px; font-style: normal; }
+.attachment-requirement p { margin-top: 5px; color: #68766f; font-size: 13px; line-height: 1.55; }
+.attachment-requirement small { display: inline-block; margin-top: 6px; color: #267653; font-weight: 700; }
+.attachment-requirement-actions { display: flex; align-items: center; gap: 10px; }
+.file-picker-button {
+  display: inline-flex;
+  min-height: 42px;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 13px;
+  border: 1px solid #267653;
+  border-radius: 10px;
+  color: #267653;
+  background: #fff;
+  font-weight: 780;
+  cursor: pointer;
+}
+.file-picker-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.text-action { min-height: 42px; padding: 8px 11px; border: 0; color: #6b756f; background: transparent; cursor: pointer; }
+
+.attachment-submit-card { text-align: left; }
+.attachment-submit-card h3,
+.attachment-submit-card p { margin: 0; }
+.attachment-submit-card p { color: #68766f; line-height: 1.5; }
+.final-confirmation { display: flex; align-items: flex-start; gap: 10px; color: #35443e; line-height: 1.5; }
+.attachment-submit-card .primary-action { width: 100%; min-height: 54px; cursor: pointer; }
+.attachment-submit-card .primary-action:disabled { cursor: not-allowed; opacity: 0.48; }
+
+/* Public applicant records: product copy only, never raw storage metadata. */
+.applicant-records,
+.applicant-case {
+  width: min(100%, 680px);
+  margin: 0 auto;
+}
+.applicant-case--supplement-only { padding-top: 22px; }
+.applicant-case--supplement-only .applicant-supplement { margin-top: 20px; }
+
+.applicant-page-heading { margin: 0 0 28px; }
+.applicant-page-heading h1 {
+  margin: 7px 0 10px;
+  color: #1d2c25;
+  font-size: clamp(32px, 8vw, 46px);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+.applicant-page-heading > p:last-child { margin: 0; color: #68766f; line-height: 1.65; }
+
+.applicant-record-year + .applicant-record-year { margin-top: 30px; }
+.applicant-record-year > h2 { margin: 0 0 12px; color: #65766e; font-size: 15px; letter-spacing: 0.03em; }
+.applicant-record-year ul { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+
+.applicant-record {
+  display: grid;
+  min-height: 92px;
+  grid-template-columns: minmax(0, 1fr) auto 18px;
+  gap: 12px;
+  align-items: center;
+  padding: 18px 16px 18px 18px;
+  border: 1px solid #d7e1dc;
+  border-radius: 18px;
+  color: inherit;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(38, 67, 54, 0.055);
+  text-decoration: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.applicant-record:hover { border-color: #a8c6b8; box-shadow: 0 12px 28px rgba(38, 67, 54, 0.09); transform: translateY(-1px); }
+.applicant-record:focus-visible { outline: 3px solid rgba(38, 118, 83, 0.22); outline-offset: 3px; }
+.applicant-record-copy { display: grid; min-width: 0; gap: 7px; }
+.applicant-record-copy strong { overflow: hidden; color: #203229; font-size: 18px; line-height: 1.4; text-overflow: ellipsis; }
+.applicant-record-copy > span { color: #718078; font-size: 13px; }
+.applicant-record-arrow { color: #789086; font-size: 30px; font-weight: 350; line-height: 1; }
+
+.applicant-status {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.applicant-status--neutral { color: #5e6c65; background: #edf0ee; }
+.applicant-status--progress { color: #176546; background: #e2f3ea; }
+.applicant-status--attention { color: #865800; background: #fff0c7; }
+.applicant-status--success { color: #155f3e; background: #dff3e7; }
+.applicant-status--danger { color: #8a3f39; background: #f8e6e3; }
+
+.applicant-state-card,
+.applicant-inline-state {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  padding: 24px;
+  border: 1px solid #dbe4df;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.88);
+}
+.applicant-state-card { min-height: 180px; align-content: center; justify-items: center; text-align: center; }
+.applicant-state-card h1,
+.applicant-state-card h2,
+.applicant-state-card p,
+.applicant-inline-state p { margin: 0; }
+.applicant-state-card h1,
+.applicant-state-card h2 { color: #24372e; font-size: 22px; }
+.applicant-state-card p,
+.applicant-inline-state { color: #68766f; line-height: 1.6; }
+.applicant-state-card .primary-action,
+.applicant-state-card .secondary-action { margin-top: 4px; }
+.applicant-state-card--error,
+.applicant-inline-state--error { border-color: #ecd6d2; background: #fffafa; }
+.applicant-loading-mark {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #d7e5de;
+  border-top-color: #267653;
+  border-radius: 50%;
+  animation: applicant-spin 850ms linear infinite;
+}
+@keyframes applicant-spin { to { transform: rotate(360deg); } }
+
+.applicant-back-link {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  margin: -8px 0 15px;
+  color: #4e695d;
+  font-size: 14px;
+  font-weight: 750;
+  text-decoration: none;
+}
+.applicant-back-link:focus-visible { outline: 3px solid rgba(38, 118, 83, 0.2); outline-offset: 2px; }
+
+.applicant-status-card {
+  display: grid;
+  gap: 11px;
+  margin-bottom: 34px;
+  padding: 24px;
+  border: 1px solid #cfe1d8;
+  border-radius: 22px;
+  background: linear-gradient(145deg, #ffffff 0%, #eef8f2 100%);
+  box-shadow: 0 12px 32px rgba(38, 67, 54, 0.07);
+}
+.applicant-status-card--attention { border-color: #ebd69e; background: linear-gradient(145deg, #fff 0%, #fff8e7 100%); }
+.applicant-status-card--danger { border-color: #ead3cf; background: linear-gradient(145deg, #fff 0%, #fff3f1 100%); }
+.applicant-status-card--neutral { border-color: #dbe1de; background: linear-gradient(145deg, #fff 0%, #f4f6f5 100%); }
+.applicant-status-card h2 { margin: 4px 0 0; color: #1d3027; font-size: clamp(28px, 7vw, 38px); line-height: 1.18; }
+.applicant-status-card > p { margin: 0; max-width: 34rem; color: #586a61; line-height: 1.7; }
+.applicant-approved-amount { display: grid; gap: 4px; margin-top: 8px; padding-top: 18px; border-top: 1px solid rgba(46, 100, 75, 0.14); }
+.applicant-approved-amount span { color: #697a71; font-size: 13px; font-weight: 700; }
+.applicant-approved-amount strong { color: #174c35; font-size: clamp(30px, 9vw, 48px); line-height: 1.15; letter-spacing: -0.025em; }
+.applicant-case-meta { margin: 8px 0 0; padding-top: 17px; border-top: 1px solid rgba(46, 100, 75, 0.12); }
+.applicant-case-meta > div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.applicant-case-meta dt { color: #718078; font-size: 13px; }
+.applicant-case-meta dd { margin: 0; color: #384d43; font-size: 14px; font-weight: 700; text-align: right; }
+
+.applicant-case-section + .applicant-case-section { margin-top: 38px; }
+.applicant-case-section > header { margin-bottom: 16px; }
+.applicant-case-section > header h2 { margin: 0; color: #203229; font-size: 24px; letter-spacing: -0.02em; }
+.applicant-case-section > header p { margin: 7px 0 0; color: #718078; font-size: 14px; line-height: 1.6; }
+.applicant-case-section .applicant-passport-summary { margin-top: 0; }
+
+.applicant-supplement {
+  display: grid;
+  gap: 18px;
+  margin: 0 0 38px;
+  padding: 24px;
+  border: 1px solid #e2c978;
+  border-radius: 22px;
+  background: #fffaf0;
+  box-shadow: 0 12px 30px rgba(86, 66, 18, 0.07);
+}
+.applicant-supplement > header h2 { margin: 5px 0 7px; color: #27372f; font-size: 26px; }
+.applicant-supplement > header p:last-child,
+.applicant-supplement-request p,
+.applicant-supplement-upload p { margin: 0; color: #65736c; line-height: 1.6; }
+.applicant-supplement-request { display: grid; gap: 7px; padding: 17px; border-radius: 15px; background: #fff; }
+.applicant-supplement-request strong { color: #26382f; font-size: 18px; }
+.applicant-supplement-request small { color: #8a6218; font-weight: 750; }
+.applicant-supplement-upload { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 17px; border: 1px solid #e1d8bd; border-radius: 16px; background: #fff; }
+.applicant-supplement-upload.is-complete { border-color: #afd5bf; background: #f6fcf8; }
+.applicant-supplement-upload > div { display: grid; gap: 4px; }
+.applicant-supplement-upload > div > strong { color: #26382f; }
+.applicant-supplement-upload small { color: #267653; font-weight: 750; }
+.applicant-supplement-submit { width: 100%; min-height: 54px; cursor: pointer; }
+.applicant-supplement-submit:disabled { cursor: not-allowed; opacity: 0.48; }
+.applicant-supplement--error { border-color: #ead3cf; background: #fff7f5; }
+.applicant-supplement--error h2,
+.applicant-supplement--error p { margin: 0; }
+
+.applicant-timeline { display: grid; gap: 0; margin: 0; padding: 4px 0; list-style: none; }
+.applicant-timeline li {
+  position: relative;
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  padding: 2px 0 22px;
+}
+.applicant-timeline li:not(:last-child)::after {
+  position: absolute;
+  top: 29px;
+  bottom: 0;
+  left: 16px;
+  width: 2px;
+  background: #c9ded3;
+  content: '';
+}
+.applicant-timeline-marker {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid #b8d4c6;
+  border-radius: 50%;
+  color: #267653;
+  background: #edf7f1;
+  font-size: 13px;
+  font-weight: 850;
+}
+.applicant-timeline li.is-current .applicant-timeline-marker { color: #fff; border-color: #267653; background: #267653; }
+.applicant-timeline-copy { display: grid; gap: 5px; padding-top: 3px; }
+.applicant-timeline strong { color: #273a31; font-size: 17px; line-height: 1.45; }
+.applicant-timeline time { color: #75827c; font-size: 13px; line-height: 1.45; }
+
+@media (max-width: 520px) {
+  .passport-review-panel { margin-top: 0; }
+  .applicant-passport-summary { padding: 22px 18px; border-radius: 16px; }
+  .applicant-passport-heading { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .application-step-complete { align-items: flex-start; padding: 16px; }
+  .attachment-section-card,
+  .attachment-submit-card { padding: 18px 15px; border-radius: 16px; }
+  .purchase-field-grid { grid-template-columns: 1fr; }
+  .choice-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .currency-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .attachment-section-heading { align-items: flex-start; }
+  .applicant-records,
+  .applicant-case { width: 100%; }
+  .applicant-record { grid-template-columns: minmax(0, 1fr) 18px; }
+  .applicant-record .applicant-status { grid-column: 1; grid-row: 2; }
+  .applicant-record-arrow { grid-column: 2; grid-row: 1 / span 2; }
+  .applicant-status-card { padding: 21px 18px; border-radius: 18px; }
+  .applicant-supplement { padding: 20px 16px; border-radius: 18px; }
+  .applicant-supplement-upload { grid-template-columns: 30px minmax(0, 1fr); }
+  .applicant-supplement-upload .file-picker-button { grid-column: 1 / -1; }
+  .applicant-case-meta > div { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .applicant-case-meta dd { text-align: left; }
+}

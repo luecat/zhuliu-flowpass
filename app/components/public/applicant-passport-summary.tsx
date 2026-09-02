@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment } from 'react';
 import type { FlowPassPassport } from '../../../shared/passport-contract';
 import { applicantVisibleCopy } from './applicant-copy';
 
@@ -64,7 +64,6 @@ export function ApplicantPassportSummary({
   busy?: boolean;
   mode?: 'draft' | 'record';
 }) {
-  const [confirmed, setConfirmed] = useState(false);
   const orderedFlowNodes = flowNodesInOrder(passport);
   const title = applicantVisibleCopy(passport.use_case.title, 'AI 使用流程');
   const purpose = applicantVisibleCopy(passport.use_case.purpose, '請確認資料內容、AI 使用方式與分享對象是否符合實際情況。');
@@ -110,9 +109,8 @@ export function ApplicantPassportSummary({
       {mode === 'draft' && workflowState === 'follow_up_required' && <p className="applicant-next-step">請先回答下方問題，系統會再整理一次護照。</p>}
       {onContinue && (
         <div className="applicant-passport-controls">
-          <label><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} />我已確認以上內容</label>
-          <button type="button" className="primary-action" disabled={!confirmed || busy} onClick={onContinue}>
-            {busy ? '正在確認…' : '確認內容，前往附件'}
+          <button type="button" className="primary-action" disabled={busy} onClick={onContinue}>
+            {busy ? '處理中…' : '送出申請內容'}
           </button>
         </div>
       )}

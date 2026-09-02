@@ -14,9 +14,18 @@ function cookie(request: Request, name: string): string | null {
   return null;
 }
 
+const VALIDATION_CODE_MAP: Readonly<Record<string, ApiErrorCode>> = {
+  file_too_large: ApiErrorCode.FILE_TOO_LARGE,
+  type_unsupported: ApiErrorCode.UNSUPPORTED_FILE,
+  file_truncated: ApiErrorCode.FILE_UNREADABLE,
+  pdf_encrypted: ApiErrorCode.FILE_ENCRYPTED,
+  pdf_too_many_pages: ApiErrorCode.FILE_TOO_MANY_PAGES,
+  image_too_large: ApiErrorCode.IMAGE_TOO_LARGE,
+};
+
 function failure(error: unknown, requestId: string): Response {
   if (!(error instanceof DocumentCommandError)) return toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId));
-  const code = error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'ETAG_MISMATCH' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : error.code === 'IDEMPOTENCY_KEY_REUSED' ? ApiErrorCode.IDEMPOTENCY_KEY_REUSED : error.code === 'RATE_LIMITED' ? ApiErrorCode.RATE_LIMITED : error.code === 'FILE_INVALID' ? (error.validationCode === 'file_too_large' ? ApiErrorCode.FILE_TOO_LARGE : error.validationCode === 'type_unsupported' ? ApiErrorCode.UNSUPPORTED_FILE : ApiErrorCode.INVALID_REQUEST) : error.code === 'INVALID_REQUEST' ? ApiErrorCode.INVALID_REQUEST : ApiErrorCode.DEPENDENCY_UNAVAILABLE;
+  const code = error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'ETAG_MISMATCH' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : error.code === 'IDEMPOTENCY_KEY_REUSED' ? ApiErrorCode.IDEMPOTENCY_KEY_REUSED : error.code === 'RATE_LIMITED' ? ApiErrorCode.RATE_LIMITED : error.code === 'FILE_INVALID' ? (VALIDATION_CODE_MAP[error.validationCode ?? ''] ?? ApiErrorCode.INVALID_REQUEST) : error.code === 'INVALID_REQUEST' ? ApiErrorCode.INVALID_REQUEST : ApiErrorCode.DEPENDENCY_UNAVAILABLE;
   return toJsonResponse(apiFailure(code, requestId, error.retryAfter === undefined ? {} : { retryAfter: error.retryAfter }));
 }
 
@@ -70,7 +79,8 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
   const { caseId } = await context.params;
   try {
     const result = await createDocumentService({ database: runtime.database, crypto: runtime.crypto, vault: runtime.documentVault, clock: runtime.clock, requestIdGenerator: runtime.requestIdGenerator }).upload({ applicantId: csrf.applicantId, caseId, kind: rawKind as DocumentKind, requirementKey: requirementKey.data, originalName: file.name || 'upload', ...(typeof file.stream === 'function' ? { stream: file.stream() } : { bytes: new Uint8Array(await file.arrayBuffer()) }), ifMatch, idempotencyKey, requestId });
-    const response = apiSuccess(result, requestId, result.document.rowVersion);
+    const ownedCase = getCaseForApplicant(runtime.database, { applicantId: csrf.applicantId }, caseId);
+    const response = apiSuccess(result, requestId, ownedCase?.rowVersion);
     return toJsonResponse(response, { status: 202, headers: { ETag: response.meta.etag ?? '', 'Cache-Control': 'no-store' } });
   } catch (error) { return failure(error, requestId); }
 }
@@ -90,6 +100,8 @@ export async function DELETE(request: Request, context: { params: Promise<{ case
   if (!documentId) return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
   try {
     const result = createDocumentService({ database: runtime.database, crypto: runtime.crypto, vault: runtime.documentVault, clock: runtime.clock, requestIdGenerator: runtime.requestIdGenerator }).delete({ applicantId: csrf.applicantId, caseId, documentId, ifMatch, idempotencyKey, requestId });
-    return toJsonResponse(apiSuccess(result, requestId, result.document.rowVersion), { status: 200, headers: { ETag: `"${result.document.rowVersion}"`, 'Cache-Control': 'no-store' } });
+    const ownedCase = getCaseForApplicant(runtime.database, { applicantId: csrf.applicantId }, caseId);
+    const response = apiSuccess(result, requestId, ownedCase?.rowVersion);
+    return toJsonResponse(response, { status: 200, headers: { ETag: response.meta.etag ?? '', 'Cache-Control': 'no-store' } });
   } catch (error) { return failure(error, requestId); }
 }

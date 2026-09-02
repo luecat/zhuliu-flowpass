@@ -169,6 +169,7 @@ describe('FlowPass SQLite schema', () => {
       { name: '008_production_program_name.sql' },
       { name: '009_admin_data_management.sql' },
       { name: '010_drop_ocr.sql' },
+      { name: '011_ai_runs_any_adapter.sql' },
     ]);
   });
 

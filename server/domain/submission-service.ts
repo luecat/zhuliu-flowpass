@@ -91,7 +91,6 @@ function requiredDocumentKeys(details: PurchaseDetails): DocumentRequirementKey[
     ...(details.specialStatus ? ['special_status_proof' as const] : []),
     'purchase_proof',
     'passbook_cover',
-    'affidavit',
     ...(details.payerType === 'representative' ? ['representative_affidavit' as const] : []),
   ];
 }

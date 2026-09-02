@@ -5,6 +5,8 @@ import { renderLaunchAgent, type LaunchAgent } from '../ops/launchd/launch-agent
 
 export const AGENT_LABELS = ['model', 'public', 'admin', 'worker', 'tunnel', 'backup'] as const;
 
+export const GEMINI_MODEL_ID = 'gemini-3.6-flash';
+
 export function buildLaunchAgents(input: { releaseRoot: string; dataRoot?: string; nodePath?: string; lmsPath?: string; cloudflaredPath?: string }): LaunchAgent[] {
   const node = input.nodePath ?? process.execPath;
   const lms = input.lmsPath ?? '/Users/luecat/.lmstudio/bin/lms';
@@ -28,6 +30,13 @@ export function buildLaunchAgents(input: { releaseRoot: string; dataRoot?: strin
     FLOWPASS_LINE_LOGIN_CHANNEL_ID: '2011336492',
     NEXT_PUBLIC_FLOWPASS_LIFF_ID: '2011336492-ay7OJ4mO',
   };
+  // The worker is the only AI consumer, so the provider switch is scoped to it.
+  // The local model agent keeps its LM Studio configuration and stays available
+  // as a fallback by removing this override and setting modelProvider=lm-studio.
+  const geminiEnvironment: Record<string, string> = {
+    FLOWPASS_MODEL_PROVIDER: 'gemini',
+    FLOWPASS_MODEL_ID: GEMINI_MODEL_ID,
+  };
   const service = (label: string, programArguments: string[], options: Partial<LaunchAgent> = {}): LaunchAgent => ({
     label,
     programArguments,
@@ -43,7 +52,7 @@ export function buildLaunchAgents(input: { releaseRoot: string; dataRoot?: strin
     service('com.luecat.flowpass.model', [node, join(current, 'server', 'model-runtime.mjs'), '--watch'], { environmentVariables: { ...commonEnvironment, FLOWPASS_LMS_PATH: lms } }),
     service('com.luecat.flowpass.public', [node, join(current, 'public', 'server.js')], { workingDirectory: join(current, 'public'), environmentVariables: { ...commonEnvironment, HOSTNAME: '127.0.0.1', PORT: '38100' } }),
     service('com.luecat.flowpass.admin', [node, join(current, 'server', 'admin.mjs')]),
-    service('com.luecat.flowpass.worker', [node, join(current, 'server', 'worker.mjs')], { environmentVariables: { ...commonEnvironment, FLOWPASS_WORKER_RUN: '1' } }),
+    service('com.luecat.flowpass.worker', [node, join(current, 'server', 'worker.mjs')], { environmentVariables: { ...commonEnvironment, FLOWPASS_WORKER_RUN: '1', ...geminiEnvironment } }),
     service('com.luecat.flowpass.tunnel', [input.cloudflaredPath ?? '/opt/homebrew/bin/cloudflared', 'tunnel', '--config', join(current, 'runtime', 'cloudflared-flowpass.yml'), 'run']),
     service('com.luecat.flowpass.backup', [node, join(current, 'server', 'backup.mjs')], { runAtLoad: false, keepAlive: false, calendarInterval: { Hour: 3, Minute: 15 } }),
   ];

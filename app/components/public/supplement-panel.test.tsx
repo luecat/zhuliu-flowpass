@@ -6,6 +6,7 @@ const api = vi.hoisted(() => ({
   read: vi.fn(),
   mutate: vi.fn(),
   upload: vi.fn(),
+  readWithMeta: vi.fn(),
 }));
 
 vi.mock('../../lib/public-api', () => ({
@@ -13,6 +14,7 @@ vi.mock('../../lib/public-api', () => ({
     read = api.read;
     mutate = api.mutate;
     upload = api.upload;
+    readWithMeta = api.readWithMeta;
   },
   PublicApiError: class extends Error {
     code = '';
@@ -29,6 +31,7 @@ describe('SupplementPanel', () => {
       if (path === '/api/v1/cases/case-1') return { rowVersion: 7 };
       throw new Error(`unexpected read: ${path}`);
     });
+    api.readWithMeta.mockResolvedValue({ data: { rowVersion: 7 }, etag: '"7"' });
     api.upload.mockImplementation(async () => { uploaded = true; return {}; });
     api.mutate.mockResolvedValue({ status: 'completed' });
   });

@@ -42,7 +42,15 @@ const PublicOriginSchema = z
   .url()
   .refine(isAllowedPublicOrigin, 'must be the production origin or an explicit loopback test origin');
 
+/**
+ * `lm-studio` keeps the original local-first inference path. `gemini` is an
+ * explicit opt-in that sends the same redacted prompt to Google, so the
+ * default must stay `lm-studio` for any environment that does not set it.
+ */
+const ModelProviderSchema = z.enum(['lm-studio', 'gemini']);
+
 const RuntimeConfigSchema = z.object({
+  modelProvider: ModelProviderSchema.default('lm-studio'),
   publicOrigin: PublicOriginSchema.default(PRODUCTION_PUBLIC_ORIGIN),
   publicPort: z.coerce.number().int().min(1).max(65535).default(38100),
   adminHost: LoopbackHostSchema.default('127.0.0.1'),
@@ -70,6 +78,7 @@ export function createRuntimeConfig(input: RuntimeConfigInput): RuntimeConfig {
 }
 
 export const runtimeConfig = createRuntimeConfig({
+  modelProvider: process.env.FLOWPASS_MODEL_PROVIDER,
   publicOrigin: process.env.FLOWPASS_PUBLIC_ORIGIN,
   publicPort: process.env.FLOWPASS_PUBLIC_PORT,
   adminHost: process.env.FLOWPASS_ADMIN_HOST,

@@ -60,12 +60,12 @@ describe('ApplicantPassportSummary', () => {
     expect(screen.getByText('請確認資料內容、分享對象與使用方式符合你的實際情況。')).toBeVisible();
   });
 
-  it('requires confirmation before continuing', () => {
+  it('continues with a single confirm button instead of a checkbox', () => {
     const onContinue = vi.fn();
     render(<ApplicantPassportSummary passport={passport} workflowState="needs_applicant_confirmation" onContinue={onContinue} />);
-    const button = screen.getByRole('button', { name: '確認內容，前往附件' });
-    expect(button).toBeDisabled();
-    fireEvent.click(screen.getByRole('checkbox', { name: '我已確認以上內容' }));
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: '送出申請內容' });
+    expect(button).toBeEnabled();
     fireEvent.click(button);
     expect(onContinue).toHaveBeenCalledOnce();
   });

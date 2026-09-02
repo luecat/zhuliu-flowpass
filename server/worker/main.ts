@@ -5,6 +5,7 @@ import { createWorkerApp, defaultWorkerDependencyStatus } from './app';
 import { QueueDispatcher } from './queue-dispatcher';
 import { generatePassport } from './handlers/generate-passport';
 import { LmStudioClient } from '../adapters/lm-studio/lm-studio-client';
+import { GeminiClient } from '../adapters/gemini/gemini-client';
 import { KeychainSecretProvider } from '../config/keychain';
 import { initializeFieldCryptoAtStartup } from '../crypto/keyring';
 import { JobRepository } from '../db/repositories/jobs';
@@ -39,17 +40,31 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
         activeKeyId: keyId,
         masterKeyRefs: { [keyId]: { service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_MASTER_KEY_ACCOUNT ?? 'flowpass-master-key' } },
       });
-      // Local OpenAI-compatible servers can intentionally run without a token.
-      // The configured model ID remains the explicit opt-in for AI processing.
-      let client: LmStudioClient | null = null;
-      let lmToken: string | null = null;
-      try {
-        lmToken = await provider.get({ service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_LM_STUDIO_KEYCHAIN_ACCOUNT ?? 'lm-studio-api-token' });
-      } catch {
-        lmToken = null;
-      }
+      // The configured model ID stays the explicit opt-in for AI processing.
+      // Provider selection is env-driven so LM Studio remains available as a
+      // fallback without any code revert.
+      let client: Pick<LmStudioClient, 'complete'> | null = null;
+      let adapterName: 'gemini' | 'lm_studio' = 'lm_studio';
       const modelId = process.env.FLOWPASS_MODEL_ID?.trim();
-      if (modelId) {
+      if (modelId && runtimeConfig.modelProvider === 'gemini') {
+        let geminiKey: string | null = null;
+        try {
+          geminiKey = await provider.get({ service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT ?? 'gemini-api-key' });
+        } catch {
+          geminiKey = null;
+        }
+        if (geminiKey) {
+          client = new GeminiClient({ modelId, apiKey: geminiKey, overallTimeoutMs: 120_000 });
+          adapterName = 'gemini';
+        }
+      } else if (modelId) {
+        // Local OpenAI-compatible servers can intentionally run without a token.
+        let lmToken: string | null = null;
+        try {
+          lmToken = await provider.get({ service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_LM_STUDIO_KEYCHAIN_ACCOUNT ?? 'lm-studio-api-token' });
+        } catch {
+          lmToken = null;
+        }
         client = new LmStudioClient({
           modelId,
           endpoint: openAiApiUrl(runtimeConfig.lmStudioBaseUrl, 'chat/completions'),
@@ -59,6 +74,8 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
           overallTimeoutMs: 300_000,
         });
       }
+      // Health key name is deliberately unchanged: /healthz and its tests read
+      // `lmStudio` for whichever model provider is active.
       dependencyStatus.lmStudio = client ? 'ready' : 'disabled';
       let lineChannelAccessToken: string | null = null;
       try {
@@ -77,7 +94,7 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       const handlers = {
         line_webhook: async (job: DurableJob) => { processLineEvent(job, { database }); },
         ...(lineClient ? { line_notification: async (job: DurableJob) => { await sendLineNotification(job, { database, crypto, client: lineClient, liffId: runtimeConfig.liffId }); } } : {}),
-        ...(client ? { ai_draft: async (job: DurableJob) => { await generatePassport(job, { workerId }, { database, crypto, client: client! }); } } : {}),
+        ...(client ? { ai_draft: async (job: DurableJob) => { await generatePassport(job, { workerId }, { database, crypto, client: client!, adapterName }); } } : {}),
       };
       const dispatcher = new QueueDispatcher({
         database,

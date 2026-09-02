@@ -5,6 +5,7 @@ import { normalizeLoopbackOpenAiBaseUrl, openAiApiUrl } from './loopback-openai-
 describe('createRuntimeConfig', () => {
   it('uses the FlowPass local-system defaults', () => {
     expect(createRuntimeConfig({})).toEqual({
+      modelProvider: 'lm-studio',
       publicOrigin: 'https://flowpass.luecat.com',
       publicPort: 38100,
       adminHost: '127.0.0.1',

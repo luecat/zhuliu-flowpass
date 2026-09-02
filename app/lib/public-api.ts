@@ -63,6 +63,8 @@ export interface PublicApiClientOptions {
   /** Injectable for deterministic tests; production uses crypto.randomUUID(). */
   idempotencyKeyFactory?: () => string;
   csrfCookieName?: string;
+  /** Injectable for tests; production uses the browser XMLHttpRequest. */
+  xhrFactory?: () => XMLHttpRequest;
 }
 
 export class PublicApiError extends Error {
@@ -214,12 +216,14 @@ export class PublicApiClient {
   private readonly cookieSource: () => string;
   private readonly idempotencyKeyFactory: () => string;
   private readonly csrfCookieName: string;
+  private readonly xhrFactory: () => XMLHttpRequest;
 
   constructor(options: PublicApiClientOptions = {}) {
     this.fetcher = options.fetcher ?? globalThis.fetch.bind(globalThis);
     this.cookieSource = options.cookieSource ?? currentCookie;
     this.idempotencyKeyFactory = options.idempotencyKeyFactory ?? createDefaultIdempotencyKey;
     this.csrfCookieName = options.csrfCookieName ?? DEFAULT_CSRF_COOKIE_NAME;
+    this.xhrFactory = options.xhrFactory ?? (() => new XMLHttpRequest());
   }
 
   async bootstrapLineLogin(): Promise<{ nonce: string }> {
@@ -263,6 +267,42 @@ export class PublicApiClient {
     return this.request<T>(path, {
       method: 'GET',
       headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
+    });
+  }
+
+  async readWithMeta<T>(path: string): Promise<{ data: T; etag?: string }> {
+    assertPublicApiPath(path);
+    let response: Response;
+    try {
+      response = await this.fetcher(path, {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json', 'Cache-Control': 'no-store' },
+      });
+    } catch {
+      throw new PublicApiError({ code: 'DEPENDENCY_UNAVAILABLE', message: 'The service is unavailable' });
+    }
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+    if (isPublicFailure(body)) {
+      throw new PublicApiError({
+        code: body.error.code,
+        message: body.error.message,
+        status: response.status,
+        requestId: body.error.requestId,
+      });
+    }
+    if (response.ok && isPublicSuccess(body)) {
+      return { data: body.data as T, etag: body.meta.etag };
+    }
+    throw new PublicApiError({
+      code: 'INVALID_API_RESPONSE',
+      message: 'The service returned an invalid response',
+      status: response.status,
     });
   }
 
@@ -311,21 +351,29 @@ export class PublicApiClient {
     form.set('requirementKey', input.requirementKey);
     form.set('file', input.file, input.file.name || 'upload');
     input.onProgress?.(0);
-    const response = await this.fetcher(path, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: {
-        Accept: 'application/json',
-        'Cache-Control': 'no-store',
-        'X-FlowPass-CSRF': csrfToken,
-        'Idempotency-Key': input.idempotencyKey ?? this.nextIdempotencyKey(),
-        'If-Match': input.ifMatch,
-      },
-      body: form,
+    const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const xhr = this.xhrFactory();
+      xhr.open('POST', new URL(path, SAME_ORIGIN_BASE).href);
+      xhr.withCredentials = true;
+      xhr.responseType = 'text';
+      xhr.setRequestHeader('Accept', 'application/json');
+      xhr.setRequestHeader('Cache-Control', 'no-store');
+      xhr.setRequestHeader('X-FlowPass-CSRF', csrfToken);
+      xhr.setRequestHeader('Idempotency-Key', input.idempotencyKey ?? this.nextIdempotencyKey());
+      xhr.setRequestHeader('If-Match', input.ifMatch);
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          input.onProgress?.(Math.round((event.loaded / event.total) * 100));
+        }
+      };
+      xhr.onload = () => resolve({ status: xhr.status, body: xhr.responseText ?? '' });
+      xhr.onerror = () => reject(new PublicApiError({ code: 'DEPENDENCY_UNAVAILABLE', message: 'The service is unavailable' }));
+      xhr.ontimeout = () => reject(new PublicApiError({ code: 'DEPENDENCY_UNAVAILABLE', message: 'The service is unavailable' }));
+      xhr.send(form);
     });
-    let body: unknown;
-    try { body = await response.json(); } catch { body = null; }
-    const data = readPublicApiEnvelope<T>(body, response);
+    let parsed: unknown;
+    try { parsed = JSON.parse(result.body); } catch { parsed = null; }
+    const data = readPublicApiEnvelope<T>(parsed, { ok: result.status >= 200 && result.status < 300, status: result.status } as Response);
     input.onProgress?.(100);
     return data;
   }

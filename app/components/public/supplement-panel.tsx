@@ -36,7 +36,16 @@ interface UploadSpec {
 }
 
 const MAX_BYTES = 12 * 1024 * 1024;
-const ACCEPTED_FILES = '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf';
+const ACCEPTED_FILES = '.jpg,.jpeg,.png,.pdf,.heic,.heif,image/jpeg,image/png,application/pdf';
+
+const ERROR_MESSAGES: Record<string, string> = {
+  FILE_TOO_LARGE: '單一檔案不可超過 12 MiB。',
+  IMAGE_TOO_LARGE: '圖片解析度太大，請壓縮或改存 JPG 再上傳。',
+  FILE_UNREADABLE: '讀不到這個檔案，可能已損毀，請重新存檔再試。',
+  FILE_ENCRYPTED: '這個 PDF 有加密，請改上傳沒有密碼的檔案。',
+  FILE_TOO_MANY_PAGES: 'PDF 超過 10 頁，請拆分或刪減後再上傳。',
+  UNSUPPORTED_FILE: '只支援 JPG、PNG、PDF，請轉檔後再上傳。',
+};
 const FALLBACK_SPEC: UploadSpec = {
   kind: 'supplement',
   requirementKey: 'supplement_other',
@@ -88,14 +97,17 @@ export function SupplementPanel({ caseId, onCompleted }: { caseId: string; onCom
   const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState('');
+  const [caseEtag, setCaseEtag] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [taskResult, documentResult] = await Promise.all([
+    const [taskResult, documentResult, caseResult] = await Promise.all([
       api.read<{ tasks: SupplementTask[] }>(`/api/v1/tasks?caseId=${encodeURIComponent(caseId)}`),
       api.read<{ documents: DocumentRecord[] }>(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`),
+      api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`),
     ]);
     setTask(taskResult.tasks.find((item) => item.taskType === 'provide_document') ?? null);
     setDocuments(documentResult.documents);
+    setCaseEtag(caseResult.etag ?? null);
   }, [api, caseId]);
 
   useEffect(() => {
@@ -107,19 +119,41 @@ export function SupplementPanel({ caseId, onCompleted }: { caseId: string; onCom
   const spec = task ? resolveUploadSpec(task) : FALLBACK_SPEC;
   const uploaded = task ? documents.find((document) => document.status === 'ready' && document.createdAt >= task.createdAt && document.requirementKey === spec.requirementKey) ?? null : null;
 
+  function isHeic(file: File): boolean {
+    const name = file.name.toLowerCase();
+    return name.endsWith('.heic') || name.endsWith('.heif') || file.type === 'image/heic' || file.type === 'image/heif';
+  }
+
+  async function ensureCaseEtag(): Promise<string> {
+    if (caseEtag) return caseEtag;
+    const refreshed = await api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
+    const etag = refreshed.etag ?? `"${refreshed.data.rowVersion}"`;
+    setCaseEtag(etag);
+    return etag;
+  }
+
   async function upload(file: File | null) {
     if (!file || !task) return;
     if (file.size > MAX_BYTES) { setMessage('單一檔案不可超過 12 MiB。'); return; }
+    if (isHeic(file)) { setMessage('iPhone 拍的 HEIC 請先轉成 JPG 再上傳。'); return; }
     setUploading(true); setUploadProgress(0); setMessage('');
     try {
-      const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
-      await api.upload(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`, { file, kind: spec.kind, requirementKey: spec.requirementKey, ifMatch: `"${current.rowVersion}"`, onProgress: setUploadProgress });
+      let etag = await ensureCaseEtag();
+      try {
+        await api.upload(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`, { file, kind: spec.kind, requirementKey: spec.requirementKey, ifMatch: etag, onProgress: setUploadProgress });
+      } catch (error) {
+        if (error instanceof PublicApiError && error.code === 'ETAG_MISMATCH') {
+          const refreshed = await api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
+          etag = refreshed.etag ?? `"${refreshed.data.rowVersion}"`;
+          setCaseEtag(etag);
+          await api.upload(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`, { file, kind: spec.kind, requirementKey: spec.requirementKey, ifMatch: etag, onProgress: setUploadProgress });
+        } else { throw error; }
+      }
       await load();
       setMessage('補件文件已上傳，確認後即可送出。');
     } catch (error) {
-      if (error instanceof PublicApiError && error.code === 'FILE_TOO_LARGE') setMessage('單一檔案不可超過 12 MiB。');
-      else if (error instanceof PublicApiError && error.code === 'UNSUPPORTED_FILE') setMessage('只接受 JPEG、PNG 或非加密 PDF。');
-      else setMessage('文件尚未上傳，請重新選擇檔案。');
+      const code = error instanceof PublicApiError ? error.code : null;
+      setMessage(code && ERROR_MESSAGES[code] ? ERROR_MESSAGES[code] : '文件尚未上傳，請重新選擇檔案。');
     } finally { setUploading(false); setUploadProgress(0); }
   }
 

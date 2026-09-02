@@ -4,11 +4,11 @@ import type { PurchaseDetails } from '../../../shared/purchase-details-contract'
 import { DocumentReview } from './document-review';
 
 const CASE_ID = '0198f090-0000-7000-8000-000000000001';
-const apiMocks = vi.hoisted(() => ({ read: vi.fn(), mutate: vi.fn(), upload: vi.fn() }));
+const apiMocks = vi.hoisted(() => ({ read: vi.fn(), mutate: vi.fn(), upload: vi.fn(), readWithMeta: vi.fn() }));
 
 vi.mock('../../lib/public-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/public-api')>();
-  return { ...actual, PublicApiClient: class { read = apiMocks.read; mutate = apiMocks.mutate; upload = apiMocks.upload; } };
+  return { ...actual, PublicApiClient: class { read = apiMocks.read; mutate = apiMocks.mutate; upload = apiMocks.upload; readWithMeta = apiMocks.readWithMeta; } };
 });
 
 const details: PurchaseDetails = {
@@ -25,13 +25,14 @@ function installApi(saved: PurchaseDetails | null = null) {
     if (path === `/api/v1/cases/${CASE_ID}`) return { rowVersion: 3, state: 'draft' };
     throw new Error(`unexpected read: ${path}`);
   });
+  apiMocks.readWithMeta.mockResolvedValue({ data: { rowVersion: 3, state: 'draft' }, etag: '"3"' });
   apiMocks.mutate.mockResolvedValue({ details: saved ?? details });
   apiMocks.upload.mockResolvedValue({ document: { id: 'document-1' } });
 }
 
 describe('DocumentReview', () => {
   beforeEach(() => {
-    apiMocks.read.mockReset(); apiMocks.mutate.mockReset(); apiMocks.upload.mockReset();
+    apiMocks.read.mockReset(); apiMocks.mutate.mockReset(); apiMocks.upload.mockReset(); apiMocks.readWithMeta.mockReset();
   });
 
   it('shows a guided purchase-details and attachment checklist', async () => {
@@ -44,7 +45,7 @@ describe('DocumentReview', () => {
     expect(screen.getByText('身分證反面')).toBeInTheDocument();
     expect(screen.getByText('購買憑證或發票')).toBeInTheDocument();
     expect(screen.getByText('存摺封面影本')).toBeInTheDocument();
-    expect(screen.getByText('切結書')).toBeInTheDocument();
+    expect(screen.getByText(/切結書/)).toBeInTheDocument();
     expect(screen.queryByText(/OCR/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: '正式送出申請' })).toBeDisabled();
   });
@@ -54,7 +55,7 @@ describe('DocumentReview', () => {
     render(<DocumentReview suppliedCaseId={CASE_ID} />);
     expect(await screen.findByText('特定對象或文化語言保存者證明')).toBeInTheDocument();
     expect(screen.getByText('代付切結書')).toBeInTheDocument();
-    expect(screen.getByText('0 / 7')).toBeInTheDocument();
+    expect(screen.getByText('0 / 6')).toBeInTheDocument();
   });
 
   it('labels a purchase proof upload with its document requirement', async () => {

@@ -133,10 +133,13 @@ export function createDocumentService(options: DocumentServiceOptions): Document
         const storageId = options.vault.allocateStorageId();
         const createdAt = now.toISOString();
         options.database.transaction(() => {
-          const row = assertCaseMutable(options.database, input.applicantId, input.caseId, input.ifMatch);
+          assertCaseMutable(options.database, input.applicantId, input.caseId, input.ifMatch);
           insertEncryptedDocumentForApplicant(options.database, { applicantId: input.applicantId }, options.crypto, { id: documentId, caseId: input.caseId, kind: input.kind, requirementKey: input.requirementKey, storageId, vaultKeyId: options.vault.activeKeyId, contentSha256: validated.contentSha256, mediaType: validated.mediaType as DocumentMediaType, byteSize: validated.byteSize, originalName: input.originalName, status: 'pending_vault', uploadedByType: 'applicant', uploadedById: input.applicantId, createdAt, rowVersion: 1 });
-          const changed = options.database.prepare('UPDATE cases SET updated_at = ?, row_version = row_version + 1 WHERE id = ? AND applicant_id = ? AND row_version = ?').run(createdAt, input.caseId, input.applicantId, row.rowVersion);
-          if (changed.changes !== 1) throw new DocumentCommandError('ETAG_MISMATCH');
+          // Document mutations intentionally do not bump the case row_version:
+          // the case ETag gates case-level content edits, and keeping it stable
+          // lets applicants upload several documents concurrently without
+          // invalidating each other's If-Match values.
+          options.database.prepare('UPDATE cases SET updated_at = ? WHERE id = ? AND applicant_id = ?').run(createdAt, input.caseId, input.applicantId);
           options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_upload_started', '文件上傳處理中', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ kind: input.kind, requirementKey: input.requirementKey, mediaType: validated.mediaType, byteSize: validated.byteSize }), createdAt);
         })();
         prepared = options.vault.prepare({ documentId, bytes, storageId });
@@ -198,16 +201,16 @@ export function createDocumentService(options: DocumentServiceOptions): Document
         if (expected === null) throw new DocumentCommandError('ETAG_MISMATCH');
         let storageRef: { storage_id: string; key_id: string } | null = null;
         options.database.transaction(() => {
-          const caseRow = assertCaseMutable(options.database, input.applicantId, input.caseId, input.ifMatch);
-          if (caseRow.state !== 'draft') throw new DocumentCommandError('INVALID_STATE');
+          assertCaseMutable(options.database, input.applicantId, input.caseId, input.ifMatch);
           const row = options.database.prepare(`SELECT documents.storage_id, documents.key_id, documents.status FROM documents JOIN cases ON cases.id = documents.case_id WHERE documents.id = ? AND documents.case_id = ? AND cases.applicant_id = ?`).get(input.documentId, input.caseId, input.applicantId) as { storage_id: string; key_id: string; status: string } | undefined;
           if (!row) throw new DocumentCommandError('NOT_FOUND');
           storageRef = { storage_id: row.storage_id, key_id: row.key_id };
           if (row.status === 'deleted') throw new DocumentCommandError('INVALID_STATE');
           const changed = options.database.prepare(`UPDATE documents SET status = 'deleted', deleted_at = ?, row_version = row_version + 1 WHERE id = ? AND status <> 'deleted'`).run(now.toISOString(), input.documentId);
           if (changed.changes !== 1) throw new DocumentCommandError('ETAG_MISMATCH');
-          const caseChanged = options.database.prepare('UPDATE cases SET updated_at = ?, row_version = row_version + 1 WHERE id = ? AND applicant_id = ? AND row_version = ?').run(now.toISOString(), input.caseId, input.applicantId, caseRow.rowVersion);
-          if (caseChanged.changes !== 1) throw new DocumentCommandError('ETAG_MISMATCH');
+          // Same contract as upload: document removal does not bump the case
+          // row_version, so concurrent document operations keep their ETag.
+          options.database.prepare('UPDATE cases SET updated_at = ? WHERE id = ? AND applicant_id = ?').run(now.toISOString(), input.caseId, input.applicantId);
           options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_deleted', '文件已移除', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ documentId: input.documentId }), now.toISOString());
           appendEncryptedAuditLog(options.database, options.crypto, { id: idGenerator(), actorType: 'applicant', actorId: input.applicantId, action: 'delete', entityType: 'document', entityId: input.documentId, beforeHash: null, afterHash: null, detail: { kind: 'operation', operation: 'delete', outcome: 'ok' }, requestId: input.requestId ?? requestIdGenerator(), createdAt: now.toISOString() });
         })();

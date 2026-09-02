@@ -54,16 +54,16 @@ describe('DocumentService', () => {
     expect(db.prepare('SELECT original_name_enc, storage_id, key_id FROM documents').get()).toMatchObject({ storage_id: expect.not.stringContaining('private-invoice'), key_id: 'test-v1' });
     const raw = db.prepare('SELECT original_name_enc FROM documents').get() as { original_name_enc: string };
     expect(raw.original_name_enc).not.toContain('private-invoice.png');
-    expect((db.prepare('SELECT row_version FROM cases WHERE id = ?').get(ids.case) as { row_version: number }).row_version).toBe(2);
+    expect((db.prepare('SELECT row_version FROM cases WHERE id = ?').get(ids.case) as { row_version: number }).row_version).toBe(1);
     expect(db.prepare('SELECT COUNT(*) AS count FROM jobs').get()).toEqual({ count: 0 });
   });
 
   it('rejects submitted cases and removes a document only while the case is mutable', async () => {
     const uploaded = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'receipt.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'upload' });
-    const deleted = service.delete({ applicantId: ids.applicant, caseId: ids.case, documentId: uploaded.document.id, ifMatch: '"2"', idempotencyKey: 'delete' });
+    const deleted = service.delete({ applicantId: ids.applicant, caseId: ids.case, documentId: uploaded.document.id, ifMatch: '"1"', idempotencyKey: 'delete' });
     expect(deleted.document.status).toBe('deleted');
     db.prepare("UPDATE cases SET state = 'submitted' WHERE id = ?").run(ids.case);
-    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'again.png', bytes: png(), ifMatch: '"3"', idempotencyKey: 'submitted' })).rejects.toMatchObject({ code: 'INVALID_STATE' });
+    await expect(service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'purchase_proof', originalName: 'again.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'submitted' })).rejects.toMatchObject({ code: 'INVALID_STATE' });
   });
 
   it('does not persist bytes when stream validation fails', async () => {

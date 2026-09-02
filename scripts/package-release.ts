@@ -31,7 +31,7 @@ export function packageRelease(input: { projectRoot: string; releaseRoot: string
   const buildId = readFileSync(buildIdPath, 'utf8').trim();
   const lockHash = existsSync(lockPath) ? hashFile(lockPath) : null;
   const entries = files(releaseDir).map((path) => ({ path: relative(releaseDir, path), sha256: hashFile(path) }));
-  const manifest = JSON.stringify({ format: 'flowpass-release-v1', releaseId, builtAt: new Date().toISOString(), nodeVersion: process.version, buildId, sourceCommit, sourceDirty, dependencyLockSha256: lockHash, migrationRange: '001_core..010_drop_ocr', entries }, null, 2);
+  const manifest = JSON.stringify({ format: 'flowpass-release-v1', releaseId, builtAt: new Date().toISOString(), nodeVersion: process.version, buildId, sourceCommit, sourceDirty, dependencyLockSha256: lockHash, migrationRange: '001_core..011_ai_runs_any_adapter', entries }, null, 2);
   const manifestPath = join(releaseDir, 'manifest.json'); writeFileSync(manifestPath, manifest, { mode: 0o600 });
   const verified = JSON.parse(readFileSync(manifestPath, 'utf8')) as { format?: string; entries?: Array<{ path: string; sha256: string }> };
   if (verified.format !== 'flowpass-release-v1' || !verified.entries?.every((entry) => hashFile(join(releaseDir, entry.path)) === entry.sha256)) throw new Error('release manifest verification failed');

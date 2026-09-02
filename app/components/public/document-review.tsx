@@ -41,10 +41,20 @@ interface RequirementSpec {
   kind: DocumentKind;
   label: string;
   hint: string;
+  required: boolean;
 }
 
 const MAX_BYTES = 12 * 1024 * 1024;
-const ACCEPTED_FILES = '.jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf';
+const ACCEPTED_FILES = '.jpg,.jpeg,.png,.pdf,.heic,.heif,image/jpeg,image/png,application/pdf';
+
+const ERROR_MESSAGES: Record<string, string> = {
+  FILE_TOO_LARGE: '單一檔案不可超過 12 MiB。',
+  IMAGE_TOO_LARGE: '圖片解析度太大，請壓縮或改存 JPG 再上傳。',
+  FILE_UNREADABLE: '讀不到這個檔案，可能已損毀，請重新存檔再試。',
+  FILE_ENCRYPTED: '這個 PDF 有加密，請改上傳沒有密碼的檔案。',
+  FILE_TOO_MANY_PAGES: 'PDF 超過 10 頁，請拆分或刪減後再上傳。',
+  UNSUPPORTED_FILE: '只支援 JPG、PNG、PDF，請轉檔後再上傳。',
+};
 
 const EMPTY_DETAILS: PurchaseDetailsDraft = {
   billingCycle: 'annual', billingPeriods: '', softwareFunction: 'general', otherFunction: '',
@@ -54,14 +64,14 @@ const EMPTY_DETAILS: PurchaseDetailsDraft = {
 };
 
 const REQUIREMENTS: Record<DocumentRequirementKey, RequirementSpec> = {
-  identity_front: { key: 'identity_front', kind: 'eligibility_proof', label: '身分證正面', hint: '照片需清楚、完整且沒有反光。' },
-  identity_back: { key: 'identity_back', kind: 'eligibility_proof', label: '身分證反面', hint: '照片需清楚、完整且沒有反光。' },
-  special_status_proof: { key: 'special_status_proof', kind: 'eligibility_proof', label: '特定對象或文化語言保存者證明', hint: '請上傳可辨識身分或資格的有效證明。' },
-  purchase_proof: { key: 'purchase_proof', kind: 'invoice', label: '購買憑證或發票', hint: '需看得到購買人、軟體名稱、日期、期間、金額與付款方式。' },
-  passbook_cover: { key: 'passbook_cover', kind: 'supplement', label: '存摺封面影本', hint: '需看得到戶名與帳號，內容請保持完整。' },
-  affidavit: { key: 'affidavit', kind: 'other', label: '切結書', hint: '請由申請人親筆簽名後拍照或掃描上傳。' },
-  representative_affidavit: { key: 'representative_affidavit', kind: 'other', label: '代付切結書', hint: '由父母、配偶或法定代理人代付時，需要雙方簽名。' },
-  supplement_other: { key: 'supplement_other', kind: 'supplement', label: '其他補充文件', hint: '請依審核人員的說明上傳完整文件。' },
+  identity_front: { key: 'identity_front', kind: 'eligibility_proof', label: '身分證正面', hint: '照片需清楚、完整且沒有反光。', required: true },
+  identity_back: { key: 'identity_back', kind: 'eligibility_proof', label: '身分證反面', hint: '照片需清楚、完整且沒有反光。', required: true },
+  special_status_proof: { key: 'special_status_proof', kind: 'eligibility_proof', label: '特定對象或文化語言保存者證明', hint: '請上傳可辨識身分或資格的有效證明。', required: true },
+  purchase_proof: { key: 'purchase_proof', kind: 'invoice', label: '購買憑證或發票', hint: '需看得到購買人、軟體名稱、日期、期間、金額與付款方式。', required: true },
+  passbook_cover: { key: 'passbook_cover', kind: 'supplement', label: '存摺封面影本', hint: '需看得到戶名與帳號，內容請保持完整。', required: true },
+  affidavit: { key: 'affidavit', kind: 'other', label: '切結書（選填）', hint: '請由申請人親筆簽名後拍照或掃描上傳。', required: false },
+  representative_affidavit: { key: 'representative_affidavit', kind: 'other', label: '代付切結書', hint: '由父母、配偶或法定代理人代付時，需要雙方簽名。', required: true },
+  supplement_other: { key: 'supplement_other', kind: 'supplement', label: '其他補充文件', hint: '請依審核人員的說明上傳完整文件。', required: true },
 };
 
 function draftFromDetails(details: PurchaseDetails): PurchaseDetailsDraft {
@@ -112,14 +122,15 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false }:
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [activeRequirement, setActiveRequirement] = useState<DocumentRequirementKey | null>(null);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [busyRequirements, setBusyRequirements] = useState<Set<DocumentRequirementKey>>(new Set());
+  const [progressByRequirement, setProgressByRequirement] = useState<Partial<Record<DocumentRequirementKey, number>>>({});
+  const [caseEtag, setCaseEtag] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
 
   const parsedDraft = useMemo(() => parseDraft(draft), [draft]);
   const detailsSaved = parsedDraft.success && sameDetails(savedDetails, parsedDraft.data);
-  const requiredSpecs = useMemo(() => [
+  const visibleSpecs = useMemo(() => [
     REQUIREMENTS.identity_front,
     REQUIREMENTS.identity_back,
     ...(draft.specialStatus ? [REQUIREMENTS.special_status_proof] : []),
@@ -128,6 +139,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false }:
     REQUIREMENTS.affidavit,
     ...(draft.payerType === 'representative' ? [REQUIREMENTS.representative_affidavit] : []),
   ], [draft.payerType, draft.specialStatus]);
+  const requiredSpecs = useMemo(() => visibleSpecs.filter((spec) => spec.required), [visibleSpecs]);
   const latestDocument = useCallback((requirementKey: DocumentRequirementKey) => (
     documents.find((document) => document.requirementKey === requirementKey && document.status !== 'deleted') ?? null
   ), [documents]);
@@ -147,11 +159,13 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false }:
       void Promise.all([
         api.read<{ details: PurchaseDetails | null }>(`/api/v1/cases/${encodeURIComponent(caseId)}/purchase-details`),
         api.read<{ documents: DocumentRecord[] }>(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`),
-      ]).then(([detailsResult, documentResult]) => {
+        api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`),
+      ]).then(([detailsResult, documentResult, caseResult]) => {
         if (!active) return;
         setSavedDetails(detailsResult.details);
         if (detailsResult.details) setDraft(draftFromDetails(detailsResult.details));
         setDocuments(documentResult.documents);
+        setCaseEtag(caseResult.etag ?? null);
         setMessage('');
       }).catch(() => {
         if (active) setMessage('附件資料暫時無法載入，請稍後再試。');
@@ -178,37 +192,91 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false }:
       const result = await api.mutate<{ details: PurchaseDetails }>(`/api/v1/cases/${encodeURIComponent(caseId)}/purchase-details`, { method: 'PUT', ifMatch: `"${current.rowVersion}"`, body: parsed.data });
       setSavedDetails(result.details);
       setDraft(draftFromDetails(result.details));
+      const refreshed = await api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
+      setCaseEtag(refreshed.etag ?? null);
       setMessage('購買資料已儲存。');
     } catch (error) {
       setMessage(error instanceof PublicApiError && error.code === 'ETAG_MISMATCH' ? '資料剛剛有更新，請再儲存一次。' : '購買資料尚未儲存，請稍後再試。');
     } finally { setSaving(false); }
   }
 
+  function isHeic(file: File): boolean {
+    const name = file.name.toLowerCase();
+    return name.endsWith('.heic') || name.endsWith('.heif') || file.type === 'image/heic' || file.type === 'image/heif';
+  }
+
+  async function ensureCaseEtag(): Promise<string> {
+    if (caseEtag) return caseEtag;
+    const refreshed = await api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId!)}`);
+    const etag = refreshed.etag ?? `"${refreshed.data.rowVersion}"`;
+    setCaseEtag(etag);
+    return etag;
+  }
+
+  function markBusy(key: DocumentRequirementKey, busy: boolean) {
+    setBusyRequirements((previous) => {
+      const next = new Set(previous);
+      if (busy) next.add(key); else next.delete(key);
+      return next;
+    });
+  }
+
+  async function uploadDocument(spec: RequirementSpec, file: File, etag: string) {
+    await api.upload(`/api/v1/cases/${encodeURIComponent(caseId!)}/documents`, {
+      file, kind: spec.kind, requirementKey: spec.key, ifMatch: etag,
+      onProgress: (percent) => setProgressByRequirement((previous) => ({ ...previous, [spec.key]: percent })),
+    });
+  }
+
   async function upload(spec: RequirementSpec, file: File | null) {
     if (!caseId || !file) return;
     if (file.size > MAX_BYTES) { setMessage('單一檔案不可超過 12 MiB。'); return; }
-    setActiveRequirement(spec.key); setUploadProgress(0); setMessage('');
+    if (isHeic(file)) { setMessage('iPhone 拍的 HEIC 請先轉成 JPG 再上傳。'); return; }
+    markBusy(spec.key, true);
+    setProgressByRequirement((previous) => ({ ...previous, [spec.key]: 0 }));
+    setMessage('');
     try {
-      const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
-      await api.upload(`/api/v1/cases/${encodeURIComponent(caseId)}/documents`, { file, kind: spec.kind, requirementKey: spec.key, ifMatch: `"${current.rowVersion}"`, onProgress: setUploadProgress });
+      let etag = await ensureCaseEtag();
+      try {
+        await uploadDocument(spec, file, etag);
+      } catch (error) {
+        if (error instanceof PublicApiError && error.code === 'ETAG_MISMATCH') {
+          const refreshed = await api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
+          etag = refreshed.etag ?? `"${refreshed.data.rowVersion}"`;
+          setCaseEtag(etag);
+          await uploadDocument(spec, file, etag);
+        } else { throw error; }
+      }
       await loadDocuments();
       setMessage(`${spec.label}已上傳。`);
     } catch (error) {
-      if (error instanceof PublicApiError && error.code === 'FILE_TOO_LARGE') setMessage('單一檔案不可超過 12 MiB。');
-      else if (error instanceof PublicApiError && error.code === 'UNSUPPORTED_FILE') setMessage('只接受 JPEG、PNG 或非加密 PDF。');
-      else setMessage(`${spec.label}尚未上傳，請重新選擇檔案。`);
-    } finally { setActiveRequirement(null); setUploadProgress(0); }
+      const code = error instanceof PublicApiError ? error.code : null;
+      setMessage(code && ERROR_MESSAGES[code] ? ERROR_MESSAGES[code] : `${spec.label}尚未上傳，請重新選擇檔案。`);
+    } finally {
+      markBusy(spec.key, false);
+      setProgressByRequirement((previous) => { const next = { ...previous }; delete next[spec.key]; return next; });
+    }
   }
 
   async function remove(document: DocumentRecord, label: string) {
     if (!caseId) return;
-    setActiveRequirement(document.requirementKey); setConfirmed(false); setMessage('');
+    const key = document.requirementKey ?? 'supplement_other';
+    markBusy(key, true); setConfirmed(false); setMessage('');
     try {
-      const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
-      await api.mutate(`/api/v1/cases/${encodeURIComponent(caseId)}/documents?documentId=${encodeURIComponent(document.id)}`, { method: 'DELETE', ifMatch: `"${current.rowVersion}"` });
+      let etag = await ensureCaseEtag();
+      try {
+        await api.mutate(`/api/v1/cases/${encodeURIComponent(caseId)}/documents?documentId=${encodeURIComponent(document.id)}`, { method: 'DELETE', ifMatch: etag });
+      } catch (error) {
+        if (error instanceof PublicApiError && error.code === 'ETAG_MISMATCH') {
+          const refreshed = await api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
+          etag = refreshed.etag ?? `"${refreshed.data.rowVersion}"`;
+          setCaseEtag(etag);
+          await api.mutate(`/api/v1/cases/${encodeURIComponent(caseId)}/documents?documentId=${encodeURIComponent(document.id)}`, { method: 'DELETE', ifMatch: etag });
+        } else { throw error; }
+      }
       await loadDocuments();
       setMessage(`${label}已移除。`);
-    } catch { setMessage('檔案目前無法移除，請稍後再試。'); } finally { setActiveRequirement(null); }
+    } catch { setMessage('檔案目前無法移除，請稍後再試。'); } finally { markBusy(key, false); }
   }
 
   if (!caseId) return null;
@@ -241,9 +309,9 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false }:
         <div className="attachment-section-heading"><div><span>2</span><h3 id="required-files-title">上傳必要文件</h3></div><strong className="attachment-progress">{completedCount} / {requiredSpecs.length}</strong></div>
         <p className="field-hint">接受 JPEG、PNG 或非加密 PDF，單檔上限 12 MiB。</p>
         <div className="attachment-requirement-list">
-          {requiredSpecs.map((spec, index) => {
-            const document = latestDocument(spec.key); const isBusy = activeRequirement === spec.key; const isReady = document?.status === 'ready';
-            return <article className={isReady ? 'attachment-requirement is-complete' : 'attachment-requirement'} key={spec.key}><div className="attachment-requirement-copy"><span className="attachment-check" aria-hidden="true">{isReady ? '✓' : index + 1}</span><div><h4>{spec.label}<em>必要</em></h4><p>{spec.hint}</p>{document && <small>{isReady ? `已上傳 · ${formatBytes(document.byteSize)}` : '檔案處理中'}</small>}</div></div><div className="attachment-requirement-actions"><label className="file-picker-button">{isBusy ? `上傳中 ${uploadProgress}%` : document ? '重新上傳' : '選擇檔案'}<input type="file" accept={ACCEPTED_FILES} disabled={activeRequirement !== null || submitting} onChange={(event) => { const selected = event.target.files?.[0] ?? null; event.currentTarget.value = ''; void upload(spec, selected); }} /></label>{document && <button type="button" className="text-action" disabled={activeRequirement !== null || submitting} onClick={() => void remove(document, spec.label)}>移除</button>}</div></article>;
+          {visibleSpecs.map((spec) => {
+            const document = latestDocument(spec.key); const isBusy = busyRequirements.has(spec.key); const isReady = document?.status === 'ready';
+            return <article className={isReady ? 'attachment-requirement is-complete' : 'attachment-requirement'} key={spec.key}><div className="attachment-requirement-copy"><span className="attachment-check" aria-hidden="true">{isReady ? '✓' : spec.required ? requiredSpecs.indexOf(spec) + 1 : '－'}</span><div><h4>{spec.label}<em>{spec.required ? '必要' : '選填'}</em></h4><p>{spec.hint}</p>{document && <small>{isReady ? `已上傳 · ${formatBytes(document.byteSize)}` : '檔案處理中'}</small>}</div></div><div className="attachment-requirement-actions"><label className="file-picker-button">{isBusy ? `上傳中 ${progressByRequirement[spec.key] ?? 0}%` : document ? '重新上傳' : '選擇檔案'}<input type="file" accept={ACCEPTED_FILES} disabled={isBusy || submitting} onChange={(event) => { const selected = event.target.files?.[0] ?? null; event.currentTarget.value = ''; void upload(spec, selected); }} /></label>{document && <button type="button" className="text-action" disabled={isBusy || submitting} onClick={() => void remove(document, spec.label)}>移除</button>}</div></article>;
           })}
         </div>
       </section>
@@ -253,7 +321,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false }:
         {!detailsSaved && <p>請先儲存完整的購買資料。</p>}
         {detailsSaved && completedCount < requiredSpecs.length && <p>還有 {requiredSpecs.length - completedCount} 項必要文件尚未上傳。</p>}
         {readyToSubmit && <label className="final-confirmation"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>我已確認購買資料與附件內容正確。</span></label>}
-        <button type="button" className="primary-action" disabled={!readyToSubmit || !confirmed || submitting || activeRequirement !== null} onClick={onSubmit}>{submitting ? '正式送出中…' : '正式送出申請'}</button>
+        <button type="button" className="primary-action" disabled={!readyToSubmit || !confirmed || submitting || busyRequirements.size > 0} onClick={onSubmit}>{submitting ? '正式送出中…' : '正式送出申請'}</button>
       </section>
     </section>
   );

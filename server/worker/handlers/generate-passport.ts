@@ -14,6 +14,8 @@ export interface GeneratePassportOptions {
   database: FlowPassDatabase;
   crypto: FieldCrypto;
   client: Pick<LmStudioClient, 'complete'>;
+  /** Value recorded in the immutable ai_runs.adapter audit column. */
+  adapterName?: string;
   clock?: () => Date;
   idGenerator?: () => string;
 }
@@ -273,6 +275,7 @@ export async function generatePassport(job: DurableJob, scope: WorkerScope, opti
   const contentSha256 = hash(payload.operation === 'revise' ? `${canonicalText}\nrevision-parent:${payload.passportVersionId ?? 'none'}` : canonicalText);
   const clock = options.clock ?? (() => new Date());
   const idGenerator = options.idGenerator ?? uuidv7;
+  const adapterName = options.adapterName ?? 'lm_studio';
   const now = clock().toISOString();
   repairCount += inspection.validation.repairs.length;
   let versionId = '';
@@ -286,7 +289,7 @@ export async function generatePassport(job: DurableJob, scope: WorkerScope, opti
       const current = options.database.prepare('SELECT pv.id FROM passport_versions pv JOIN passports p ON p.id = pv.passport_id WHERE p.case_id = ? AND pv.content_sha256 = ?').get(payload.caseId, contentSha256) as { id: string } | undefined;
       if (!current) throw new Error('AI output reuse target is unavailable');
       versionId = current.id;
-      options.database.prepare(`INSERT INTO ai_runs (id, case_id, passport_version_id, operation, adapter, model_id, prompt_version, schema_version, input_hash, output_hash, input_tokens, output_tokens, duration_ms, result_code, repair_count, created_at) VALUES (?, ?, ?, ?, 'lm_studio', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), payload.caseId, versionId, payload.operation, payload.modelId, payload.promptVersion ?? AI_PROMPT_VERSION, payload.schemaVersion ?? AI_SCHEMA_VERSION, payload.inputHash, hash(result.content), payload.inputTokens ?? result.inputTokens, result.outputTokens, Math.max(0, Date.now() - started), 'AI_DRAFT_REUSED', repairCount, now);
+      options.database.prepare(`INSERT INTO ai_runs (id, case_id, passport_version_id, operation, adapter, model_id, prompt_version, schema_version, input_hash, output_hash, input_tokens, output_tokens, duration_ms, result_code, repair_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), payload.caseId, versionId, payload.operation, adapterName, payload.modelId, payload.promptVersion ?? AI_PROMPT_VERSION, payload.schemaVersion ?? AI_SCHEMA_VERSION, payload.inputHash, hash(result.content), payload.inputTokens ?? result.inputTokens, result.outputTokens, Math.max(0, Date.now() - started), 'AI_DRAFT_REUSED', repairCount, now);
     })();
   } else {
     let runInserted = false;
@@ -301,7 +304,7 @@ export async function generatePassport(job: DurableJob, scope: WorkerScope, opti
       parentVersionId: payload.passportVersionId,
       contentSha256,
       onVersionCreated: (version) => {
-        options.database.prepare(`INSERT INTO ai_runs (id, case_id, passport_version_id, operation, adapter, model_id, prompt_version, schema_version, input_hash, output_hash, input_tokens, output_tokens, duration_ms, result_code, repair_count, created_at) VALUES (?, ?, ?, ?, 'lm_studio', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), payload.caseId, version.id, payload.operation, payload.modelId, payload.promptVersion ?? AI_PROMPT_VERSION, payload.schemaVersion ?? AI_SCHEMA_VERSION, payload.inputHash, hash(result.content), payload.inputTokens ?? result.inputTokens, result.outputTokens, Math.max(0, Date.now() - started), 'AI_DRAFT_CREATED', repairCount, now);
+        options.database.prepare(`INSERT INTO ai_runs (id, case_id, passport_version_id, operation, adapter, model_id, prompt_version, schema_version, input_hash, output_hash, input_tokens, output_tokens, duration_ms, result_code, repair_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), payload.caseId, version.id, payload.operation, adapterName, payload.modelId, payload.promptVersion ?? AI_PROMPT_VERSION, payload.schemaVersion ?? AI_SCHEMA_VERSION, payload.inputHash, hash(result.content), payload.inputTokens ?? result.inputTokens, result.outputTokens, Math.max(0, Date.now() - started), 'AI_DRAFT_CREATED', repairCount, now);
         runInserted = true;
       },
     });

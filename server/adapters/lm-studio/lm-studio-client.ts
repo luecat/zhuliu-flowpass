@@ -13,7 +13,7 @@ export type LmStudioErrorCode =
   | 'AI_OUTPUT_UNSAFE';
 
 export class LmStudioError extends Error {
-  public constructor(public readonly code: LmStudioErrorCode, message = code) {
+  public constructor(public readonly code: LmStudioErrorCode, message: string = code) {
     super(message);
     this.name = 'LmStudioError';
   }

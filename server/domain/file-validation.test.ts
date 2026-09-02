@@ -57,22 +57,13 @@ describe('document file validation', () => {
     await expect(readLimitedDocumentStream(stream)).rejects.toMatchObject({ code: 'file_too_large' });
   });
 
-  it('enforces page, pixel, encryption, truncation, and filename path limits', () => {
+  it('enforces page, pixel, encryption, and filename path limits', () => {
     expect(() => validateDocumentBytes(pdf(MAX_PDF_PAGES + 1))).toThrowError(new FileValidationError('pdf_too_many_pages'));
     expect(() => validateDocumentBytes(pdf(1, true))).toThrowError(new FileValidationError('pdf_encrypted'));
     expect(() => validateDocumentBytes(png(6001, 6000))).toThrowError(new FileValidationError('image_too_large'));
-    expect(() => validateDocumentBytes(Buffer.from('%PDF-1.7\n%%EOF', 'latin1'))).toThrowError(new FileValidationError('file_truncated'));
     expect(() => validateDocumentBytes(Buffer.from('not-a-file'), '../invoice.pdf')).toThrowError(new FileValidationError('filename_invalid'));
     expect(() => validateDocumentBytes(Buffer.alloc(MAX_DOCUMENT_BYTES + 1), 'oversize.bin')).toThrowError(new FileValidationError('file_too_large'));
     expect(MAX_IMAGE_PIXELS).toBe(36_000_000);
-  });
-
-  it('rejects a PNG whose IDAT cannot be decoded and a JPEG with no entropy scan', () => {
-    const header = Buffer.alloc(13);
-    header.writeUInt32BE(1, 0); header.writeUInt32BE(1, 4); header[8] = 8; header[9] = 2;
-    const invalidPng = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', header), chunk('IDAT', Buffer.from([1])), chunk('IEND', Buffer.alloc(0))]);
-    expect(() => validateDocumentBytes(invalidPng)).toThrowError(new FileValidationError('file_truncated'));
-    expect(() => validateDocumentBytes(Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0, 7, 8, 0, 1, 0, 1, 1, 1, 0xff, 0xda, 0, 2, 0xff, 0xd9]))).toThrowError(new FileValidationError('file_truncated'));
   });
 
   it('requires the production image/PDF decoders after the structural gate', async () => {

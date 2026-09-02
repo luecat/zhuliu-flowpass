@@ -235,8 +235,7 @@ describe('PassportReviewPanel', () => {
 
     render(<PassportReviewPanel caseId={CASE_ID} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    fireEvent.click(screen.getByRole('checkbox', { name: '我已確認以上內容' }));
-    fireEvent.click(screen.getByRole('button', { name: '確認內容，前往附件' }));
+    fireEvent.click(screen.getByRole('button', { name: '送出申請內容' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
 
     expect(apiMocks.mutate).toHaveBeenNthCalledWith(1,
@@ -277,8 +276,7 @@ describe('PassportReviewPanel', () => {
 
     render(<PassportReviewPanel caseId={CASE_ID} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    fireEvent.click(screen.getByRole('checkbox', { name: '我已確認以上內容' }));
-    fireEvent.click(screen.getByRole('button', { name: '確認內容，前往附件' }));
+    fireEvent.click(screen.getByRole('button', { name: '送出申請內容' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
     fireEvent.click(screen.getByRole('button', { name: '測試正式送出' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });

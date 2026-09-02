@@ -24,6 +24,10 @@ export const ApiErrorCode = {
   DOCUMENT_NOT_READY: 'DOCUMENT_NOT_READY',
   UNSUPPORTED_FILE: 'UNSUPPORTED_FILE',
   FILE_TOO_LARGE: 'FILE_TOO_LARGE',
+  FILE_UNREADABLE: 'FILE_UNREADABLE',
+  FILE_ENCRYPTED: 'FILE_ENCRYPTED',
+  FILE_TOO_MANY_PAGES: 'FILE_TOO_MANY_PAGES',
+  IMAGE_TOO_LARGE: 'IMAGE_TOO_LARGE',
 } as const;
 
 export type ApiErrorCode = (typeof ApiErrorCode)[keyof typeof ApiErrorCode];
@@ -52,6 +56,10 @@ const ERROR_MESSAGES: Readonly<Record<ApiErrorCode, string>> = {
   DOCUMENT_NOT_READY: 'Required documents are not ready',
   UNSUPPORTED_FILE: 'The uploaded file type is not supported',
   FILE_TOO_LARGE: 'The uploaded file is too large',
+  FILE_UNREADABLE: 'The uploaded file could not be read',
+  FILE_ENCRYPTED: 'The uploaded file is encrypted',
+  FILE_TOO_MANY_PAGES: 'The uploaded file has too many pages',
+  IMAGE_TOO_LARGE: 'The uploaded image is too large',
 };
 
 const ERROR_STATUS: Readonly<Record<ApiErrorCode, number>> = {
@@ -78,6 +86,10 @@ const ERROR_STATUS: Readonly<Record<ApiErrorCode, number>> = {
   DOCUMENT_NOT_READY: 422,
   UNSUPPORTED_FILE: 415,
   FILE_TOO_LARGE: 413,
+  FILE_UNREADABLE: 422,
+  FILE_ENCRYPTED: 415,
+  FILE_TOO_MANY_PAGES: 422,
+  IMAGE_TOO_LARGE: 413,
 };
 
 export interface ApiSuccess<T> {

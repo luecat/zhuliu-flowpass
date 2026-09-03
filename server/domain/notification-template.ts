@@ -20,8 +20,8 @@ const CARD_COPY: Record<NotificationTemplate, { title: string; body: string; act
   },
   review_updated: {
     title: '案件狀態更新',
-    body: '案件有新的審核結果，請開啟 FlowPass 查看最新狀態。',
-    actionLabel: '查看申請紀錄',
+    body: '',
+    actionLabel: '查看申請進度',
   },
   security_alert: {
     title: '資安提醒',
@@ -34,6 +34,7 @@ export interface NotificationPresentation {
   text: string;
   title: string;
   body: string;
+  bodyLabel?: string;
   amountLabel?: string;
   amountValue?: string;
   actionLabel: string;
@@ -43,8 +44,36 @@ export interface NotificationPresentation {
 
 export interface NotificationCaseContext {
   state?: string;
+  reason?: string | null;
   approvedAmountTwd?: number | null;
   disbursedAmountTwd?: number | null;
+}
+
+const REVIEW_STATUS_LABELS: Record<string, string> = {
+  submitted: '已送出',
+  under_review: '已開始審核',
+  awaiting_documents: '需要補充資料',
+  returned_for_correction: '需要修正資料',
+  resubmitted: '已補充資料',
+  approved: '審核通過',
+  rejected: '未通過',
+  awaiting_disbursement: '等待撥款',
+  disbursed: '已撥款',
+  closed: '已結案',
+};
+
+const LINE_ALT_TEXT_MAX = 400;
+const LINE_BODY_TEXT_MAX = 2000;
+
+export function reviewStatusLabel(state: string | undefined): string {
+  if (!state) return CARD_COPY.review_updated.title;
+  return REVIEW_STATUS_LABELS[state] ?? '處理中';
+}
+
+function clipLineText(value: string, max: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= max) return trimmed;
+  return `${trimmed.slice(0, Math.max(0, max - 1))}…`;
 }
 
 export function notificationText(template: NotificationTemplate): string {
@@ -66,37 +95,35 @@ export function notificationPresentation(
   updatedAt: string,
   context: NotificationCaseContext = {},
 ): NotificationPresentation {
-  const amount = context.state === 'approved'
-    ? context.approvedAmountTwd
-    : context.state === 'disbursed'
-      ? context.disbursedAmountTwd
-      : null;
-  const amountLabel = context.state === 'approved'
-    ? '核定金額'
-    : context.state === 'disbursed'
-      ? '匯款金額'
-      : null;
-  const amountTitle = context.state === 'approved'
-    ? '核定通知'
-    : context.state === 'disbursed'
-      ? '轉帳成功'
-      : null;
-
-  if (
-    template === 'review_updated'
-    && amountLabel
-    && amountTitle
-    && typeof amount === 'number'
-    && Number.isSafeInteger(amount)
-    && amount >= 0
-  ) {
-    const amountValue = `NT$${amount.toLocaleString('en-US')}`;
+  if (template === 'review_updated') {
+    const title = reviewStatusLabel(context.state);
+    const suppliedReason = typeof context.reason === 'string' ? clipLineText(context.reason, LINE_BODY_TEXT_MAX) : '';
+    const reason = suppliedReason || '案件狀態已更新，請開啟 FlowPass 查看詳情。';
+    const amount = context.state === 'approved'
+      ? context.approvedAmountTwd
+      : context.state === 'disbursed'
+        ? context.disbursedAmountTwd
+        : null;
+    const amountLabel = context.state === 'approved'
+      ? '核定金額'
+      : context.state === 'disbursed'
+        ? '匯款金額'
+        : null;
+    const hasAmount = amountLabel
+      && typeof amount === 'number'
+      && Number.isSafeInteger(amount)
+      && amount >= 0;
+    const amountValue = hasAmount ? `NT$${amount.toLocaleString('en-US')}` : undefined;
+    const text = clipLineText(
+      suppliedReason || (hasAmount ? `${title}：${amountLabel} ${amountValue}` : title),
+      LINE_ALT_TEXT_MAX,
+    );
     return {
-      text: `${amountTitle}：${amountLabel} ${amountValue}，請開啟查看。`,
-      title: amountTitle,
-      body: context.state === 'approved' ? '您的案件已核定。' : '款項已完成轉帳。',
-      amountLabel,
-      amountValue,
+      text: suppliedReason ? clipLineText(`${title}：${suppliedReason}`, LINE_ALT_TEXT_MAX) : text,
+      title,
+      body: reason,
+      ...(suppliedReason ? { bodyLabel: '原因' } : {}),
+      ...(hasAmount ? { amountLabel: amountLabel ?? undefined, amountValue } : {}),
       actionLabel: CARD_COPY.review_updated.actionLabel,
       updatedAtLabel: taipeiTimestampLabel(updatedAt),
       uri: notificationUri(template, liffId),

@@ -41,7 +41,7 @@ describe('case state machine', () => {
         to,
         ...(to === 'approved' ? { reason: '符合規則', approvedAmountTwd: 0, capTwd: 10000 } : {}),
         ...(to === 'disbursed' ? { disbursedAmountTwd: 0 } : {}),
-        ...(to !== 'approved' && ['awaiting_documents', 'returned_for_correction', 'rejected', 'awaiting_disbursement', 'disbursed', 'closed'].includes(to) ? { reason: '作業依據' } : {}),
+        ...(to !== 'approved' && ['under_review', 'awaiting_documents', 'returned_for_correction', 'rejected', 'awaiting_disbursement', 'disbursed', 'closed'].includes(to) ? { reason: '作業依據' } : {}),
       })).not.toThrow();
     }
 
@@ -57,6 +57,8 @@ describe('case state machine', () => {
 
   it('requires non-empty reasons for consequential admin decisions', () => {
     const required = [
+      ['submitted', 'under_review'],
+      ['resubmitted', 'under_review'],
       ['under_review', 'awaiting_documents'],
       ['under_review', 'returned_for_correction'],
       ['under_review', 'approved'],
@@ -79,7 +81,9 @@ describe('case state machine', () => {
       })).not.toThrow();
     }
 
-    expect(() => assertCaseTransition({ from: 'submitted', to: 'under_review' })).not.toThrow();
+    expect(() => assertCaseTransition({ from: 'submitted', to: 'under_review' })).toThrowError(
+      expect.objectContaining({ code: 'REASON_REQUIRED' }),
+    );
   });
 
   it('validates approved amount as an integer within cap, with an audited override escape hatch', () => {

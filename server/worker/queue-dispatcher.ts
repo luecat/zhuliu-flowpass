@@ -47,7 +47,7 @@ export class QueueDispatcher {
             const errorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
               ? (error as { code: string }).code
               : 'WORKER_HANDLER_FAILED';
-            this.runner.fail({ workerId: this.options.workerId, jobId: job.id, errorCode, now: this.clock().toISOString() });
+            this.runner.fail({ workerId: this.options.workerId, jobId: job.id, errorCode, now: this.clock().toISOString(), terminal: errorCode === 'AI_INPUT_INVALID' });
           })
           .finally(() => { this.active.set(jobType, Math.max(0, this.activeCount(jobType) - 1)); });
       }

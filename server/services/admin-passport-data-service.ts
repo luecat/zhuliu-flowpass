@@ -20,7 +20,7 @@ const GROUPS: Array<[string, string, string[]]> = [
   ['tasks', '任務、審查與狀態流轉', ['case_tasks', 'case_state_transitions']],
   ['timeline', '時間軸與通知', ['timeline_events', 'notification_jobs']],
   ['rules', '規則判定與補助計算', ['rule_evaluations', 'subsidy_calculations']],
-  ['automation', 'AI、警示與事件', ['ai_runs', 'alerts', 'incident_matches', 'jobs']],
+  ['automation', 'AI、送出與事件', ['ai_runs', 'alerts', 'incident_matches', 'jobs']],
   ['system', '系統關聯與管理稽核', ['audit_logs', 'admin_data_edit_audits', 'api_idempotency_keys']],
 ];
 
@@ -29,7 +29,7 @@ const TABLE_LABELS: Record<string, string> = {
   passport_confirmations: '護照確認', passport_follow_up_questions: '追問問題', passport_follow_up_answers: '追問回答', passport_node_index: '節點索引',
   passport_edge_index: '關聯索引', passport_tool_index: '工具索引', documents: '附件', case_tasks: '任務', case_state_transitions: '狀態流轉',
   timeline_events: '時間軸事件', notification_jobs: '通知', rule_evaluations: '規則判定', subsidy_calculations: '補助計算', ai_runs: 'AI 執行',
-  alerts: '提醒', incident_matches: '事件比對', jobs: '背景工作', audit_logs: '系統稽核', admin_data_edit_audits: '資料校正稽核', api_idempotency_keys: '冪等紀錄',
+  alerts: '提醒', incident_matches: '事件比對', jobs: '送出紀錄', audit_logs: '系統稽核', admin_data_edit_audits: '資料校正稽核', api_idempotency_keys: '冪等紀錄',
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -42,8 +42,9 @@ const FIELD_LABELS: Record<string, string> = {
   row_version: '資料版本', content_sha256: '內容摘要', key_id: '加密金鑰版本', byte_size: '檔案大小', media_type: '檔案類型', storage_id: '儲存識別碼',
   created_by_type: '建立者類型', created_by_id: '建立者識別碼', created_by_applicant_id: '建立此版本的申請人', actor_type: '操作者類型', actor_id: '操作者識別碼',
   event_type: '事件類型', from_state: '原狀態', to_state: '新狀態', reason_code: '原因代碼', reason_enc: '原因說明', outcome: '處理結果',
-  kind: '類型', requirement_key: '文件需求', started_at: '開始時間', completed_at: '完成時間', resolved_at: '解決時間', sent_at: '傳送時間', available_at: '可執行時間', leased_until: '租約到期時間',
+  kind: '類型', requirement_key: '文件需求', started_at: '開始時間', resolved_at: '解決時間', sent_at: '傳送時間', available_at: '可執行時間', leased_until: '租約到期時間',
   error_code: '錯誤代碼', error_public_summary: '錯誤摘要', attempts: '嘗試次數', max_attempts: '最多嘗試次數',
+  payload_json: '送出內容', unique_key: '去重識別碼', lease_owner: '處理工作者', lease_until: '租約到期時間', completed_at: '完成時間',
 };
 
 const PATH_LABELS: Record<string, string> = {
@@ -220,7 +221,7 @@ export function getAdminPassportDataSnapshot(
   crypto: FieldCrypto,
   caseId: string,
 ): AdminPassportDataSnapshot | null {
-  const graph = collectPassportRelationGraph(database, caseId, crypto);
+  const graph = collectPassportRelationGraph(database, caseId, crypto, true);
   if (!graph) return null;
   const root = database.prepare(`
     SELECT cases.state, cases.updated_at, cases.row_version, cases.current_answer_version_id,

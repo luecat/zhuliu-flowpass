@@ -48,6 +48,32 @@ describe('generate passport worker boundary', () => {
     expect((db.prepare('SELECT payload_enc FROM passport_versions').get() as { payload_enc: string }).payload_enc).not.toContain('worker secret sentinel');
   });
 
+  it('stops before passport generation when the AI quality gate rejects the answers', async () => {
+    const crypto = cryptoForTests();
+    const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
+    const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'quality-case' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'asdf', aiPurpose: '12345', sensitiveData: '哈哈哈', destinationAndAudience: '???' }, ifMatch: '"1"', idempotencyKey: 'quality-answers' });
+    const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
+    const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
+    const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
+    let calls = 0;
+    await expect(generatePassport(queued.job, { workerId: 'worker-1' }, {
+      database: db,
+      crypto,
+      classifyInput: true,
+      client: {
+        complete: async (input) => {
+          calls += 1;
+          expect(input.responseSchema).toBeDefined();
+          return { content: JSON.stringify({ valid: false, field_validity: { material: false, aiPurpose: false, sensitiveData: true, destinationAndAudience: true }, invalid_fields: ['material', 'aiPurpose'], reason: '無意義內容' }), model: 'fixture', inputTokens: 1, outputTokens: 1 };
+        },
+      },
+      clock: () => new Date(NOW),
+    })).rejects.toMatchObject({ code: 'AI_INPUT_INVALID' });
+    expect(calls).toBe(1);
+    expect((db.prepare('SELECT COUNT(*) AS count FROM passport_versions').get() as { count: number }).count).toBe(0);
+  });
+
   it('rewrites invalid model output with the original answers until the passport is valid', async () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });

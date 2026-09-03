@@ -110,7 +110,7 @@ describe('admin review service', () => {
   });
 
   it('rejects stale etags, missing reasons, invalid amounts, and forbidden transitions', () => {
-    const review = service().decide({ adminId: ADMIN_ID, caseId: CASE_ID, ifMatch: '"3"', idempotencyKey: 'review', action: 'start_review', toState: 'under_review' });
+    const review = service().decide({ adminId: ADMIN_ID, caseId: CASE_ID, ifMatch: '"3"', idempotencyKey: 'review', action: 'start_review', toState: 'under_review', reason: '已開始審查申請資料' });
     expect(review.case.rowVersion).toBe(4);
     expect(() => service().decide({ adminId: ADMIN_ID, caseId: CASE_ID, ifMatch: '"3"', idempotencyKey: 'stale', action: 'request_documents', toState: 'awaiting_documents', reason: '補件' })).toThrowError(expect.objectContaining({ code: 'ETAG_MISMATCH' }));
     expect(() => service().decide({ adminId: ADMIN_ID, caseId: CASE_ID, ifMatch: '"4"', idempotencyKey: 'bad-reason', action: 'approve', toState: 'approved', reason: ' ', approvedAmountTwd: 1 })).toThrowError(expect.objectContaining({ code: 'REASON_REQUIRED' }));

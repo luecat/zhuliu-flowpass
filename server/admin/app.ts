@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono, type Context } from 'hono';
@@ -18,6 +18,7 @@ import { createProgramRoutes } from './routes/programs';
 import { createIncidentRoutes } from './routes/incidents';
 import { createToolRoutes } from './routes/tools';
 import { createDataManagementRoutes } from './routes/data-management';
+import { DEFAULT_GEMINI_QUOTA_MODELS } from '../adapters/gemini/model-quota-router';
 
 export interface CloudflareAccessIdentity {
   email: string;
@@ -107,7 +108,7 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
 
   app.use('*', async (context, next) => {
     await next();
-    context.header('Content-Security-Policy', "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    context.header('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     context.header('X-Content-Type-Options', 'nosniff');
     context.header('Referrer-Policy', 'no-referrer');
     context.header('Cache-Control', 'no-store');
@@ -225,6 +226,28 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
     return context.json({ data: { cases: rows } });
   });
 
+  app.get('/admin/v1/ai-usage', async (context) => {
+    if (!database) return context.json({ error: { code: 'UNAVAILABLE', message: '服務暫時無法使用。' } }, 503);
+    if (!await requestBoundary(context, dependencies, false)) return context.json({ error: { code: 'UNAVAILABLE', message: '無法驗證此來源。' } }, 403);
+    if (!authenticated(database, context)) return context.json({ error: { code: 'UNAUTHENTICATED', message: '請重新登入。' } }, 401);
+    const now = new Date();
+    const minuteKey = now.toISOString().slice(0, 16);
+    const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+    const models = DEFAULT_GEMINI_QUOTA_MODELS.map((model) => {
+      const minute = database.prepare('SELECT request_count, input_tokens FROM ai_model_quota_usage WHERE model_id = ? AND minute_key = ? AND day_key = ?').get(model.id, minuteKey, dayKey) as { request_count: number; input_tokens: number } | undefined;
+      const daily = database.prepare('SELECT COALESCE(SUM(request_count), 0) AS request_count FROM ai_model_quota_usage WHERE model_id = ? AND day_key = ?').get(model.id, dayKey) as { request_count: number };
+      const runs = database.prepare('SELECT COUNT(*) AS count FROM ai_runs WHERE model_id = ?').get(model.id) as { count: number };
+      return {
+        id: model.id,
+        rpm: { used: minute?.request_count ?? 0, limit: model.rpm, remaining: Math.max(0, model.rpm - (minute?.request_count ?? 0)) },
+        tpm: { used: minute?.input_tokens ?? 0, limit: model.tpm, remaining: Math.max(0, model.tpm - (minute?.input_tokens ?? 0)) },
+        rpd: { used: daily.request_count, limit: model.rpd, remaining: Math.max(0, model.rpd - daily.request_count) },
+        recordedRuns: runs.count,
+      };
+    });
+    return context.json({ data: { provider: 'gemini', minuteKey, dayKey, models } });
+  });
+
   app.get('/admin/v1/cases/:caseId/documents', (context) => {
     if (!database) return context.json({ error: { code: 'UNAVAILABLE', message: '服務暫時無法使用。' } }, 503);
     const auth = authenticated(database, context);
@@ -301,8 +324,16 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
   const sourceAdmin = join(moduleDirectory, '..', '..', 'dist', 'admin');
   const releaseAdmin = join(moduleDirectory, '..', 'admin');
   const adminRoot = existsSync(sourceAdmin) ? sourceAdmin : releaseAdmin;
-  app.get('/', serveStatic({ root: adminRoot, path: 'index.html' }));
-  app.use('/assets/*', serveStatic({ root: adminRoot }));
+  app.get('/', (context) => {
+    const html = readFileSync(join(adminRoot, 'index.html'), 'utf8');
+    const stylesheet = html.match(/href="([^"]+\.css)"/)?.[1];
+    if (!stylesheet) return context.html(html);
+    const cssPath = join(adminRoot, stylesheet.replace(/^\/assets\//, 'assets/'));
+    const css = readFileSync(cssPath, 'utf8');
+    const inline = `<style>${css}</style>`;
+    return context.html(html.replace('</head>', `${inline}</head>`));
+  });
+  app.get('/assets/:asset', (context) => serveStatic({ root: adminRoot, path: `assets/${context.req.param('asset')}` })(context, async () => undefined));
 
   return app;
 }

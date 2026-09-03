@@ -91,21 +91,22 @@ export function collectPassportRelationGraph(
   database: FlowPassDatabase,
   caseId: string,
   crypto?: FieldCrypto,
+  includeCasesWithoutPassport = false,
 ): PassportRelationGraph | null {
   const root = database.prepare(`
     SELECT cases.id, cases.case_code, cases.applicant_id, passports.id AS passport_id
     FROM cases
-    JOIN passports ON passports.case_id = cases.id
+    ${includeCasesWithoutPassport ? 'LEFT JOIN' : 'JOIN'} passports ON passports.case_id = cases.id
     WHERE cases.id = ? AND cases.deleted_at IS NULL
   `).get(caseId) as RootRow | undefined;
   if (!root) return null;
 
   const tableIds: Record<string, string[]> = {
     cases: [root.id],
-    passports: [root.passport_id],
+    passports: root.passport_id ? [root.passport_id] : [],
     answer_versions: ids(database, 'SELECT id FROM answer_versions WHERE case_id = ?', caseId),
     case_state_transitions: ids(database, 'SELECT id FROM case_state_transitions WHERE case_id = ?', caseId),
-    passport_versions: ids(database, 'SELECT id FROM passport_versions WHERE passport_id = ?', root.passport_id),
+    passport_versions: root.passport_id ? ids(database, 'SELECT id FROM passport_versions WHERE passport_id = ?', root.passport_id) : [],
     documents: ids(database, 'SELECT id FROM documents WHERE case_id = ?', caseId),
     rule_evaluations: ids(database, 'SELECT id FROM rule_evaluations WHERE case_id = ?', caseId),
     subsidy_calculations: ids(database, 'SELECT id FROM subsidy_calculations WHERE case_id = ?', caseId),
@@ -115,6 +116,10 @@ export function collectPassportRelationGraph(
     alerts: ids(database, 'SELECT id FROM alerts WHERE case_id = ?', caseId),
     timeline_events: ids(database, 'SELECT id FROM timeline_events WHERE case_id = ?', caseId),
     ai_runs: ids(database, 'SELECT id FROM ai_runs WHERE case_id = ?', caseId),
+    jobs: ids(database, `SELECT id FROM jobs
+      WHERE job_type = 'ai_draft'
+        AND json_type(payload_json, '$.caseId') = 'text'
+        AND json_extract(payload_json, '$.caseId') = ?`, caseId),
     admin_data_edit_audits: ids(database, 'SELECT id FROM admin_data_edit_audits WHERE case_id = ?', caseId),
     admin_purge_authorizations: ids(database, 'SELECT id FROM admin_purge_authorizations WHERE case_id = ?', caseId),
   };
@@ -133,7 +138,7 @@ export function collectPassportRelationGraph(
     caseId: root.id,
     caseCode: root.case_code,
     applicantId: root.applicant_id,
-    passportId: root.passport_id,
+    passportId: root.passport_id ?? '',
     preservedSiblingCases: Number((database.prepare(`
       SELECT COUNT(*) AS count FROM cases
       WHERE applicant_id = ? AND id <> ? AND deleted_at IS NULL

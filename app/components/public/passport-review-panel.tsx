@@ -127,12 +127,15 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
       while (revisionRunRef.current === runId) {
         await new Promise((resolve) => window.setTimeout(resolve, REVISION_POLL_INTERVAL_MS));
         if (revisionRunRef.current !== runId) return;
-        const job = await api.read<{ state?: unknown }>(`/api/v1/jobs/${encodeURIComponent(jobId)}`);
+        const job = await api.read<{ state?: unknown; errorCode?: string | null }>(`/api/v1/jobs/${encodeURIComponent(jobId)}`);
         if (job.state === 'completed') {
           setRevisionProgressPercent(100);
           await load(targetCaseId);
           setRevisionJobId(null);
           return;
+        }
+        if (job.state === 'failed_terminal' && job.errorCode === 'AI_INPUT_INVALID') {
+          setMessage('這些回答看起來不像是在描述實際流程，請重新填寫資料類型、用途、個資情況與分享對象。');
         }
         if (job.state !== 'queued' && job.state !== 'leased') {
           throw new Error('revision failed');

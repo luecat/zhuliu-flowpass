@@ -170,6 +170,7 @@ describe('FlowPass SQLite schema', () => {
       { name: '009_admin_data_management.sql' },
       { name: '010_drop_ocr.sql' },
       { name: '011_ai_runs_any_adapter.sql' },
+      { name: '012_ai_model_quota.sql' },
     ]);
   });
 
@@ -383,6 +384,7 @@ describe('FlowPass SQLite schema', () => {
       'admin_recovery_challenges',
       'admin_sessions',
       'admin_users',
+      'ai_model_quota_usage',
       'ai_runs',
       'alerts',
       'answer_versions',

@@ -57,6 +57,7 @@ export class CaseStateMachineError extends Error {
 }
 
 const REQUIRED_REASON_ACTIONS = new Set<CaseTransitionAction>([
+  'start_review',
   'request_documents',
   'return_correction',
   'approve',
@@ -141,6 +142,7 @@ export function assertCaseTransition(input: CaseTransitionInput): void {
 
   const actionRequiresReason = input.action ? REQUIRED_REASON_ACTIONS.has(input.action) : false;
   const destinationRequiresReason = new Set<CaseState>([
+    'under_review',
     'awaiting_documents',
     'returned_for_correction',
     'approved',

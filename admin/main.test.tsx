@@ -139,11 +139,26 @@ describe('FlowPass admin review actions', () => {
     fireEvent.change(select, { target: { value: 'approve' } });
     expect(screen.getByRole('spinbutton', { name: '核准金額（新台幣，必填）' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: '核准說明（必填）' })).toBeInTheDocument();
+    expect(screen.getByText('原因會被申請者看到')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '核准案件' })).toBeDisabled();
 
     fireEvent.change(select, { target: { value: 'reject' } });
     expect(screen.getByRole('textbox', { name: '駁回原因（必填）' })).toBeInTheDocument();
+    expect(screen.getByText('原因會被申請者看到')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '駁回案件' })).toBeDisabled();
+  });
+
+  it('requires an applicant-visible reason before starting review', async () => {
+    stubAdmin([{ id: CASE_ID, case_code: CASE_CODE, state: 'submitted', submitted_at: '2026-09-01T00:53:00.000Z', updated_at: '2026-09-01T00:59:00.000Z', row_version: 15 }]);
+    await mountAdmin();
+    fireEvent.click(await screen.findByRole('button', { name: `開啟案件 ${CASE_CODE}` }));
+    fireEvent.change(await screen.findByRole('combobox', { name: '審核動作' }), { target: { value: 'start_review' } });
+    const reason = screen.getByRole('textbox', { name: '原因（必填）' });
+    expect(reason).toBeInTheDocument();
+    expect(screen.getByText('原因會被申請者看到')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '開始審核' })).toBeDisabled();
+    fireEvent.change(reason, { target: { value: '已收到申請，現正在核對資料。' } });
+    expect(screen.getByRole('button', { name: '開始審核' })).toBeEnabled();
   });
 
   it('confirms a complete supplement request before sending the backend contract', async () => {

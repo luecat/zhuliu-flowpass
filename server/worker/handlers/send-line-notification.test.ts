@@ -7,6 +7,7 @@ import { FieldCrypto, type Keyring } from '../../crypto/field-crypto';
 import { openDatabase } from '../../db/connection';
 import { migrateDatabase } from '../../db/migrate';
 import { insertLineIdentityWithEncryptedSubject } from '../../db/repositories/identities';
+import { encryptDatabaseText } from '../../db/repositories/encrypted-fields';
 import { insertPublicNotificationJobForSystem } from '../../db/repositories/notifications';
 import type { DurableJob } from '../../db/repositories/jobs';
 import { sendLineNotification } from './send-line-notification';
@@ -20,6 +21,8 @@ const IDS = {
   case: '0198f080-0000-7000-8000-000000000005',
   notification: '0198f080-0000-7000-8000-000000000006',
   submissionNotification: '0198f080-0000-7000-8000-000000000007',
+  transition: '0198f080-0000-7000-8000-000000000008',
+  scenarioTransition: '0198f080-0000-7000-8000-000000000009',
 };
 
 function cryptoForTests(): FieldCrypto {
@@ -53,12 +56,24 @@ describe('LINE notification worker', () => {
       pushState: 'enabled',
       rowVersion: 1,
     });
+    database.prepare('INSERT INTO case_state_transitions (id, case_id, sequence_no, from_state, to_state, reason_code, reason_enc, actor_type, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      IDS.transition,
+      IDS.case,
+      1,
+      'submitted',
+      'under_review',
+      'under_review',
+      encryptDatabaseText(crypto, 'case_state_transitions', 'reason_enc', IDS.transition, '已開始審核申請內容。'),
+      'admin',
+      IDS.applicant,
+      NOW,
+    );
     insertPublicNotificationJobForSystem(database, { systemId: 'test-worker' }, {
       id: IDS.notification,
       caseId: IDS.case,
       taskId: null,
       alertId: null,
-      businessKey: `case:${IDS.case}:review`,
+      businessKey: `case:${IDS.case}:transition:${IDS.transition}`,
       template: 'review_updated',
       payload: { notificationType: 'review', messageCode: 'review_updated', locale: 'zh-TW', publicPath: '/app/tasks' },
       providerRetryKey: `case-${IDS.case}-review`,
@@ -73,6 +88,25 @@ describe('LINE notification worker', () => {
     database.close();
     rmSync(dir, { recursive: true, force: true });
   });
+
+  function setTransitionReason(reason: string, toState: 'approved' | 'disbursed') {
+    database.prepare('INSERT INTO case_state_transitions (id, case_id, sequence_no, from_state, to_state, reason_code, reason_enc, actor_type, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      IDS.scenarioTransition,
+      IDS.case,
+      2,
+      toState === 'approved' ? 'under_review' : 'awaiting_disbursement',
+      toState,
+      toState,
+      encryptDatabaseText(crypto, 'case_state_transitions', 'reason_enc', IDS.scenarioTransition, reason),
+      'admin',
+      IDS.applicant,
+      NOW,
+    );
+    database.prepare('UPDATE notification_jobs SET business_key = ? WHERE id = ?').run(
+      `case:${IDS.case}:transition:${IDS.scenarioTransition}`,
+      IDS.notification,
+    );
+  }
 
   it('turns a review update into a safe actionable card and confirms delivery', async () => {
     const pushed: LineNotificationPush[] = [];
@@ -103,8 +137,10 @@ describe('LINE notification worker', () => {
     expect(pushed).toEqual([
       expect.objectContaining({
         to: 'U-flowpass-test',
-        title: '案件狀態更新',
-        actionLabel: '查看申請紀錄',
+        title: '已開始審核',
+        bodyLabel: '原因',
+        body: '已開始審核申請內容。',
+        actionLabel: '查看申請進度',
         updatedAtLabel: '2026/09/01 10:02',
         uri: 'https://liff.line.me/flowpass-liff/passports',
       }),
@@ -115,8 +151,9 @@ describe('LINE notification worker', () => {
     });
   });
 
-  it('turns an approval into an amount-first card and uses the notification UUID as its retry key', async () => {
-    database.prepare("UPDATE cases SET state = 'approved', approved_amount_twd = 2000 WHERE id = ?").run(IDS.case);
+  it('turns an approval into a status-and-reason card with the approved amount', async () => {
+    database.prepare("UPDATE cases SET state = 'awaiting_disbursement', approved_amount_twd = 2000 WHERE id = ?").run(IDS.case);
+    setTransitionReason('符合補助資格，予以核定。', 'approved');
     const pushed: LineNotificationPush[] = [];
     const job: DurableJob = {
       id: 'job-approved',
@@ -143,9 +180,10 @@ describe('LINE notification worker', () => {
 
     expect(pushed).toEqual([
       expect.objectContaining({
-        text: '核定通知：核定金額 NT$2,000，請開啟查看。',
-        title: '核定通知',
-        body: '您的案件已核定。',
+        text: '審核通過：符合補助資格，予以核定。',
+        title: '審核通過',
+        bodyLabel: '原因',
+        body: '符合補助資格，予以核定。',
         amountLabel: '核定金額',
         amountValue: 'NT$2,000',
         retryKey: IDS.notification,
@@ -153,8 +191,9 @@ describe('LINE notification worker', () => {
     ]);
   });
 
-  it('turns a completed transfer into an amount-first card using the stored transfer amount', async () => {
-    database.prepare("UPDATE cases SET state = 'disbursed', approved_amount_twd = 2000, disbursed_amount_twd = 1850 WHERE id = ?").run(IDS.case);
+  it('turns a completed transfer into a status-and-reason card using the stored transfer amount', async () => {
+    database.prepare("UPDATE cases SET state = 'closed', approved_amount_twd = 2000, disbursed_amount_twd = 1850 WHERE id = ?").run(IDS.case);
+    setTransitionReason('款項已完成轉帳。', 'disbursed');
     const pushed: LineNotificationPush[] = [];
     const job: DurableJob = {
       id: 'job-disbursed',
@@ -181,8 +220,9 @@ describe('LINE notification worker', () => {
 
     expect(pushed).toEqual([
       expect.objectContaining({
-        text: '轉帳成功：匯款金額 NT$1,850，請開啟查看。',
-        title: '轉帳成功',
+        text: '已撥款：款項已完成轉帳。',
+        title: '已撥款',
+        bodyLabel: '原因',
         body: '款項已完成轉帳。',
         amountLabel: '匯款金額',
         amountValue: 'NT$1,850',

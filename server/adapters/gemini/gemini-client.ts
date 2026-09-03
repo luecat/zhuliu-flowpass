@@ -145,26 +145,26 @@ export class GeminiClient {
     const useStrict = this.strictSchema && !this.strictRejected;
 
     if (!useStrict) {
-      return await this.request(this.body(userContent, this.instruction(input.systemInstruction), false), false);
+      return await this.request(this.body(userContent, this.instruction(input.systemInstruction, input.responseSchema), false, input.responseSchema), false);
     }
 
     try {
-      return await this.request(this.body(userContent, input.systemInstruction, true), true);
+      return await this.request(this.body(userContent, input.systemInstruction, true, input.responseSchema), true);
     } catch (error) {
       if (!(error instanceof SchemaFormatRejected)) throw error;
       this.strictRejected = true;
       // Degrade to plain JSON mode with the schema embedded in the prompt. The
       // handler still validates the draft and runs its repair loop, so a less
       // strict response format cannot silently produce a bad passport.
-      return await this.request(this.body(userContent, this.instruction(input.systemInstruction), false), false);
+      return await this.request(this.body(userContent, this.instruction(input.systemInstruction, input.responseSchema), false, input.responseSchema), false);
     }
   }
 
-  private instruction(systemInstruction: string): string {
-    return `${systemInstruction}\n\nReturn exactly one JSON object validating this JSON Schema. No prose and no markdown fences:\n${JSON.stringify(PASSPORT_GENERATION_JSON_SCHEMA)}`;
+  private instruction(systemInstruction: string, responseSchema?: Record<string, unknown>): string {
+    return `${systemInstruction}\n\nReturn exactly one JSON object validating this JSON Schema. No prose and no markdown fences:\n${JSON.stringify(responseSchema ?? PASSPORT_GENERATION_JSON_SCHEMA)}`;
   }
 
-  private body(userContent: string, systemInstruction: string, strict: boolean): string {
+  private body(userContent: string, systemInstruction: string, strict: boolean, responseSchema?: Record<string, unknown>): string {
     try {
       return JSON.stringify({
         model: this.modelId,
@@ -181,7 +181,7 @@ export class GeminiClient {
             json_schema: {
               name: 'flowpass_passport',
               strict: true,
-              schema: PASSPORT_GENERATION_JSON_SCHEMA,
+              schema: responseSchema ?? PASSPORT_GENERATION_JSON_SCHEMA,
             },
           }
           : { type: 'json_object' },

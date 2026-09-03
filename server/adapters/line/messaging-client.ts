@@ -9,6 +9,7 @@ export interface LineNotificationPush {
   text: string;
   title: string;
   body: string;
+  bodyLabel?: string;
   amountLabel?: string;
   amountValue?: string;
   actionLabel: string;
@@ -43,10 +44,17 @@ function flexMessage(input: LineNotificationPush) {
         layout: 'vertical',
         paddingAll: '20px',
         contents: [
-          { type: 'text', text: input.body, color: '#24332C', size: 'md', align: 'center', wrap: true },
+          ...(input.body.trim()
+            ? [
+                ...(input.bodyLabel
+                  ? [{ type: 'text', text: input.bodyLabel, color: '#7A8B83', size: 'sm' }]
+                  : []),
+                { type: 'text', text: input.body, color: '#24332C', size: 'md', margin: input.bodyLabel ? 'sm' : 'none', align: 'start', wrap: true },
+              ]
+            : []),
           ...(input.amountValue
             ? [
-                { type: 'text', text: input.amountLabel ?? '', color: '#7A8B83', size: 'sm', margin: 'xl', align: 'center' },
+                { type: 'text', text: input.amountLabel ?? '', color: '#7A8B83', size: 'sm', margin: input.body.trim() ? 'xl' : 'none', align: 'center' },
                 { type: 'text', text: input.amountValue, color: '#102A20', size: 'xxl', weight: 'bold', margin: 'sm', align: 'center', wrap: true },
               ]
             : []),

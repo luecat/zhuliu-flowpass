@@ -9,6 +9,7 @@ export type LmStudioErrorCode =
   | 'MODEL_TIMEOUT'
   | 'MODEL_RATE_LIMITED'
   | 'AI_INPUT_TOO_LARGE'
+  | 'AI_INPUT_INVALID'
   | 'AI_OUTPUT_INVALID'
   | 'AI_OUTPUT_UNSAFE';
 
@@ -24,6 +25,7 @@ export interface LmStudioInput {
   inputEnvelope: unknown;
   repairIssues?: readonly unknown[];
   invalidStructure?: unknown;
+  responseSchema?: Record<string, unknown>;
 }
 
 export interface LmStudioResult {
@@ -114,7 +116,7 @@ export class LmStudioClient {
         temperature: 0.1,
         stream: false,
         max_tokens: 4096,
-        response_format: { type: 'json_schema', json_schema: { name: 'flowpass_passport', strict: true, schema: PASSPORT_GENERATION_JSON_SCHEMA } },
+        response_format: { type: 'json_schema', json_schema: { name: input.responseSchema ? 'flowpass_input_quality' : 'flowpass_passport', strict: true, schema: input.responseSchema ?? PASSPORT_GENERATION_JSON_SCHEMA } },
       });
     } catch { throw new LmStudioError('AI_INPUT_TOO_LARGE'); }
     const fetchImpl = this.options.fetchImpl ?? fetch;

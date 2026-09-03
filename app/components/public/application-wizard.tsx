@@ -92,9 +92,15 @@ export function ApplicationWizard() {
         await new Promise((resolve) => window.setTimeout(resolve, AI_PROGRESS_TICK_MS));
         setAiProgressPercent(elapsedSeconds >= AI_PROGRESS_DURATION_SECONDS ? 99 : Math.floor((elapsedSeconds / AI_PROGRESS_DURATION_SECONDS) * 100));
         if (elapsedSeconds % AI_JOB_POLL_INTERVAL_SECONDS !== 0) continue;
-        const job = await api.read<{ state: string }>(`/api/v1/jobs/${encodeURIComponent(queued.jobId)}`);
+        const job = await api.read<{ state: string; errorCode?: string | null }>(`/api/v1/jobs/${encodeURIComponent(queued.jobId)}`);
         if (job.state === 'completed') { setAiProgressPercent(100); setAiState('completed'); window.dispatchEvent(new CustomEvent('flowpass-passport-ready')); return; }
-        if (job.state === 'failed_terminal') { setAiState('failed'); return; }
+        if (job.state === 'failed_terminal') {
+          setAiFailureMessage(job.errorCode === 'AI_INPUT_INVALID'
+            ? '這些回答看起來不像是在描述實際流程，請重新填寫資料類型、用途、個資情況與分享對象。'
+            : '');
+          setAiState('failed');
+          return;
+        }
         if (job.state !== 'queued' && job.state !== 'leased') { setAiState('failed'); return; }
       }
     } catch (error) {

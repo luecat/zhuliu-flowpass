@@ -7,9 +7,10 @@ describe('LINE messaging client', () => {
 
     await createLineMessagingClient({ channelAccessToken: 'token', fetcher }).push({
       to: 'U1',
-      text: '審核結果：您的 FlowPass 案件狀態已更新，請開啟查看。',
-      title: '審核狀態更新',
-      body: '案件有新的審核結果，請開啟 FlowPass 查看最新狀態。',
+      text: '審核通過：符合補助資格。',
+      title: '審核通過',
+      bodyLabel: '原因',
+      body: '符合補助資格。',
       actionLabel: '查看最新狀態',
       updatedAtLabel: '2026/09/01 10:02',
       uri: 'https://liff.line.me/id/tasks',
@@ -26,9 +27,12 @@ describe('LINE messaging client', () => {
     expect(init.headers).toEqual(expect.objectContaining({ 'X-Line-Retry-Key': 'retry-1' }));
     expect(message).toMatchObject({
       type: 'flex',
-      altText: '審核結果：您的 FlowPass 案件狀態已更新，請開啟查看。',
+      altText: '審核通過：符合補助資格。',
     });
-    expect(rendered).toContain('審核狀態更新');
+    expect(rendered.match(/審核通過/g)).toHaveLength(1);
+    expect(rendered.indexOf('審核通過')).toBeLessThan(rendered.indexOf('原因'));
+    expect(rendered.indexOf('原因')).toBeLessThan(rendered.indexOf('符合補助資格。'));
+    expect(rendered.indexOf('符合補助資格。')).toBeLessThan(rendered.indexOf('更新時間'));
     expect(rendered).toContain('2026/09/01 10:02');
     expect(rendered).toContain('查看最新狀態');
     expect(rendered).toContain('https://liff.line.me/id/tasks');
@@ -40,8 +44,9 @@ describe('LINE messaging client', () => {
     await createLineMessagingClient({ channelAccessToken: 'token', fetcher }).push({
       to: 'U1',
       text: '核定通知：核定金額 NT$2,000，請開啟查看。',
-      title: '核定通知',
-      body: '您的案件已核定。',
+      title: '審核通過',
+      bodyLabel: '原因',
+      body: '符合補助資格。',
       amountLabel: '核定金額',
       amountValue: 'NT$2,000',
       actionLabel: '查看最新狀態',

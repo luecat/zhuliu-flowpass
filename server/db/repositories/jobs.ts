@@ -77,6 +77,7 @@ export interface ApplicantVisibleJob {
   state: JobState;
   createdAt: string;
   completedAt: string | null;
+  errorCode: 'AI_INPUT_INVALID' | null;
 }
 
 export function getApplicantVisibleJob(
@@ -87,7 +88,8 @@ export function getApplicantVisibleJob(
   requireApplicantScope(scope);
   const row = database
     .prepare(
-      `SELECT jobs.id, jobs.state, jobs.created_at, jobs.completed_at
+      `SELECT jobs.id, jobs.state, jobs.created_at, jobs.completed_at,
+              CASE WHEN jobs.last_error_code = 'AI_INPUT_INVALID' THEN 'AI_INPUT_INVALID' ELSE NULL END AS error_code
        FROM jobs
        JOIN cases
          ON cases.id = json_extract(jobs.payload_json, '$.caseId')
@@ -98,10 +100,10 @@ export function getApplicantVisibleJob(
          AND json_type(jobs.payload_json, '$.caseId') = 'text'`,
     )
     .get(scope.applicantId, jobId) as
-    | { id: string; state: JobState; created_at: string; completed_at: string | null }
+    | { id: string; state: JobState; created_at: string; completed_at: string | null; error_code: 'AI_INPUT_INVALID' | null }
     | undefined;
   return row
-    ? { id: row.id, state: row.state, createdAt: row.created_at, completedAt: row.completed_at }
+    ? { id: row.id, state: row.state, createdAt: row.created_at, completedAt: row.completed_at, errorCode: row.error_code }
     : null;
 }
 
@@ -114,7 +116,8 @@ export function getApplicantActiveAiDraftJob(
   requireApplicantScope(scope);
   const row = database
     .prepare(
-      `SELECT jobs.id, jobs.state, jobs.created_at, jobs.completed_at
+      `SELECT jobs.id, jobs.state, jobs.created_at, jobs.completed_at,
+              CASE WHEN jobs.last_error_code = 'AI_INPUT_INVALID' THEN 'AI_INPUT_INVALID' ELSE NULL END AS error_code
        FROM jobs
        JOIN cases
          ON cases.id = json_extract(jobs.payload_json, '$.caseId')
@@ -128,10 +131,10 @@ export function getApplicantActiveAiDraftJob(
        LIMIT 1`,
     )
     .get(scope.applicantId, caseId) as
-    | { id: string; state: JobState; created_at: string; completed_at: string | null }
+    | { id: string; state: JobState; created_at: string; completed_at: string | null; error_code: 'AI_INPUT_INVALID' | null }
     | undefined;
   return row
-    ? { id: row.id, state: row.state, createdAt: row.created_at, completedAt: row.completed_at }
+    ? { id: row.id, state: row.state, createdAt: row.created_at, completedAt: row.completed_at, errorCode: row.error_code }
     : null;
 }
 

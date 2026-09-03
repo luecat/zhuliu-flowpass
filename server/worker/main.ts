@@ -6,6 +6,7 @@ import { QueueDispatcher } from './queue-dispatcher';
 import { generatePassport } from './handlers/generate-passport';
 import { LmStudioClient } from '../adapters/lm-studio/lm-studio-client';
 import { GeminiClient } from '../adapters/gemini/gemini-client';
+import { DEFAULT_GEMINI_QUOTA_MODELS, GeminiQuotaRouter } from '../adapters/gemini/model-quota-router';
 import { KeychainSecretProvider } from '../config/keychain';
 import { initializeFieldCryptoAtStartup } from '../crypto/keyring';
 import { JobRepository } from '../db/repositories/jobs';
@@ -54,7 +55,12 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
           geminiKey = null;
         }
         if (geminiKey) {
-          client = new GeminiClient({ modelId, apiKey: geminiKey, overallTimeoutMs: 120_000 });
+          const models = DEFAULT_GEMINI_QUOTA_MODELS;
+          const clients = new Map(models.map((model) => [
+            model.id,
+            new GeminiClient({ modelId: model.id, apiKey: geminiKey!, overallTimeoutMs: 120_000 }),
+          ]));
+          client = new GeminiQuotaRouter(database, clients, models);
           adapterName = 'gemini';
         }
       } else if (modelId) {
@@ -94,7 +100,7 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       const handlers = {
         line_webhook: async (job: DurableJob) => { processLineEvent(job, { database }); },
         ...(lineClient ? { line_notification: async (job: DurableJob) => { await sendLineNotification(job, { database, crypto, client: lineClient, liffId: runtimeConfig.liffId }); } } : {}),
-        ...(client ? { ai_draft: async (job: DurableJob) => { await generatePassport(job, { workerId }, { database, crypto, client: client!, adapterName }); } } : {}),
+        ...(client ? { ai_draft: async (job: DurableJob) => { await generatePassport(job, { workerId }, { database, crypto, client: client!, adapterName, classifyInput: true }); } } : {}),
       };
       const dispatcher = new QueueDispatcher({
         database,

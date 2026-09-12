@@ -7,6 +7,7 @@ describe('launch agent generation', () => {
     const agents = buildLaunchAgents({ releaseRoot: '/tmp/flowpass/releases', nodePath: '/usr/local/bin/node', lmsPath: '/usr/local/bin/lms', cloudflaredPath: '/usr/local/bin/cloudflared' });
     expect(agents).toHaveLength(6);
     expect(agents[1].programArguments.at(-1)).toBe('/tmp/flowpass/releases/current/public/server.js');
+    expect(agents[1].environmentVariables).toMatchObject({ FLOWPASS_MODEL_PROVIDER: 'gemini', FLOWPASS_MODEL_ID: 'gemini-3.6-flash' });
     expect(agents[3].environmentVariables).toMatchObject({ FLOWPASS_WORKER_RUN: '1', FLOWPASS_MODEL_PROVIDER: 'gemini', FLOWPASS_MODEL_ID: 'gemini-3.6-flash' });
     expect(agents[2].environmentVariables).toMatchObject({
       FLOWPASS_CF_ACCESS_TEAM_DOMAIN: 'summer-art-4e96.cloudflareaccess.com',

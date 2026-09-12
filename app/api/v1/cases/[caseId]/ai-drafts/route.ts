@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { ApiErrorCode, apiFailure, apiSuccess, parseQuotedEtag, toJsonResponse } from '../../../../../../shared/api-contract';
-import { createAiDraftService, AiDraftCommandError } from '../../../../../../server/domain/ai-draft-service';
+import { aiInputTokenBudget, createAiDraftService, AiDraftCommandError } from '../../../../../../server/domain/ai-draft-service';
 import { AiDraftAdmissionGuard } from '../../../../../../server/domain/line-session-service';
 import { getCaseForApplicant } from '../../../../../../server/db/repositories/cases';
 import { getApplicantActiveAiDraftJob } from '../../../../../../server/db/repositories/jobs';
@@ -40,7 +40,7 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
       if (!finalizeApplicantMutation({ database: runtime.database, crypto: runtime.crypto, reservation, idempotencyKey: key, status: 202, publicBody: JSON.stringify(response), now })) throw new Error('idempotency finalization failed');
       return toJsonResponse(response, { status: 202, headers: { 'Cache-Control': 'no-store' } });
     }
-    const service = createAiDraftService({ database: runtime.database, crypto: runtime.crypto, modelId: process.env.FLOWPASS_MODEL_ID ?? 'unconfigured', clock: runtime.clock, admission: new AiDraftAdmissionGuard(runtime.database, runtime.crypto, runtime.clock) });
+    const service = createAiDraftService({ database: runtime.database, crypto: runtime.crypto, modelId: process.env.FLOWPASS_MODEL_ID ?? 'unconfigured', clock: runtime.clock, admission: new AiDraftAdmissionGuard(runtime.database, runtime.crypto, runtime.clock), inputTokenBudget: aiInputTokenBudget(process.env.FLOWPASS_MODEL_PROVIDER) });
     const result = service.enqueue({ applicantId: csrf.applicantId, caseId, operation: parsed.data.operation, retryNonce: parsed.data.retry ? key ?? undefined : undefined, expectedRowVersion: parseQuotedEtag(ifMatch)! });
     const response = apiSuccess({ jobId: result.job.id, state: result.job.state }, requestId);
     if (!finalizeApplicantMutation({ database: runtime.database, crypto: runtime.crypto, reservation, idempotencyKey: key, status: 202, publicBody: JSON.stringify(response), now })) throw new Error('idempotency finalization failed');

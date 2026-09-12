@@ -50,7 +50,7 @@ export function buildLaunchAgents(input: { releaseRoot: string; dataRoot?: strin
   });
   return [
     service('com.luecat.flowpass.model', [node, join(current, 'server', 'model-runtime.mjs'), '--watch'], { environmentVariables: { ...commonEnvironment, FLOWPASS_LMS_PATH: lms } }),
-    service('com.luecat.flowpass.public', [node, join(current, 'public', 'server.js')], { workingDirectory: join(current, 'public'), environmentVariables: { ...commonEnvironment, HOSTNAME: '127.0.0.1', PORT: '38100' } }),
+    service('com.luecat.flowpass.public', [node, join(current, 'public', 'server.js')], { workingDirectory: join(current, 'public'), environmentVariables: { ...commonEnvironment, ...geminiEnvironment, HOSTNAME: '127.0.0.1', PORT: '38100' } }),
     service('com.luecat.flowpass.admin', [node, join(current, 'server', 'admin.mjs')]),
     service('com.luecat.flowpass.worker', [node, join(current, 'server', 'worker.mjs')], { environmentVariables: { ...commonEnvironment, FLOWPASS_WORKER_RUN: '1', ...geminiEnvironment } }),
     service('com.luecat.flowpass.tunnel', [input.cloudflaredPath ?? '/opt/homebrew/bin/cloudflared', 'tunnel', '--config', join(current, 'runtime', 'cloudflared-flowpass.yml'), 'run']),

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { ApiErrorCode, apiFailure, apiSuccess, parseQuotedEtag, toJsonResponse } from '../../../../../../shared/api-contract';
 import { PassportLifecycleError, createPassportLifecycle } from '../../../../../../server/domain/passport-lifecycle';
-import { createAiDraftService, AiDraftCommandError } from '../../../../../../server/domain/ai-draft-service';
+import { aiInputTokenBudget, createAiDraftService, AiDraftCommandError } from '../../../../../../server/domain/ai-draft-service';
 import { AiDraftAdmissionGuard } from '../../../../../../server/domain/line-session-service';
 import { isValidMutationKey, readApplicantMutation, reserveApplicantMutation, finalizeApplicantMutation, deleteApplicantMutationReservation } from '../../../../../../server/public/public-mutations';
 import { getPublicRuntime } from '../../../../../../server/public/runtime';
@@ -48,7 +48,7 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
   if (reservation.kind === 'conflict') return toJsonResponse(apiFailure(ApiErrorCode.IDEMPOTENCY_KEY_REUSED, requestId));
   if (reservation.kind === 'replay') { try { return toJsonResponse(JSON.parse(reservation.body), { status: reservation.status }); } catch { return toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId)); } }
   try {
-    const ai = createAiDraftService({ database: runtime.database, crypto: runtime.crypto, modelId: process.env.FLOWPASS_MODEL_ID ?? 'unconfigured', clock: runtime.clock, admission: new AiDraftAdmissionGuard(runtime.database, runtime.crypto, runtime.clock) });
+    const ai = createAiDraftService({ database: runtime.database, crypto: runtime.crypto, modelId: process.env.FLOWPASS_MODEL_ID ?? 'unconfigured', clock: runtime.clock, admission: new AiDraftAdmissionGuard(runtime.database, runtime.crypto, runtime.clock), inputTokenBudget: aiInputTokenBudget(process.env.FLOWPASS_MODEL_PROVIDER) });
     const lifecycle = createPassportLifecycle({ database: runtime.database, crypto: runtime.crypto, clock: runtime.clock, enqueueRevision: ({ applicantId, caseId: queuedCaseId }) => {
       const queued = ai.enqueueInTransaction({ applicantId, caseId: queuedCaseId, operation: 'revise' });
       return { jobId: queued.job.id, state: queued.job.state };

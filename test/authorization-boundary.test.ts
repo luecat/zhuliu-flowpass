@@ -47,7 +47,7 @@ function seed(database: Database.Database, crypto: FieldCrypto): void {
     ) VALUES (?, 'CASE-A', ?, ?, ?, 'draft', ?, ?, 7)`,
   ).run(IDS.caseA, IDS.applicantA, IDS.programCycle, IDS.ruleVersion, STAMP, STAMP);
   const answerVersion = '0198f051-0000-7000-8000-000000000009';
-  const answerText = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端' });
+  const answerText = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端', applicantName: '測試申請人' });
   database.prepare(
     `INSERT INTO answer_versions (
       id, case_id, version_no, answers_enc, content_sha256, created_by_applicant_id, created_at
@@ -122,7 +122,9 @@ describe('public applicant authorization boundary', () => {
     expect(jobResponse.status).toBe(200);
     const jobBody = await jobResponse.json();
     expect(jobBody).toMatchObject({ data: { id: IDS.jobA, state: 'queued' } });
-    expect(JSON.stringify(jobBody)).not.toMatch(/payload|lease|error|unique|prompt|caseId/i);
+    // Word-bounded so the applicant-facing `errorCode` field (e.g. "AI_INPUT_INVALID",
+    // read by the wizard to show tailored failure copy) doesn't false-positive on "error".
+    expect(JSON.stringify(jobBody)).not.toMatch(/\b(payload|lease|error|unique|prompt|caseId)\b/i);
   });
 
   it('does not expose unsubmitted cases through the applicant record list', async () => {

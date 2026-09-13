@@ -170,7 +170,7 @@ describe('FlowPass JSON generator page', () => {
       '只要說資料類型，不必貼上實際內容。',
     );
     expect(personalData).toHaveAccessibleDescription(
-      '不知道也可以留白，系統會列為待確認；密碼、API 金鑰或營業秘密也算敏感資料。',
+      '依素材推想即可：人臉／聲音、姓名聯絡方式、密碼／API 金鑰、金融帳號、未成年或營業秘密都算；不知道也可留白，系統會列為待確認。',
     );
   });
 

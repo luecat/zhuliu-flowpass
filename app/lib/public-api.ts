@@ -353,7 +353,7 @@ export class PublicApiClient {
     input.onProgress?.(0);
     const result = await new Promise<{ status: number; body: string }>((resolve, reject) => {
       const xhr = this.xhrFactory();
-      xhr.open('POST', new URL(path, SAME_ORIGIN_BASE).href);
+      xhr.open('POST', path);
       xhr.withCredentials = true;
       xhr.responseType = 'text';
       xhr.setRequestHeader('Accept', 'application/json');

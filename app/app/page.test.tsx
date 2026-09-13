@@ -3,10 +3,11 @@ import { describe, expect, it } from 'vitest';
 import ApplicantHome from './page';
 
 describe('ApplicantHome', () => {
-  it('offers application and record lookup without a work-queue destination', () => {
+  it('explains the journey without offering other in-app destinations', () => {
     render(<ApplicantHome />);
-    expect(screen.getByRole('link', { name: '送出申請' })).toHaveAttribute('href', '/app/apply');
-    expect(screen.getByRole('link', { name: '查詢申請進度' })).toHaveAttribute('href', '/app/passports');
-    expect(screen.queryByRole('link', { name: /待辦/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/約 10–15 分鐘/)).toBeVisible();
+    expect(screen.getByText(/身分證、購買憑證/)).toBeVisible();
+    expect(screen.getByText(/請從 LINE 選單開啟/)).toBeVisible();
+    expect(screen.queryByRole('link')).not.toBeInTheDocument();
   });
 });

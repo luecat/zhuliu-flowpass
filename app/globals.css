@@ -56,8 +56,14 @@ button {
   color: inherit;
 }
 
+a:focus-visible,
 button:focus-visible,
+input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
+[role="button"]:focus-visible,
+[role="option"]:focus-visible,
+.file-picker-button:focus-within,
 pre:focus-visible {
   outline: 3px solid #005ea8;
   outline-offset: 2px;
@@ -1199,6 +1205,44 @@ textarea::placeholder {
 .ai-follow-up-meta b { color: var(--blue, #176baf); }
 .ai-follow-up-card textarea { width: 100%; min-height: 88px; resize: vertical; }
 .ai-follow-up-reason { color: var(--muted, #667085); font-size: 14px; line-height: 1.55; }
+.ai-follow-up-tips {
+  margin: 0;
+  padding: 10px 12px;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, #176baf 8%, white);
+  color: #16324a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.applicant-subsidy-steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.applicant-subsidy-steps div {
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.applicant-subsidy-steps dt {
+  margin: 0;
+  color: var(--muted, #667085);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.applicant-subsidy-steps dd {
+  margin: 0;
+  font-weight: 600;
+}
 .passport-submit-card { display: grid; gap: 12px; margin-top: 24px; padding: 20px; border: 1px solid var(--line, #d8e1ea); border-radius: 16px; background: var(--surface, #fff); }
 .passport-submit-card h3, .passport-submit-card label { margin: 0; }
 .passport-submit-card label { display: flex; gap: 8px; align-items: center; font-weight: 650; }
@@ -2391,6 +2435,11 @@ textarea::placeholder {
   *::after {
     scroll-behavior: auto !important;
     transition: none !important;
+    animation: none !important;
+  }
+  .ai-waiting-spinner,
+  .applicant-loading-mark {
+    animation: none !important;
   }
 }
 
@@ -2502,6 +2551,13 @@ textarea::placeholder {
   border-radius: 12px;
   resize: vertical;
   line-height: 1.6;
+}
+
+.field-guidance {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .field-hint {
@@ -2913,8 +2969,125 @@ textarea::placeholder {
 .final-confirmation input { width: 20px; height: 20px; flex: 0 0 20px; accent-color: #267653; }
 
 .purchase-field-grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.purchase-field-grid--tool { align-items: start; }
 .purchase-field-grid > label,
 .purchase-details-form fieldset > label:not(.checkbox-card) { display: grid; gap: 8px; }
+
+.choice-list { display: grid; gap: 8px; position: relative; }
+.choice-list-label { font-weight: 700; color: #27372f; }
+.choice-list-trigger,
+.choice-list-search {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid #cbd8d1;
+  border-radius: 11px;
+  background: #fff;
+  color: #1f2a24;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.choice-list-search { cursor: text; }
+.choice-list-search:focus {
+  outline: 3px solid rgba(38, 118, 83, 0.16);
+  border-color: #267653;
+}
+.choice-list-combobox {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: stretch;
+  gap: 0;
+}
+.choice-list-combobox .choice-list-search {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: 0;
+}
+.choice-list-chevron {
+  min-width: 48px;
+  border: 1px solid #cbd8d1;
+  border-radius: 0 11px 11px 0;
+  background: #f7faf8;
+  color: #24352d;
+  font: inherit;
+  cursor: pointer;
+}
+.choice-list-trigger:disabled,
+.choice-list-search:disabled,
+.choice-list-chevron:disabled { opacity: 0.55; cursor: not-allowed; }
+.choice-list-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #c9d8d0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(24, 48, 36, 0.12);
+}
+.choice-list-group {
+  padding: 10px 12px 4px;
+  color: #5b6b63;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.choice-list-empty {
+  padding: 12px;
+  color: #68766f;
+  font-size: 0.92rem;
+}
+.choice-list-menu button {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #24352d;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.choice-list-option-label { font-weight: 600; }
+.choice-list-option-hint {
+  color: #68766f;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.choice-list-menu button:hover,
+.choice-list-menu button.is-selected,
+.choice-list-menu li.is-active > button { background: #eef6f1; }
+.choice-list-other input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid #cbd8d1;
+  border-radius: 11px;
+  font: inherit;
+}
+.choice-list-multi { display: grid; gap: 10px; margin: 0; padding: 0; border: 0; }
+.choice-list-multi-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d7e3dc;
+  border-radius: 12px;
+  background: #fff;
+}
 .purchase-details-form input[type="text"],
 .purchase-details-form input[type="number"],
 .purchase-details-form input[type="date"],
@@ -2978,6 +3151,7 @@ textarea::placeholder {
 .attachment-requirement small { display: inline-block; margin-top: 6px; color: #267653; font-weight: 700; }
 .attachment-requirement-actions { display: flex; align-items: center; gap: 10px; }
 .file-picker-button {
+  position: relative;
   display: inline-flex;
   min-height: 42px;
   flex: 1;
@@ -2990,16 +3164,42 @@ textarea::placeholder {
   background: #fff;
   font-weight: 780;
   cursor: pointer;
+  overflow: hidden;
 }
-.file-picker-button input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+/* Keep the native file input tappable on mobile / LIFF WebViews. */
+.file-picker-button input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
 .text-action { min-height: 42px; padding: 8px 11px; border: 0; color: #6b756f; background: transparent; cursor: pointer; }
 
-.attachment-submit-card { text-align: left; }
+.attachment-submit-card {
+  display: grid;
+  gap: 14px;
+  text-align: left;
+}
 .attachment-submit-card h3,
 .attachment-submit-card p { margin: 0; }
 .attachment-submit-card p { color: #68766f; line-height: 1.5; }
+.attachment-submit-card p[role="status"] {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #fff6e8;
+  color: #7a4d00;
+  line-height: 1.55;
+}
 .final-confirmation { display: flex; align-items: flex-start; gap: 10px; color: #35443e; line-height: 1.5; }
-.attachment-submit-card .primary-action { width: 100%; min-height: 54px; cursor: pointer; }
+.attachment-submit-card .primary-action {
+  position: static;
+  width: 100%;
+  min-height: 54px;
+  cursor: pointer;
+}
 .attachment-submit-card .primary-action:disabled { cursor: not-allowed; opacity: 0.48; }
 
 /* Public applicant records: product copy only, never raw storage metadata. */
@@ -3204,6 +3404,70 @@ textarea::placeholder {
 .applicant-timeline strong { color: #273a31; font-size: 17px; line-height: 1.45; }
 .applicant-timeline time { color: #75827c; font-size: 13px; line-height: 1.45; }
 
+.applicant-subsidy-steps { margin: 0; display: grid; gap: 10px; }
+.applicant-subsidy-steps > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 0;
+  border-top: 1px solid #d7e3dc;
+}
+.applicant-subsidy-steps dt { color: #5f6f67; font-size: 13px; }
+.applicant-subsidy-steps dd { margin: 0; color: #24352d; font-weight: 700; }
+
+.applicant-records-hint { margin: 0 0 18px; color: #65736c; line-height: 1.55; }
+.applicant-records-hint a { color: #1f6b4a; font-weight: 700; }
+
+.tool-status-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 28px 18px 64px;
+}
+.tool-status-hero h1 {
+  margin: 8px 0 12px;
+  font-size: clamp(28px, 7vw, 44px);
+  line-height: 1.12;
+  color: #20342b;
+}
+.tool-status-hero p { margin: 0; color: #65736c; line-height: 1.6; }
+.tool-status-form { margin-top: 28px; display: grid; gap: 10px; }
+.tool-status-form label { font-weight: 700; color: #27372f; }
+.tool-status-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+.tool-status-row input {
+  min-height: 52px;
+  padding: 12px 14px;
+  border: 1px solid #9aac9f;
+  border-radius: 14px;
+  font: inherit;
+}
+.tool-status-results { margin-top: 28px; display: grid; gap: 16px; }
+.tool-status-results h2 { margin: 0; color: #24352d; font-size: 22px; }
+.tool-status-results > p { margin: 0; color: #65736c; line-height: 1.6; }
+.tool-status-results > ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+.tool-status-results > ul > li {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+  border: 1px solid #d7e3dc;
+  border-radius: 16px;
+  background: #f7fbf8;
+}
+.tool-status-results small { color: #6a7871; }
+.tool-status-personal {
+  margin-top: 8px;
+  padding: 18px;
+  border-radius: 16px;
+  background: #eef6f1;
+}
+.tool-status-personal h3 { margin: 0 0 8px; color: #24352d; }
+.tool-status-personal p { margin: 0; color: #65736c; line-height: 1.55; }
+.tool-status-personal a { color: #1f6b4a; font-weight: 700; }
+.tool-status-personal ul { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.tool-status-personal li { display: grid; gap: 4px; }
+
+@media (max-width: 520px) {
+  .tool-status-row { grid-template-columns: 1fr; }
+}
+
 @media (max-width: 520px) {
   .passport-review-panel { margin-top: 0; }
   .applicant-passport-summary { padding: 22px 18px; border-radius: 16px; }
@@ -3226,4 +3490,244 @@ textarea::placeholder {
   .applicant-supplement-upload .file-picker-button { grid-column: 1 / -1; }
   .applicant-case-meta > div { align-items: flex-start; flex-direction: column; gap: 4px; }
   .applicant-case-meta dd { text-align: left; }
+}
+
+
+/* UX improvement tokens and surfaces */
+.applicant-journey-steps {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+.applicant-journey-steps li {
+  display: grid;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid rgba(38, 118, 83, 0.14);
+  border-radius: 14px;
+  background: #f7fbf8;
+}
+.applicant-journey-steps strong { color: #1d3a30; }
+.applicant-journey-steps span { color: #65766e; font-size: 14px; line-height: 1.5; }
+.applicant-prep-note {
+  margin: 18px 0 8px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: #fff8e8;
+  color: #5d4a1d;
+}
+.applicant-prep-note h2 { margin: 0 0 8px; font-size: 16px; }
+.applicant-prep-note ul { margin: 0 0 10px; padding-left: 1.2em; }
+.applicant-prep-note p { margin: 0; line-height: 1.55; font-size: 14px; }
+/* Passport flow drawn as ordered stages: material → AI → storage → sharing. */
+.applicant-flow-title { margin: 0 0 16px; font-size: 22px; }
+.applicant-flow-stages { display: grid; margin: 0; padding: 0; list-style: none; }
+.applicant-flow-stage {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 14px;
+  padding-bottom: 22px;
+}
+.applicant-flow-stage:last-child { padding-bottom: 0; }
+.applicant-flow-stage:not(:last-child)::after {
+  position: absolute;
+  top: 26px;
+  bottom: 0;
+  left: 12px;
+  width: 2px;
+  background: #c9ded3;
+  content: '';
+}
+.applicant-flow-marker {
+  position: relative;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  margin-top: 1px;
+  border: 2px solid #267653;
+  border-radius: 50%;
+  background: #fff;
+}
+.applicant-flow-stage:last-child .applicant-flow-marker { background: #267653; }
+.applicant-flow-stage-body { display: grid; gap: 9px; min-width: 0; }
+.applicant-flow-stage-body h4 { margin: 3px 0 0; color: #5f6f67; font-size: 13px; font-weight: 800; letter-spacing: 0.06em; }
+.applicant-flow-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.applicant-flow-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid #d7e1dc;
+  border-radius: 12px;
+  background: #f8fbf9;
+  color: #1d3a30;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.applicant-flow-chip.is-sensitive { border-color: #ebd69e; background: #fff8e7; color: #6f4b00; }
+.applicant-flow-chip em { color: #865800; font-size: 12px; font-style: normal; font-weight: 700; }
+.applicant-flow-note { margin: 0; color: #5f6f67; font-size: 14px; line-height: 1.55; }
+.applicant-flow-note strong { color: #24453b; }
+
+/* Tool check, security alerts, and safety card share the applicant record surface. */
+.tool-status-page { width: min(100%, 680px); max-width: none; padding: 0 0 48px; }
+.applicant-page-heading > p:last-child { max-width: 36rem; }
+.applicant-case-meta > div + div { margin-top: 8px; }
+.tool-check-link { justify-self: start; margin-top: 6px; color: #236b4b; background: #fff; font-weight: 700; text-decoration: none; }
+.tool-check-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.tool-check-card {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 18px;
+  border: 1px solid #d7e1dc;
+  border-radius: 18px;
+  background: #fff;
+}
+.tool-check-card h3 { margin: 0; color: #203229; font-size: 18px; line-height: 1.45; }
+.tool-check-card p { margin: 0; color: #4f6158; line-height: 1.65; }
+.tool-check-card time,
+.tool-check-period { color: #718078; font-size: 13px; }
+.tool-check-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; color: #68766f; font-size: 13px; }
+.tool-check-actions { justify-self: stretch; padding: 14px 16px; border-radius: 14px; background: #f3f7f4; }
+.tool-check-actions h4 { margin: 0 0 8px; color: #2c4a3c; font-size: 14px; }
+.tool-check-actions ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.tool-check-actions li { position: relative; padding-left: 22px; color: #34473e; line-height: 1.55; }
+.tool-check-actions li::before { position: absolute; top: 0; left: 0; color: #267653; font-weight: 800; content: '✓'; }
+.tool-check-inline-link { color: #1f6b4a; font-size: 14px; font-weight: 700; text-decoration: none; }
+.tool-check-inline-link:hover { text-decoration: underline; }
+.tool-check-inline-link:focus-visible,
+.tool-check-link:focus-visible { outline: 3px solid rgba(38, 118, 83, 0.22); outline-offset: 2px; }
+.tool-check-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.tool-check-chips li { padding: 8px 14px; border: 1px solid #cfe1d8; border-radius: 999px; background: #fff; color: #24453b; font-weight: 700; }
+.tool-check-empty { margin: 0; padding: 16px 18px; border: 1px dashed #cbd7d0; border-radius: 16px; color: #68766f; line-height: 1.6; }
+
+.applicant-safety-card { display: grid; gap: 14px; }
+.applicant-safety-card img {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  border: 1px solid #d7e1dc;
+  border-radius: 18px;
+  background: #f5f4ef;
+  box-shadow: 0 12px 30px rgba(38, 67, 54, 0.08);
+}
+.applicant-safety-card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.applicant-safety-card-actions p,
+.applicant-safety-card-notice { margin: 0; color: #68766f; font-size: 14px; line-height: 1.55; }
+
+/* The purchase form's generic text-input rule (0,2,1) was reshaping the combobox input,
+   so the chevron detached from it; this selector outranks it and lets the input shrink. */
+.choice-list-combobox { grid-template-columns: minmax(0, 1fr) 48px; }
+.purchase-details-form .choice-list-combobox .choice-list-search,
+.choice-list-combobox .choice-list-search { min-width: 0; border-right: 0; border-radius: 11px 0 0 11px; }
+.choice-list-chevron { display: grid; min-width: 0; padding: 0; place-items: center; }
+@media (max-width: 560px) {
+  .purchase-field-grid { grid-template-columns: minmax(0, 1fr); }
+}
+.ai-waiting-status {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  text-align: center;
+  padding: 28px 18px;
+}
+.ai-waiting-spinner,
+.applicant-loading-mark {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #d5e6dd;
+  border-top-color: #1f7a52;
+  border-radius: 50%;
+  animation: flowpass-spin 0.9s linear infinite;
+}
+@keyframes flowpass-spin { to { transform: rotate(360deg); } }
+.form-error-summary {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8e6e3;
+  color: #8a3f39;
+}
+.form-error-summary ul { margin: 8px 0 0; padding-left: 1.1em; }
+.field-error { margin: 6px 0 0; color: #8a3f39; font-size: 13px; }
+.sensitive-data-note {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #eef5ff;
+  color: #27415f;
+}
+.sensitive-data-note h4 { margin: 0 0 6px; font-size: 14px; }
+.sensitive-data-note p { margin: 0; font-size: 13px; line-height: 1.55; }
+.attachment-step-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.attachment-step-tabs button {
+  padding: 8px 12px;
+  border: 1px solid #c9d8cf;
+  border-radius: 999px;
+  background: #fff;
+}
+.attachment-step-tabs button.is-current {
+  border-color: #1f7a52;
+  background: #e7f3ec;
+  color: #176546;
+  font-weight: 700;
+}
+.choice-list-menu li.is-active > button {
+  outline: 2px solid rgba(38, 118, 83, 0.35);
+  outline-offset: -2px;
+}
+.applicant-security-alerts ul { display: grid; gap: 12px; padding: 0; list-style: none; }
+@media (max-width: 720px) {
+  .applicant-shell { padding-bottom: 28px; }
+  /* Only the multi-step wizard keeps a sticky primary action.
+     The attachment submit card must stay in document flow so it
+     cannot cover file pickers or collide with its own status text. */
+  .wizard-actions .primary-action {
+    position: sticky;
+    bottom: 12px;
+    z-index: 2;
+  }
+  .attachment-submit-card,
+  .attachment-submit-card .primary-action {
+    position: static;
+    bottom: auto;
+    z-index: auto;
+  }
+}
+
+
+.applicant-correction-request {
+  border-left: 4px solid #c8962e;
+}
+.applicant-correction-steps {
+  display: grid;
+  gap: .75rem;
+  margin: 1rem 0;
+  padding: 1rem;
+  border-radius: .85rem;
+  background: #fff8ea;
+  border: 1px solid #e8d6a8;
+}
+.applicant-correction-steps ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #5a4a24;
+  line-height: 1.55;
+}
+.applicant-correction-confirm {
+  display: flex;
+  gap: .55rem;
+  align-items: flex-start;
+  margin: 1rem 0;
+  font-weight: 600;
 }

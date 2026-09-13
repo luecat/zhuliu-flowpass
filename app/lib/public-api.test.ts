@@ -115,6 +115,45 @@ describe('PublicApiClient', () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
+  it('uploads to the current origin instead of the API-path validation origin', async () => {
+    const open = vi.fn();
+    const setRequestHeader = vi.fn();
+    const xhr = {
+      open,
+      setRequestHeader,
+      send: vi.fn(),
+      upload: {} as XMLHttpRequestUpload,
+      withCredentials: false,
+      responseType: '',
+      responseText: '',
+      status: 0,
+      onload: null as (() => void) | null,
+      onerror: null as (() => void) | null,
+      ontimeout: null as (() => void) | null,
+    };
+    xhr.send.mockImplementation(() => {
+      xhr.status = 202;
+      xhr.responseText = JSON.stringify({ data: { document: { id: 'document-1' } }, meta: { requestId: 'request-upload' } });
+      xhr.onload?.();
+    });
+    const client = new PublicApiClient({
+      cookieSource: () => 'flowpass_csrf=csrf-cookie-value',
+      idempotencyKeyFactory: () => 'upload-idempotency-key',
+      xhrFactory: () => xhr as unknown as XMLHttpRequest,
+    });
+
+    await expect(client.upload<{ document: { id: string } }>('/api/v1/cases/case-1/documents', {
+      file: new File(['receipt'], 'receipt.png', { type: 'image/png' }),
+      kind: 'invoice',
+      requirementKey: 'purchase_proof',
+      ifMatch: '"1"',
+    })).resolves.toEqual({ document: { id: 'document-1' } });
+
+    expect(open).toHaveBeenCalledWith('POST', '/api/v1/cases/case-1/documents');
+    expect(xhr.withCredentials).toBe(true);
+    expect(setRequestHeader).toHaveBeenCalledWith('X-FlowPass-CSRF', 'csrf-cookie-value');
+  });
+
   it('surfaces only the public-safe API error envelope', async () => {
     const fetcher = vi.fn<BrowserFetch>().mockResolvedValue(
       jsonResponse(

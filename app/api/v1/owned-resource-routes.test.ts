@@ -152,7 +152,9 @@ describe('public owned-resource route entrypoints', () => {
     expect(jobResponse.status).toBe(200);
     const jobBody = await jobResponse.json();
     expect(jobBody).toMatchObject({ data: { id: IDS.jobA, state: 'queued' } });
-    expect(JSON.stringify(jobBody)).not.toMatch(/payload|lease|error|unique|prompt|caseId/i);
+    // Word-bounded so the applicant-facing `errorCode` field (e.g. "AI_INPUT_INVALID",
+    // read by the wizard to show tailored failure copy) doesn't false-positive on "error".
+    expect(JSON.stringify(jobBody)).not.toMatch(/\b(payload|lease|error|unique|prompt|caseId)\b/i);
   });
 
   it('turns both foreign and absent resources into the same public 404', async () => {

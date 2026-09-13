@@ -14,11 +14,14 @@ const IDS = {
   request: '0198f090-0000-7000-8000-000000000006',
 };
 const NOW = '2026-09-01T00:00:00.000Z';
-const details = {
+const writeDetails = {
   billingCycle: 'annual', billingPeriods: null, softwareFunction: 'imaging', otherFunction: null,
   softwareName: '私密修圖軟體', companyName: 'Example Inc.', purchaseDate: '2026-08-30',
   payerType: 'self_card', originalCurrency: 'USD', otherCurrency: null,
-  originalExpense: '29.99', convertedTwd: 950, specialStatus: false,
+  originalExpense: '29.99', convertedTwd: 950, specialStatus: false, invoiceNumber: null,
+  cardLastFour: '4242', cardholderName: '測試持卡人',
+  subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31',
+  applicantName: '測試申請人',
 };
 
 describe('purchase details route', () => {
@@ -49,24 +52,42 @@ describe('purchase details route', () => {
     const request = new Request(`http://127.0.0.1:38100/api/v1/cases/${IDS.case}/purchase-details`, {
       method: 'PUT',
       headers: { origin: 'http://127.0.0.1:38100', cookie: 'flowpass_session=s; flowpass_csrf=c', 'x-flowpass-csrf': 'c', 'idempotency-key': 'purchase-details-1', 'if-match': '"1"', 'content-type': 'application/json' },
-      body: JSON.stringify(details),
+      body: JSON.stringify(writeDetails),
     });
     const response = await PUT(request, { params: Promise.resolve({ caseId: IDS.case }) });
     expect(response.status).toBe(200);
     expect(response.headers.get('etag')).toBe('"2"');
-    expect(await response.json()).toMatchObject({ data: { details: { softwareName: '私密修圖軟體', convertedTwd: 950 } } });
+    expect(await response.json()).toMatchObject({
+      data: {
+        details: {
+          softwareName: '私密修圖軟體',
+          convertedTwd: 950,
+          paymentSourceRegistered: true,
+        },
+      },
+    });
     const stored = database.prepare('SELECT details_enc FROM case_purchase_details WHERE case_id = ?').get(IDS.case) as { details_enc: string };
     expect(stored.details_enc).not.toContain('私密修圖軟體');
+    expect(stored.details_enc).not.toContain('4242');
     expect(database.prepare('SELECT requested_amount_twd,row_version FROM cases WHERE id = ?').get(IDS.case)).toEqual({ requested_amount_twd: 950, row_version: 2 });
   });
 
   it('loads a saved form but rejects malformed values and stale writes', async () => {
     const put = (body: unknown, etag: string, key: string) => PUT(new Request(`http://127.0.0.1:38100/api/v1/cases/${IDS.case}/purchase-details`, { method: 'PUT', headers: { origin: 'http://127.0.0.1:38100', cookie: 'flowpass_session=s; flowpass_csrf=c', 'x-flowpass-csrf': 'c', 'idempotency-key': key, 'if-match': etag, 'content-type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ caseId: IDS.case }) });
-    expect((await put({ ...details, convertedTwd: 0 }, '"1"', 'invalid')).status).toBe(400);
-    expect((await put(details, '"1"', 'valid')).status).toBe(200);
-    expect((await put({ ...details, convertedTwd: 951 }, '"1"', 'stale')).status).toBe(409);
+    expect((await put({ ...writeDetails, convertedTwd: 0 }, '"1"', 'invalid')).status).toBe(400);
+    expect((await put(writeDetails, '"1"', 'valid')).status).toBe(200);
+    expect((await put({ ...writeDetails, convertedTwd: 951 }, '"1"', 'stale')).status).toBe(409);
     const getResponse = await GET(new Request(`http://127.0.0.1:38100/api/v1/cases/${IDS.case}/purchase-details`, { headers: { cookie: 'flowpass_session=s' } }), { params: Promise.resolve({ caseId: IDS.case }) });
     expect(getResponse.status).toBe(200);
-    expect(await getResponse.json()).toMatchObject({ data: { details: { originalExpense: '29.99' } } });
+    const getBody = await getResponse.json();
+    expect(getBody).toMatchObject({
+      data: {
+        details: {
+          originalExpense: '29.99',
+          paymentSourceRegistered: true,
+        },
+      },
+    });
+    expect(JSON.stringify(getBody)).not.toContain('4242');
   });
 });

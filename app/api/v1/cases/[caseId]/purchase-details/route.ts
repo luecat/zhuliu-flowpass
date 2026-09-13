@@ -6,13 +6,18 @@ import {
   parseQuotedEtag,
   toJsonResponse,
 } from '../../../../../../shared/api-contract';
-import { PurchaseDetailsSchema } from '../../../../../../shared/purchase-details-contract';
+import {
+  PurchaseDetailsWriteSchema,
+  toPublicPurchaseDetails,
+} from '../../../../../../shared/purchase-details-contract';
+import { isBlockedAiToolLabel } from '../../../../../../shared/approved-ai-tools';
 import { appendEncryptedAuditLog } from '../../../../../../server/db/repositories/audit';
 import { getCaseForApplicant } from '../../../../../../server/db/repositories/cases';
 import {
   getPurchaseDetailsForApplicant,
   upsertPurchaseDetailsForApplicant,
 } from '../../../../../../server/db/repositories/purchase-details';
+import { materializePurchaseDetails } from '../../../../../../server/domain/purchase-details-materialize';
 import {
   deleteApplicantMutationReservation,
   finalizeApplicantMutation,
@@ -48,7 +53,8 @@ export async function GET(
   } catch {
     return toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId));
   }
-  const response = apiSuccess({ details: record?.details ?? null }, requestId, ownedCase.rowVersion);
+  const details = record?.details ? toPublicPurchaseDetails(record.details) : null;
+  const response = apiSuccess({ details }, requestId, ownedCase.rowVersion);
   return toJsonResponse(response, {
     headers: { ETag: response.meta.etag ?? '', 'Cache-Control': 'no-store' },
   });
@@ -80,8 +86,11 @@ export async function PUT(
   try { raw = await request.json(); } catch {
     return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
   }
-  const parsed = PurchaseDetailsSchema.safeParse(raw);
+  const parsed = PurchaseDetailsWriteSchema.safeParse(raw);
   if (!parsed.success) return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
+  if (isBlockedAiToolLabel(parsed.data.softwareName) || isBlockedAiToolLabel(parsed.data.companyName)) {
+    return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
+  }
   const { caseId } = await context.params;
   const now = runtime.clock?.() ?? new Date();
   const route = `/api/v1/cases/${caseId}/purchase-details`;
@@ -136,17 +145,28 @@ export async function PUT(
       if (!current) throw new Error('NOT_FOUND');
       if (current.row_version !== expected) throw new Error('ETAG_MISMATCH');
       if (current.state !== 'draft') throw new Error('INVALID_STATE');
+      const previous = getPurchaseDetailsForApplicant(
+        runtime.database,
+        { applicantId: csrf.applicantId },
+        runtime.crypto,
+        caseId,
+      )?.details ?? null;
+      const stored = materializePurchaseDetails({
+        write: parsed.data,
+        crypto: runtime.crypto,
+        previous,
+      });
       const saved = upsertPurchaseDetailsForApplicant(
         runtime.database,
         { applicantId: csrf.applicantId },
         runtime.crypto,
-        { caseId, details: parsed.data, now: now.toISOString() },
+        { caseId, details: stored, now: now.toISOString() },
       );
       const changed = runtime.database.prepare(`
         UPDATE cases
         SET requested_amount_twd = ?, updated_at = ?, row_version = row_version + 1
         WHERE id = ? AND applicant_id = ? AND state = 'draft' AND row_version = ?
-      `).run(parsed.data.convertedTwd, now.toISOString(), caseId, csrf.applicantId, expected);
+      `).run(stored.convertedTwd, now.toISOString(), caseId, csrf.applicantId, expected);
       if (changed.changes !== 1) throw new Error('ETAG_MISMATCH');
       appendEncryptedAuditLog(runtime.database, runtime.crypto, {
         id: uuidv7(),
@@ -167,7 +187,7 @@ export async function PUT(
         caseId,
       );
       if (!nextCase) throw new Error('NOT_FOUND');
-      return { details: saved.details, rowVersion: nextCase.rowVersion };
+      return { details: toPublicPurchaseDetails(saved.details), rowVersion: nextCase.rowVersion };
     })();
     const response = apiSuccess({ details: result.details }, requestId, result.rowVersion);
     if (!finalizeApplicantMutation({

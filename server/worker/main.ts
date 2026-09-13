@@ -98,7 +98,14 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       dependencyStatus.lineNotification = lineClient ? 'ready' : 'disabled';
       const workerId = process.env.FLOWPASS_WORKER_ID ?? `worker-${process.pid}`;
       const handlers = {
-        line_webhook: async (job: DurableJob) => { processLineEvent(job, { database }); },
+        line_webhook: async (job: DurableJob) => {
+          processLineEvent(job, {
+            database,
+            crypto,
+            lineClient,
+            now: new Date().toISOString(),
+          });
+        },
         ...(lineClient ? { line_notification: async (job: DurableJob) => { await sendLineNotification(job, { database, crypto, client: lineClient, liffId: runtimeConfig.liffId }); } } : {}),
         ...(client ? { ai_draft: async (job: DurableJob) => { await generatePassport(job, { workerId }, { database, crypto, client: client!, adapterName, classifyInput: true }); } } : {}),
       };

@@ -36,7 +36,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: undefined, requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'worker secret sentinel', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'worker secret sentinel', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -48,11 +48,11 @@ describe('generate passport worker boundary', () => {
     expect((db.prepare('SELECT payload_enc FROM passport_versions').get() as { payload_enc: string }).payload_enc).not.toContain('worker secret sentinel');
   });
 
-  it('stops before passport generation when the AI quality gate rejects the answers', async () => {
+  it('stops before passport generation when the local quality gate rejects the answers', async () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'quality-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'asdf', aiPurpose: '12345', sensitiveData: '哈哈哈', destinationAndAudience: '???' }, ifMatch: '"1"', idempotencyKey: 'quality-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'asdf', aiPurpose: '12345', sensitiveData: '哈哈哈', destinationAndAudience: '???', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'quality-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -62,15 +62,14 @@ describe('generate passport worker boundary', () => {
       crypto,
       classifyInput: true,
       client: {
-        complete: async (input) => {
+        complete: async () => {
           calls += 1;
-          expect(input.responseSchema).toBeDefined();
-          return { content: JSON.stringify({ valid: false, field_validity: { material: false, aiPurpose: false, sensitiveData: true, destinationAndAudience: true }, invalid_fields: ['material', 'aiPurpose'], reason: '無意義內容' }), model: 'fixture', inputTokens: 1, outputTokens: 1 };
+          throw new Error('must not call model');
         },
       },
       clock: () => new Date(NOW),
     })).rejects.toMatchObject({ code: 'AI_INPUT_INVALID' });
-    expect(calls).toBe(1);
+    expect(calls).toBe(0);
     expect((db.prepare('SELECT COUNT(*) AS count FROM passport_versions').get() as { count: number }).count).toBe(0);
   });
 
@@ -78,7 +77,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'rewrite-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'rewrite source sentinel', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'rewrite-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'rewrite source sentinel', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'rewrite-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -89,23 +88,22 @@ describe('generate passport worker boundary', () => {
       client: {
         complete: async (input) => {
           calls.push(input);
-          return { content: calls.length < 3 ? '{"passport_draft":{}}' : JSON.stringify(FLOWPASS_SAMPLE), model: 'fixture', inputTokens: 1, outputTokens: 1 };
+          return { content: calls.length < 2 ? '{"passport_draft":{}}' : JSON.stringify(FLOWPASS_SAMPLE), model: 'fixture', inputTokens: 1, outputTokens: 1 };
         },
       },
       clock: () => new Date(NOW),
     });
-    expect(result.repairCount).toBeGreaterThanOrEqual(2);
-    expect(calls).toHaveLength(3);
+    expect(result.repairCount).toBeGreaterThanOrEqual(1);
+    expect(calls).toHaveLength(2);
     expect(JSON.stringify(calls[1]?.inputEnvelope)).toContain('rewrite source sentinel');
     expect(calls[1]?.repairIssues?.length).toBeGreaterThan(0);
-    expect(JSON.stringify(calls[2]?.inputEnvelope)).toContain('rewrite source sentinel');
   });
 
   it('validates the JSON object when the model surrounds it with thinking text and a code fence', async () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'wrapped-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'wrapped-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'wrapped-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -124,7 +122,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'invoice-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'invoice-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'invoice-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -141,7 +139,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'grounded-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG' }, ifMatch: '"1"', idempotencyKey: 'grounded-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'grounded-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -163,7 +161,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'dedupe-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '修圖', sensitiveData: '不確定', destinationAndAudience: '公開於 IG' }, ifMatch: '"1"', idempotencyKey: 'dedupe-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '修圖', sensitiveData: '不確定', destinationAndAudience: '公開於 IG', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'dedupe-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const passport = inspectPassportJson(JSON.stringify(FLOWPASS_SAMPLE)).canonical!;
@@ -185,7 +183,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'semantic-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG' }, ifMatch: '"1"', idempotencyKey: 'semantic-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'semantic-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -206,7 +204,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const initialPassport = inspectPassportJson(JSON.stringify(FLOWPASS_SAMPLE)).canonical!;

@@ -18,7 +18,12 @@ describe('LmStudioClient', () => {
     expect(body.response_format.json_schema.name).toBe('flowpass_passport');
     expect(body.response_format.json_schema.schema.$schema).toBeUndefined();
     expect(JSON.stringify(body.response_format.json_schema.schema)).not.toContain('oneOf');
-    expect(body.response_format.json_schema.schema.properties.passport_draft.properties.follow_up_questions.items.properties.answerSchema.properties.type.const).toBe('text');
+    expect(body.response_format.json_schema.schema.properties.passport_draft.properties.follow_up_questions.items.properties.answerSchema.properties.type.enum).toEqual([
+      'text',
+      'single_choice',
+      'multi_choice',
+      'boolean',
+    ]);
     expect(body.messages[1].content).toContain('synthetic');
     expect(JSON.parse(body.messages[1].content)).toEqual({ originalInput: { answer: 'synthetic' } });
     expect(new Headers(init?.headers).get('authorization')).toBe('Bearer secret');

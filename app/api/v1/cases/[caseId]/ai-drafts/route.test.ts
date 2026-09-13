@@ -8,10 +8,14 @@ vi.mock('../../../../../../server/db/repositories/cases', () => ({ getCaseForApp
 vi.mock('../../../../../../server/db/repositories/jobs', () => ({ getApplicantActiveAiDraftJob: () => routeMocks.mode === 'active' ? { id: 'active-job', state: 'leased', createdAt: '2026-08-30T00:00:00.000Z', completedAt: null } : null }));
 vi.mock('../../../../../../server/domain/ai-draft-service', () => {
   class MockAiDraftCommandError extends Error { constructor(readonly code: string) { super(code); } }
-  return { AiDraftCommandError: MockAiDraftCommandError, createAiDraftService: () => ({ enqueue: () => {
-    if (routeMocks.mode === 'rate') throw new MockAiDraftCommandError('RATE_LIMITED');
-    return { job: { id: 'opaque-job', state: 'queued' }, inputTokens: 1 };
-  } }) };
+  return {
+    AiDraftCommandError: MockAiDraftCommandError,
+    aiInputTokenBudget: () => 11_000,
+    createAiDraftService: () => ({ enqueue: () => {
+      if (routeMocks.mode === 'rate') throw new MockAiDraftCommandError('RATE_LIMITED');
+      return { job: { id: 'opaque-job', state: 'queued' }, inputTokens: 1 };
+    } }),
+  };
 });
 vi.mock('../../../../../../server/public/public-mutations', () => ({
   isValidMutationKey: () => true,
@@ -47,6 +51,21 @@ describe('AI draft route boundary', () => {
     const response = await POST(request(), { params: Promise.resolve({ caseId: 'case' }) });
     expect(response.status).toBe(202);
     expect(await response.json()).toMatchObject({ data: { jobId: 'active-job', state: 'leased' } });
+  });
+
+  it('lets applicants query an active AI draft job without creating a new one', async () => {
+    const { GET } = await import('./route');
+    configurePublicRuntime(runtime() as never);
+    routeMocks.mode = 'active';
+    const response = await GET(new Request('http://127.0.0.1:38100/api/v1/cases/case/ai-drafts', {
+      headers: { cookie: 'flowpass_session=s; flowpass_csrf=c', 'x-flowpass-csrf': 'c' },
+    }), { params: Promise.resolve({ caseId: 'case' }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { jobId: 'active-job', state: 'leased' } });
+    routeMocks.mode = 'success';
+    expect((await GET(new Request('http://127.0.0.1:38100/api/v1/cases/case/ai-drafts', {
+      headers: { cookie: 'flowpass_session=s; flowpass_csrf=c', 'x-flowpass-csrf': 'c' },
+    }), { params: Promise.resolve({ caseId: 'case' }) })).status).toBe(404);
   });
 
   it('rejects wrong origin, missing If-Match and admission rate limits before creating a job', async () => {

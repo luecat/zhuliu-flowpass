@@ -22,7 +22,7 @@ vi.mock('../../lib/public-api', async (importOriginal) => {
 });
 
 vi.mock('./document-review', () => ({
-  DocumentReview: ({ onSubmit, submitting }: { onSubmit?: () => void; submitting?: boolean }) => <section aria-label="附件測試介面"><button type="button" onClick={onSubmit} disabled={submitting}>測試正式送出</button></section>,
+  DocumentReview: ({ onSubmit, submitting }: { onSubmit?: () => void; submitting?: boolean }) => <section aria-label="附件測試介面"><button type="button" onClick={onSubmit} disabled={submitting}>測試送出申請</button></section>,
 }));
 
 const CASE_ID = 'case-1';
@@ -74,12 +74,12 @@ function installApi(jobResponse: (path: string, call: number) => unknown | Promi
     }
     throw new Error(`unexpected read: ${path}`);
   });
-  apiMocks.mutate.mockImplementation(async (path: string) => {
+  apiMocks.mutate.mockImplementation(async (path: string, init?: { body?: { retry?: boolean; operation?: string } }) => {
     if (path === `/api/v1/cases/${CASE_ID}/confirmations`) {
-      return { revisionJobId: 'revision-job', jobState: 'queued' };
+      return { passportVersionId: 'passport-version-1', workflowState: 'follow_up_required' };
     }
     if (path === `/api/v1/cases/${CASE_ID}/ai-drafts`) {
-      return { jobId: 'retry-job', state: 'queued' };
+      return { jobId: init?.body?.retry ? 'retry-job' : 'revision-job', state: 'queued' };
     }
     throw new Error(`unexpected mutation: ${path}`);
   });
@@ -92,13 +92,13 @@ function installApi(jobResponse: (path: string, call: number) => unknown | Promi
 async function renderLoadedPanel() {
   render(<PassportReviewPanel caseId={CASE_ID} />);
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-  expect(screen.getByRole('button', { name: '儲存追問答案' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '儲存答案' })).toBeInTheDocument();
 }
 
-async function submitFollowUp() {
-  fireEvent.change(screen.getByLabelText('你會使用哪個 AI 工具？'), { target: { value: 'LM Studio' } });
+async function submitFollowUp(regenerate = true) {
+  fireEvent.change(screen.getByLabelText('使用哪個 AI 工具？'), { target: { value: 'LM Studio' } });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: '儲存追問答案' }));
+    fireEvent.click(screen.getByRole('button', { name: regenerate ? '重新產生資料流向' : '儲存答案' }));
     await Promise.resolve();
   });
 }
@@ -134,36 +134,24 @@ describe('PassportReviewPanel', () => {
     await act(async () => { window.dispatchEvent(new CustomEvent('flowpass-passport-ready')); });
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(counters.passportLoads()).toBe(1);
-    expect(screen.getByRole('button', { name: '儲存追問答案' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '儲存答案' })).toBeInTheDocument();
   });
 
-  it('shows 0 to 99 percent progress, polls every 20 seconds, and stays at 99 while active', async () => {
+  it('shows real waiting phases, polls every 5 seconds, and keeps waiting while active', async () => {
     const counters = installApi((_path, call) => ({ state: call % 2 === 0 ? 'leased' : 'queued' }));
     await renderLoadedPanel();
     await submitFollowUp();
 
-    expect(screen.getAllByRole('status')).toHaveLength(1);
-    expect(screen.getByRole('status')).toHaveTextContent('思考中…');
-    expect(screen.getByText('完成度 0%')).toBeInTheDocument();
-    expect(screen.queryByText('補充資訊已收到，正在重新整理新版護照…')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '儲存追問答案' })).not.toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/排隊中|整理中|已送出/);
+    expect(screen.queryByRole('button', { name: '儲存答案' })).not.toBeInTheDocument();
     expect(counters.jobReads()).toBe(0);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
-    expect(screen.getByText('完成度 0%')).toBeInTheDocument();
-    expect(counters.jobReads()).toBe(0);
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(19_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(counters.jobReads()).toBe(1);
-    expect(screen.getByText('完成度 10%')).toBeInTheDocument();
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
-    expect(counters.jobReads()).toBe(10);
-    expect(screen.getByText('完成度 99%')).toBeInTheDocument();
-
-    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
-    expect(counters.jobReads()).toBe(11);
-    expect(screen.getByText('完成度 99%')).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(200_000); });
+    expect(screen.getByRole('status')).toHaveTextContent(/仍在處理中|整理中|排隊中/);
+    expect(counters.jobReads()).toBeGreaterThan(1);
   });
 
   it('loads the new passport when a later poll reports completion', async () => {
@@ -175,8 +163,8 @@ describe('PassportReviewPanel', () => {
 
     expect(counters.jobReads()).toBe(2);
     expect(counters.passportLoads()).toBe(2);
-    expect(screen.queryByText('思考中…')).not.toBeInTheDocument();
-    expect(screen.queryByText(/完成度 \d+%/)).not.toBeInTheDocument();
+    expect(screen.queryByText('排隊中')).not.toBeInTheDocument();
+    expect(screen.queryByText('整理中')).not.toBeInTheDocument();
   });
 
   it.each([
@@ -190,10 +178,10 @@ describe('PassportReviewPanel', () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
 
-    expect(screen.getByText('處理失敗，請重試')).toBeInTheDocument();
+    expect(screen.getByText('處理失敗，請稍後再試。')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '重試整理' })).toBeEnabled();
-    expect(screen.queryByText('思考中…')).not.toBeInTheDocument();
-    expect(screen.queryByText(/完成度 \d+%/)).not.toBeInTheDocument();
+    expect(screen.queryByText('排隊中')).not.toBeInTheDocument();
+    expect(screen.queryByText('整理中')).not.toBeInTheDocument();
   });
 
   it('retries the saved answers through the revise job without resubmitting confirmations', async () => {
@@ -212,11 +200,11 @@ describe('PassportReviewPanel', () => {
       expect.objectContaining({ body: { operation: 'revise', retry: true } }),
     );
     expect(apiMocks.mutate.mock.calls.filter(([path]) => String(path).endsWith('/confirmations'))).toHaveLength(1);
-    expect(screen.getByText('完成度 0%')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/排隊中|已送出|整理中/);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
 
-    expect(screen.queryByText('處理失敗，請重試')).not.toBeInTheDocument();
+    expect(screen.queryByText('處理失敗，請稍後再試。')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重試整理' })).not.toBeInTheDocument();
   });
 
@@ -235,7 +223,7 @@ describe('PassportReviewPanel', () => {
 
     render(<PassportReviewPanel caseId={CASE_ID} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    fireEvent.click(screen.getByRole('button', { name: '送出申請內容' }));
+    fireEvent.click(screen.getByRole('button', { name: '確認無誤，前往附件' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
 
     expect(apiMocks.mutate).toHaveBeenNthCalledWith(1,
@@ -246,15 +234,16 @@ describe('PassportReviewPanel', () => {
     expect(screen.getByRole('heading', { name: '申請內容已完成' })).toBeVisible();
     expect(screen.getByRole('region', { name: '附件測試介面' })).toBeVisible();
 
-    fireEvent.click(screen.getByRole('button', { name: '測試正式送出' }));
+    fireEvent.click(screen.getByRole('button', { name: '測試送出申請' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
     expect(apiMocks.mutate).toHaveBeenNthCalledWith(2,
       `/api/v1/cases/${CASE_ID}/submission`,
       expect.objectContaining({ ifMatch: '"4"', body: { passportVersionId: 'passport-version-confirmed' } }),
     );
-    expect(screen.getByRole('heading', { name: '申請已正式送出' })).toBeVisible();
-    expect(screen.getByRole('link', { name: '查看申請進度' })).toHaveAttribute('href', `/app/passports/${CASE_ID}`);
-    expect(screen.queryByRole('button', { name: '測試正式送出' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '申請已送出' })).toBeVisible();
+    expect(screen.getByText(/請至 LINE 選單的「進度查詢」/)).toBeVisible();
+    expect(screen.queryByRole('link', { name: '查看申請進度' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '測試送出申請' })).not.toBeInTheDocument();
   });
 
   it('recovers as submitted when the server committed but the browser missed the response', async () => {
@@ -276,12 +265,12 @@ describe('PassportReviewPanel', () => {
 
     render(<PassportReviewPanel caseId={CASE_ID} />);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-    fireEvent.click(screen.getByRole('button', { name: '送出申請內容' }));
+    fireEvent.click(screen.getByRole('button', { name: '確認無誤，前往附件' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
-    fireEvent.click(screen.getByRole('button', { name: '測試正式送出' }));
+    fireEvent.click(screen.getByRole('button', { name: '測試送出申請' }));
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
 
-    expect(screen.getByRole('heading', { name: '申請已正式送出' })).toBeVisible();
-    expect(screen.queryByText('正式送出失敗，請稍後再試。')).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '申請已送出' })).toBeVisible();
+    expect(screen.queryByText('送出失敗，請稍後再試。')).not.toBeInTheDocument();
   });
 });

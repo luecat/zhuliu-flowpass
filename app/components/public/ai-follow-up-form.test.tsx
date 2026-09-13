@@ -12,19 +12,19 @@ describe('AiFollowUpForm', () => {
     const onSubmit = vi.fn();
     render(<AiFollowUpForm questions={questions} onSubmit={onSubmit} />);
     expect(screen.getAllByTestId('ai-follow-up-card')).toHaveLength(2);
-    expect(screen.getByText(/確認資料會交給哪個服務處理。/)).toBeInTheDocument();
+    expect(screen.getByText(/確認資料處理的服務來源。/)).toBeInTheDocument();
     expect(screen.queryByText(/assistant|user|對話/i)).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText('你會使用哪個 AI 工具？'), { target: { value: '本地工具' } });
-    fireEvent.click(screen.getByRole('button', { name: '儲存追問答案' }));
+    fireEvent.change(screen.getByLabelText('使用哪個 AI 工具？'), { target: { value: '本地工具' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
     expect(onSubmit).toHaveBeenCalledWith([{ questionId: 'q-1', answer: '本地工具' }]);
   });
 
   it('requires required cards before submit', () => {
     const onSubmit = vi.fn();
     render(<AiFollowUpForm questions={questions} onSubmit={onSubmit} />);
-    fireEvent.click(screen.getByRole('button', { name: '儲存追問答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert')).toHaveTextContent('請完成所有必填追問。');
+    expect(screen.getByRole('alert')).toHaveTextContent('請完成所有必填問題。');
   });
 
   it('uses natural applicant copy when model text exposes internal fields', () => {
@@ -37,16 +37,57 @@ describe('AiFollowUpForm', () => {
     }]} onSubmit={onSubmit} />);
 
     expect(document.body.textContent).not.toMatch(/personal_or_sensitive_data|audience|public/i);
-    expect(screen.getByRole('heading', { name: '資料中有沒有人臉、姓名或其他個資？' })).toBeVisible();
-    expect(screen.getByText(/確認是否需要遮蔽資料或先取得同意。/)).toBeVisible();
+    expect(screen.getByRole('heading', { name: '資料可能包含哪些敏感內容？' })).toBeVisible();
+    expect(screen.getByText(/系統需依此評估風險/)).toBeVisible();
   });
 
   it('renders typed controls and encodes multi-choice answers', () => {
     const onSubmit = vi.fn();
     render(<AiFollowUpForm questions={[{ ...questions[0], answerSchema: { type: 'multi_choice', choices: ['A', 'B'] } }]} onSubmit={onSubmit} />);
     fireEvent.click(screen.getByLabelText('A'));
-    fireEvent.click(screen.getByRole('button', { name: '儲存追問答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
     expect(onSubmit).toHaveBeenCalledWith([{ questionId: 'q-1', answer: '["A"]' }]);
+  });
+
+  it('does not auto-regenerate after answering; regenerate requires an explicit CTA', () => {
+    vi.useFakeTimers();
+    const onSubmit = vi.fn();
+    const onRegenerate = vi.fn();
+    render(<AiFollowUpForm
+      questions={[
+        { ...questions[0], answerSchema: { type: 'single_choice', choices: ['ChatGPT', 'Claude'] } },
+        { ...questions[1], required: true, answerSchema: { type: 'multi_choice', choices: ['完全沒有', '不確定'] } },
+      ]}
+      onSubmit={onSubmit}
+      onRegenerate={onRegenerate}
+    />);
+
+    const toolInput = screen.getByRole('combobox', { name: '使用哪個 AI 工具？' });
+    fireEvent.focus(toolInput);
+    fireEvent.change(toolInput, { target: { value: 'ChatGPT' } });
+    const chatgptOption = screen.getAllByRole('button').find((node) => (node.textContent ?? '').includes('ChatGPT') && (node.textContent ?? '').includes('OpenAI'));
+    expect(chatgptOption).toBeTruthy();
+    fireEvent.click(chatgptOption!);
+    fireEvent.click(screen.getByLabelText('完全沒有'));
+    vi.advanceTimersByTime(1_000);
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(onRegenerate).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: '重新產生資料流向' }));
+    expect(onRegenerate).toHaveBeenCalledWith([
+      { questionId: 'q-1', answer: 'ChatGPT' },
+      { questionId: 'q-2', answer: '["完全沒有"]' },
+    ]);
+    vi.useRealTimers();
+  });
+
+  it('shows an immediate security tip when a cloud choice is selected', () => {
+    render(<AiFollowUpForm questions={[{
+      ...questions[0],
+      answerSchema: { type: 'multi_choice', choices: ['Google Drive / Dropbox 等雲端', '只留在手機或電腦'] },
+    }]} onSubmit={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText('Google Drive / Dropbox 等雲端'));
+    expect(screen.getByText(/雲端硬碟的預設連結可能具有公開風險/)).toBeVisible();
   });
 
   it('turns abstract storage and retention questions into concrete everyday wording', () => {
@@ -56,7 +97,19 @@ describe('AiFollowUpForm', () => {
       prompt: '請說明修圖結果的儲存位置與保留期間。',
       reason: '確認資料留存風險。',
     }]} onSubmit={vi.fn()} />);
-    expect(screen.getByRole('heading', { name: '處理完成後，檔案會放在哪裡、保留多久？' })).toBeVisible();
-    expect(screen.getByPlaceholderText(/Google Drive 保留 30 天/)).toBeVisible();
+    expect(screen.getByRole('heading', { name: '處理完成後，檔案存放在哪裡、保留多久？' })).toBeVisible();
+    expect(screen.getByPlaceholderText(/存於手機且上傳後刪除/)).toBeVisible();
+  });
+
+  it('allows answering optional cards and includes them in the payload', () => {
+    const onSubmit = vi.fn();
+    render(<AiFollowUpForm questions={questions} onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText('使用哪個 AI 工具？'), { target: { value: '本地工具' } });
+    fireEvent.change(screen.getByLabelText('完成後檔案存放在哪裡、分享給誰？'), { target: { value: '社團成員' } });
+    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
+    expect(onSubmit).toHaveBeenCalledWith([
+      { questionId: 'q-1', answer: '本地工具' },
+      { questionId: 'q-2', answer: '社團成員' },
+    ]);
   });
 });

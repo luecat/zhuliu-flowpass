@@ -11,6 +11,20 @@ const BodySchema = z.object({ operation: z.enum(['draft', 'revise']).optional(),
 function cookie(request: Request, name: string): string | null { for (const part of (request.headers.get('cookie') ?? '').split(';')) { const [key, ...value] = part.trim().split('='); if (key === name) return value.join('=') || null; } return null; }
 function errorResponse(code: ApiErrorCode, id: string, retryAfter?: number): Response { return toJsonResponse(apiFailure(code, id, retryAfter === undefined ? {} : { retryAfter })); }
 
+export async function GET(request: Request, context: { params: Promise<{ caseId: string }> }): Promise<Response> {
+  const runtime = getPublicRuntime(); const requestId = runtime?.requestIdGenerator?.() ?? crypto.randomUUID();
+  if (!runtime) return errorResponse(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId);
+  const sessionToken = cookie(request, 'flowpass_session');
+  const csrf = runtime.lineSessions.verifyApplicantCsrf({ sessionToken, csrfCookie: cookie(request, 'flowpass_csrf'), csrfHeader: request.headers.get('x-flowpass-csrf') });
+  if (!csrf) return errorResponse(ApiErrorCode.CSRF_FAILED, requestId);
+  const { caseId } = await context.params;
+  const current = getCaseForApplicant(runtime.database, { applicantId: csrf.applicantId }, caseId);
+  if (!current) return errorResponse(ApiErrorCode.NOT_FOUND, requestId);
+  const active = getApplicantActiveAiDraftJob(runtime.database, { applicantId: csrf.applicantId }, caseId);
+  if (!active) return errorResponse(ApiErrorCode.NOT_FOUND, requestId);
+  return toJsonResponse(apiSuccess({ jobId: active.id, state: active.state }, requestId), { status: 200, headers: { 'Cache-Control': 'no-store' } });
+}
+
 export async function POST(request: Request, context: { params: Promise<{ caseId: string }> }): Promise<Response> {
   const runtime = getPublicRuntime(); const requestId = runtime?.requestIdGenerator?.() ?? crypto.randomUUID();
   if (!runtime) return errorResponse(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId);

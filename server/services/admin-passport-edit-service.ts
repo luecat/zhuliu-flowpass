@@ -4,7 +4,9 @@ import type { FieldCrypto } from '../crypto/field-crypto';
 import type { FlowPassDatabase } from '../db/connection';
 import { decryptDatabaseText, encryptDatabaseText } from '../db/repositories/encrypted-fields';
 import { calculateSubsidy } from '../domain/subsidy-calculator';
+import { subsidyDerivationSteps } from '../domain/submission-checks';
 import { inspectPassportDocument } from '../domain/passport-validation';
+import { rebuildPassportIndexes } from '../domain/passport-indexes';
 import { persistRuleEvaluation, persistSubsidyCalculation } from './rule-evaluation-service';
 import { PurchaseDetailsSchema, type PurchaseDetails } from '../../shared/purchase-details-contract';
 import { validateCoreAnswers, type CoreAnswers } from '../../shared/case-contract';
@@ -31,7 +33,7 @@ export interface AdminPassportEditInput extends AdminFieldPatch {
 
 const CASE_STATES = new Set(['draft', 'submitted', 'under_review', 'awaiting_documents', 'returned_for_correction', 'resubmitted', 'approved', 'rejected', 'awaiting_disbursement', 'disbursed', 'closed']);
 const ANSWER_FIELDS = new Set<keyof CoreAnswers>(['material', 'aiPurpose', 'sensitiveData', 'destinationAndAudience']);
-const PURCHASE_FIELDS = new Set<keyof PurchaseDetails>(['billingCycle', 'billingPeriods', 'softwareFunction', 'otherFunction', 'softwareName', 'companyName', 'purchaseDate', 'payerType', 'originalCurrency', 'otherCurrency', 'originalExpense', 'convertedTwd', 'specialStatus']);
+const PURCHASE_FIELDS = new Set<keyof PurchaseDetails>(['billingCycle', 'billingPeriods', 'softwareFunction', 'otherFunction', 'softwareName', 'companyName', 'purchaseDate', 'payerType', 'originalCurrency', 'otherCurrency', 'originalExpense', 'convertedTwd', 'specialStatus', 'invoiceNumber', 'paymentSourceFingerprint']);
 const TASK_STATUSES = new Set(['open', 'opened', 'completed', 'cancelled', 'expired']);
 const ALERT_STATUSES = new Set(['open', 'acknowledged', 'resolved', 'dismissed']);
 
@@ -169,31 +171,6 @@ function setPath(root: unknown, path: string, value: unknown): void {
   (current as Record<string | number, unknown>)[last] = value;
 }
 
-function rebuildPassportIndexes(database: FlowPassDatabase, passportVersionId: string, passport: NonNullable<ReturnType<typeof inspectPassportDocument>['canonical']>, idGenerator: () => string): void {
-  database.prepare('DELETE FROM passport_edge_index WHERE passport_version_id = ?').run(passportVersionId);
-  database.prepare('DELETE FROM passport_node_index WHERE passport_version_id = ?').run(passportVersionId);
-  database.prepare('DELETE FROM passport_tool_index WHERE passport_version_id = ?').run(passportVersionId);
-  for (const node of passport.nodes) {
-    database.prepare(`INSERT INTO passport_node_index (id, passport_version_id, node_key, kind, data_category, sensitivity, needs_confirmation) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), passportVersionId, node.id, node.kind, node.data_category, node.sensitivity, node.needs_confirmation ? 1 : 0);
-  }
-  for (const edge of passport.edges) {
-    database.prepare(`INSERT INTO passport_edge_index (id, passport_version_id, edge_key, from_node_key, to_node_key, purpose_code, needs_confirmation) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), passportVersionId, edge.id, edge.from_node_id, edge.to_node_id, edge.purpose, edge.needs_confirmation ? 1 : 0);
-  }
-  const requestedTool = passport.administrative_hints.requested_tool.trim();
-  const toolNode = passport.nodes.find((node) => node.kind === 'ai_tool');
-  if (requestedTool && requestedTool !== 'unknown' && toolNode) {
-    const tool = database.prepare(`
-      SELECT tool_products.id
-      FROM tool_products
-      LEFT JOIN json_each(tool_products.aliases_json) AS alias
-      WHERE tool_products.status = 'active'
-        AND (lower(tool_products.canonical_name) = lower(?) OR lower(CAST(alias.value AS TEXT)) = lower(?))
-      ORDER BY tool_products.id LIMIT 1
-    `).get(requestedTool, requestedTool) as { id: string } | undefined;
-    if (tool) database.prepare(`INSERT INTO passport_tool_index (id, passport_version_id, node_key, tool_product_id, tool_version_id, user_visible_label_enc, usage_start_at, usage_end_at, needs_confirmation) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?)`).run(idGenerator(), passportVersionId, toolNode.id, tool.id, toolNode.needs_confirmation ? 1 : 0);
-  }
-}
-
 function updatePassport(database: FlowPassDatabase, crypto: FieldCrypto, caseId: string, recordId: string, field: string, value: unknown, idGenerator: () => string, operationId: string): void {
   if (!editablePassportPath(field)) throw new AdminPassportEditError('LOCKED_FIELD');
   const row = database.prepare(`
@@ -256,7 +233,16 @@ function recalculateSubsidy(database: FlowPassDatabase, crypto: FieldCrypto, cas
   const inputSnapshotHash = createHash('sha256').update(JSON.stringify({ caseId, details, ruleVersionId: source.program_rule_version_id })).digest('hex');
   const evaluation = persistRuleEvaluation(database, {
     caseId, passportVersionId: source.current_passport_version_id, ruleVersionId: source.program_rule_version_id, evaluationKind: 'subsidy',
-    evaluation: { ruleCode: 'admin_data_recalculation', outcome: 'pass', reasonCode: calculation.reasonCode, explanation: '依校正後資料重新試算。', ruleVersionId: source.program_rule_version_id, inputSnapshotHash, evaluatedAt: now, steps: [{ label: '重新試算', value: `NT$${calculation.calculatedAmountTwd}` }] },
+    evaluation: {
+      ruleCode: 'admin_data_recalculation',
+      outcome: 'pass',
+      reasonCode: calculation.reasonCode,
+      explanation: '依校正後資料重新試算。',
+      ruleVersionId: source.program_rule_version_id,
+      inputSnapshotHash,
+      evaluatedAt: now,
+      steps: subsidyDerivationSteps(calculation),
+    },
     actorType: 'admin', actorId: 'admin-data-management', createdAt: now, idGenerator,
   });
   persistSubsidyCalculation(database, { caseId, ruleEvaluationId: evaluation.id, calculation, createdAt: now, idGenerator });

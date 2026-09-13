@@ -6,15 +6,30 @@ import { FieldCrypto, type Keyring } from '../crypto/field-crypto';
 import { openDatabase } from '../db/connection';
 import { migrateDatabase } from '../db/migrate';
 import { createCaseService, CaseCommandError } from './case-service';
+import { createPassportLifecycle } from './passport-lifecycle';
 import { reserveApplicantMutation } from '../public/public-mutations';
+import { FLOWPASS_SAMPLE } from '../../app/passport-sample';
+import { inspectPassportDocument } from './passport-validation';
+import type { FlowPassPassport } from '../../shared/passport-contract';
 
 const IDS = { applicant: '0198f050-0000-7000-8000-000000000001', cycle: '0198f050-0000-7000-8000-000000000002', rule: '0198f050-0000-7000-8000-000000000003' };
 const NOW = '2026-08-30T00:00:00.000Z';
-const answers = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊' };
+const answers = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', applicantName: '測試申請人' };
 
 function cryptoForTests(): FieldCrypto {
   const keyring: Keyring = { activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x44) : undefined };
   return new FieldCrypto(keyring);
+}
+
+function passport(): FlowPassPassport {
+  const value = structuredClone(FLOWPASS_SAMPLE) as Record<string, unknown>;
+  const draft = value.passport_draft as Record<string, unknown>;
+  draft.retention = { storage_location: 'node_storage_01', duration: '30 days', deletion_plan: '刪除原始素材', needs_confirmation: false };
+  draft.administrative_hints = { ...(draft.administrative_hints as Record<string, unknown>), requested_tool: '示範工具' };
+  draft.confirmation_questions = [];
+  const result = inspectPassportDocument(value);
+  if (!result.canonical) throw new Error('sample passport must be canonical');
+  return result.canonical;
 }
 
 describe('case service', () => {
@@ -60,5 +75,28 @@ describe('case service', () => {
     const crypto = cryptoForTests();
     reserveApplicantMutation({ database: db, crypto, applicantId: IDS.applicant, method: 'POST', normalizedRoute: '/api/v1/cases', idempotencyKey: 'provisional', requestProjection: { programCycleId: IDS.cycle }, now: new Date(NOW) });
     expect(() => service().create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'provisional' })).toThrow('Idempotency replay is unavailable');
+  });
+
+  it('reuses a confirmed passport into a new draft case', () => {
+    const crypto = cryptoForTests();
+    const s = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
+    const created = s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'source-case' });
+    const answer = s.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers, ifMatch: '"1"', idempotencyKey: 'source-answers' });
+    const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}` });
+    const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
+    lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
+    db.prepare("UPDATE cases SET state='submitted' WHERE id=?").run(created.case.id);
+
+    const reused = s.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'reuse-case', reuseFromCaseId: created.case.id });
+    expect(reused.reused).toBe(true);
+    expect(reused.case.id).not.toBe(created.case.id);
+    expect(reused.case.state).toBe('draft');
+    const row = db.prepare('SELECT current_answer_version_id, current_passport_version_id FROM cases WHERE id=?').get(reused.case.id) as {
+      current_answer_version_id: string | null;
+      current_passport_version_id: string | null;
+    };
+    expect(row.current_answer_version_id).toBeTruthy();
+    expect(row.current_passport_version_id).toBeTruthy();
+    expect((db.prepare('SELECT workflow_state FROM passport_versions WHERE id=?').get(row.current_passport_version_id) as { workflow_state: string }).workflow_state).toBe('needs_applicant_confirmation');
   });
 });

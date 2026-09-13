@@ -10,10 +10,19 @@ import { decryptDatabaseText } from '../db/repositories/encrypted-fields';
 import { parseQuotedEtag } from '../../shared/api-contract';
 import { evaluateEligibility } from './eligibility-rules';
 import { calculateSubsidy } from './subsidy-calculator';
+import {
+  evaluateToolConsistency,
+  evaluateTransactionFingerprint,
+  evaluatePaymentSourceFingerprint,
+  evaluateInvoiceFingerprint,
+  subsidyDerivationSteps,
+} from './submission-checks';
+import { evaluateExchangeRateReasonableness } from './exchange-rate-rules';
 import { persistRuleEvaluation, persistSubsidyCalculation } from '../services/rule-evaluation-service';
 import { createHash } from 'node:crypto';
 import type { RuleEvaluation } from '../../shared/rule-contract';
 import type { DocumentRequirementKey, PurchaseDetails } from '../../shared/purchase-details-contract';
+import type { FlowPassPassport } from '../../shared/passport-contract';
 
 export class SubmissionCommandError extends Error {
   constructor(readonly code: 'NOT_FOUND' | 'ETAG_MISMATCH' | 'INVALID_STATE' | 'PASSPORT_NOT_READY' | 'DOCUMENT_NOT_READY' | 'INVALID_REQUEST', message = code) {
@@ -91,6 +100,7 @@ function requiredDocumentKeys(details: PurchaseDetails): DocumentRequirementKey[
     ...(details.specialStatus ? ['special_status_proof' as const] : []),
     'purchase_proof',
     'passbook_cover',
+    'affidavit',
     ...(details.payerType === 'representative' ? ['representative_affidavit' as const] : []),
   ];
 }
@@ -116,7 +126,7 @@ function assertDocumentsReady(
   return purchaseProofDocumentId;
 }
 
-function assertPassportReady(database: FlowPassDatabase, crypto: FieldCrypto, row: PassportVersionRow): void {
+function assertPassportReady(database: FlowPassDatabase, crypto: FieldCrypto, row: PassportVersionRow): FlowPassPassport {
   if (row.workflow_state !== 'confirmed') throw new SubmissionCommandError('PASSPORT_NOT_READY');
   let payload: unknown;
   try {
@@ -126,15 +136,13 @@ function assertPassportReady(database: FlowPassDatabase, crypto: FieldCrypto, ro
   }
   const inspection = inspectPassportDocument({ passport_draft: payload });
   if (!inspection.canonical || inspection.diagnostics.some((issue) => issue.severity === 'error')) throw new SubmissionCommandError('PASSPORT_NOT_READY');
+  return inspection.canonical;
 }
 
 function readInvoiceEvidence(documentId: string, details: PurchaseDetails): InvoiceEvidence {
-  // OCR field extraction has been removed; purchase date and converted amount
-  // come from the applicant-entered purchase details. The invoice number is
-  // not machine-confirmed yet, so duplicate matching stays a manual review.
   return {
     documentId,
-    invoiceNumber: null,
+    invoiceNumber: details.invoiceNumber,
     invoiceAt: `${details.purchaseDate}T00:00:00.000Z`,
     purchaseAt: `${details.purchaseDate}T00:00:00.000Z`,
     amountMinor: String(details.convertedTwd * 100),
@@ -146,24 +154,106 @@ function ruleEvaluation(input: { ruleCode: string; outcome: RuleEvaluation['outc
   return { ruleCode: input.ruleCode, outcome: input.outcome, reasonCode: input.reasonCode, explanation: input.explanation, ruleVersionId: input.ruleVersionId, inputSnapshotHash: input.inputSnapshotHash, evaluatedAt: input.evaluatedAt, steps: input.steps ?? [] };
 }
 
-function persistSubmissionRules(input: { database: FlowPassDatabase; crypto: FieldCrypto; caseId: string; passportVersionId: string; applicantId: string; ruleVersionId: string; rule: ProgramRuleRow; submittedAt: string; invoice: InvoiceEvidence | null; idGenerator: () => string }): { calculatedAmountTwd: number | null } {
-  const snapshot = createHash('sha256').update(JSON.stringify({ caseId: input.caseId, passportVersionId: input.passportVersionId, submissionAt: input.submittedAt, applicationStartAt: input.rule.application_start_at, applicationEndAt: input.rule.application_end_at, purchaseStartAt: input.rule.purchase_start_at, purchaseEndAt: input.rule.purchase_end_at, invoice: input.invoice ? { documentId: input.invoice.documentId, invoiceNumber: input.invoice.invoiceNumber, invoiceAt: input.invoice.invoiceAt, purchaseAt: input.invoice.purchaseAt, amountMinor: input.invoice.amountMinor, currency: input.invoice.currency } : null })).digest('hex');
+function persistSubmissionRules(input: {
+  database: FlowPassDatabase;
+  crypto: FieldCrypto;
+  caseId: string;
+  passportVersionId: string;
+  passport: FlowPassPassport;
+  purchase: PurchaseDetails;
+  ruleVersionId: string;
+  rule: ProgramRuleRow;
+  submittedAt: string;
+  invoice: InvoiceEvidence | null;
+  idGenerator: () => string;
+}): { calculatedAmountTwd: number | null } {
+  const snapshot = createHash('sha256').update(JSON.stringify({
+    caseId: input.caseId,
+    passportVersionId: input.passportVersionId,
+    submissionAt: input.submittedAt,
+    applicationStartAt: input.rule.application_start_at,
+    applicationEndAt: input.rule.application_end_at,
+    purchaseStartAt: input.rule.purchase_start_at,
+    purchaseEndAt: input.rule.purchase_end_at,
+    purchase: {
+      softwareName: input.purchase.softwareName,
+      companyName: input.purchase.companyName,
+      originalCurrency: input.purchase.originalCurrency,
+      otherCurrency: input.purchase.otherCurrency,
+      originalExpense: input.purchase.originalExpense,
+      purchaseDate: input.purchase.purchaseDate,
+      convertedTwd: input.purchase.convertedTwd,
+    },
+    invoice: input.invoice ? { documentId: input.invoice.documentId, invoiceNumber: input.invoice.invoiceNumber, invoiceAt: input.invoice.invoiceAt, purchaseAt: input.invoice.purchaseAt, amountMinor: input.invoice.amountMinor, currency: input.invoice.currency } : null,
+  })).digest('hex');
   const eligibility = evaluateEligibility({ submissionAt: input.submittedAt, applicationStartAt: input.rule.application_start_at, applicationEndAt: input.rule.application_end_at, purchaseAt: input.invoice?.purchaseAt ?? null, purchaseStartAt: input.rule.purchase_start_at, purchaseEndAt: input.rule.purchase_end_at, ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'submission', evaluation: eligibility.submission, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: eligibility.purchase, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
 
-  // Without OCR, the invoice number is not machine-confirmed at submission.
-  // The evaluation stays a durable trace so a human reviewer can still match
-  // duplicates from the attachment during review.
-  const duplicateEvaluation = ruleEvaluation({ ruleCode: 'invoice_duplicate', outcome: 'missing', reasonCode: 'invoice_number_missing', explanation: '發票號碼尚未確認，待人工覆核。', ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt, steps: [{ label: '重複候選', value: '待人工確認' }] });
-  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: duplicateEvaluation, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+  // Without OCR, invoice authenticity stays a human decision. Invoice numbers
+  // collected from the applicant still feed a deterministic fingerprint check.
+  const invoiceFingerprint = evaluateInvoiceFingerprint({
+    database: input.database,
+    caseId: input.caseId,
+    purchase: input.purchase,
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+  });
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: invoiceFingerprint, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+
+  const transactionFingerprint = evaluateTransactionFingerprint({
+    database: input.database,
+    caseId: input.caseId,
+    purchase: input.purchase,
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+  });
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: transactionFingerprint, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+
+  const paymentSourceFingerprint = evaluatePaymentSourceFingerprint({
+    database: input.database,
+    caseId: input.caseId,
+    purchase: input.purchase,
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+  });
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: paymentSourceFingerprint, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+
+  const exchangeRate = evaluateExchangeRateReasonableness({
+    purchase: input.purchase,
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+  });
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: exchangeRate, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+
+  const toolConsistency = evaluateToolConsistency({
+    purchase: input.purchase,
+    passport: input.passport,
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+  });
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'contextual_alert', evaluation: toolConsistency, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
 
   let calculation: ReturnType<typeof calculateSubsidy> | null = null;
   if (input.invoice?.currency === 'TWD' && input.invoice.amountMinor && /^\d+$/.test(input.invoice.amountMinor)) {
     const amountTwd = BigInt(input.invoice.amountMinor) / BigInt(100);
     if (amountTwd <= BigInt(Number.MAX_SAFE_INTEGER)) calculation = calculateSubsidy({ eligiblePurchaseTwd: Number(amountTwd), rateBps: input.rule.subsidy_rate_bps, capTwd: input.rule.per_case_cap_twd, roundingMode: input.rule.rounding_mode });
   }
-  const subsidyEvaluation = ruleEvaluation({ ruleCode: 'subsidy_estimate', outcome: calculation ? 'pass' : 'missing', reasonCode: calculation ? calculation.reasonCode : 'amount_or_currency_missing', explanation: calculation ? '依目前公開規則試算，最終以人工審核為準。' : '金額或幣別尚未確認。', ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt, steps: [{ label: '預估補助', value: calculation ? `NT$${calculation.calculatedAmountTwd}` : '待確認' }] });
+  const subsidyEvaluation = ruleEvaluation({
+    ruleCode: 'subsidy_estimate',
+    outcome: calculation ? 'pass' : 'missing',
+    reasonCode: calculation ? calculation.reasonCode : 'amount_or_currency_missing',
+    explanation: calculation ? '依目前公開規則試算，最終以人工審核為準。' : '金額或幣別尚未確認。',
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+    steps: calculation ? subsidyDerivationSteps(calculation) : [{ label: '預估補助', value: '待確認' }],
+  });
   const subsidyEvaluationRow = persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'subsidy', evaluation: subsidyEvaluation, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
   if (calculation) persistSubsidyCalculation(input.database, { caseId: input.caseId, ruleEvaluationId: subsidyEvaluationRow.id, calculation, createdAt: input.submittedAt, idGenerator: input.idGenerator });
   return { calculatedAmountTwd: calculation?.calculatedAmountTwd ?? null };
@@ -188,7 +278,7 @@ export function createSubmissionService(options: SubmissionServiceOptions): Subm
         if (!row.current_passport_version_id || row.current_passport_version_id !== input.passportVersionId || !row.current_answer_version_id) throw new SubmissionCommandError('PASSPORT_NOT_READY');
         const passport = options.database.prepare(`SELECT * FROM passport_versions WHERE id = ? AND answer_version_id = ? AND program_rule_version_id = ?`).get(input.passportVersionId, row.current_answer_version_id, row.program_rule_version_id) as PassportVersionRow | undefined;
         if (!passport) throw new SubmissionCommandError('PASSPORT_NOT_READY');
-        assertPassportReady(options.database, options.crypto, passport);
+        const confirmedPassport = assertPassportReady(options.database, options.crypto, passport);
         let purchaseDetails;
         try {
           purchaseDetails = getPurchaseDetailsForSystem(
@@ -206,7 +296,19 @@ export function createSubmissionService(options: SubmissionServiceOptions): Subm
         if (!rule) throw new SubmissionCommandError('INVALID_STATE');
         let invoice: InvoiceEvidence;
         try { invoice = readInvoiceEvidence(purchaseProofDocumentId, purchaseDetails.details); } catch { throw new SubmissionCommandError('DOCUMENT_NOT_READY'); }
-        const rules = persistSubmissionRules({ database: options.database, crypto: options.crypto, caseId: input.caseId, passportVersionId: input.passportVersionId, applicantId: input.applicantId, ruleVersionId: row.program_rule_version_id, rule, submittedAt, invoice, idGenerator });
+        const rules = persistSubmissionRules({
+          database: options.database,
+          crypto: options.crypto,
+          caseId: input.caseId,
+          passportVersionId: input.passportVersionId,
+          passport: confirmedPassport,
+          purchase: purchaseDetails.details,
+          ruleVersionId: row.program_rule_version_id,
+          rule,
+          submittedAt,
+          invoice,
+          idGenerator,
+        });
 
         const transitionSequence = ((options.database.prepare('SELECT COALESCE(MAX(sequence_no), 0) AS max FROM case_state_transitions WHERE case_id = ?').get(input.caseId) as { max: number }).max) + 1;
         options.database.prepare(`INSERT INTO case_state_transitions (id, case_id, sequence_no, from_state, to_state, reason_code, reason_enc, actor_type, actor_id, created_at) VALUES (?, ?, ?, ?, ?, ?, NULL, 'applicant', ?, ?)`).run(idGenerator(), input.caseId, transitionSequence, 'draft', 'submitted', 'submitted', input.applicantId, submittedAt);

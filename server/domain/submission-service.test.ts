@@ -18,7 +18,26 @@ const IDS = { applicant: '0198f050-0000-7000-8000-000000000001', cycle: '0198f05
 const NOW = '2026-08-30T00:00:00.000Z';
 
 function cryptoForTests(): FieldCrypto { const keyring: Keyring = { activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x44) : undefined }; return new FieldCrypto(keyring); }
-const PURCHASE_DETAILS: PurchaseDetails = { billingCycle: 'annual', billingPeriods: null, softwareFunction: 'imaging', otherFunction: null, softwareName: '影像工具', companyName: 'Example Inc.', purchaseDate: '2026-08-30', payerType: 'self_card', originalCurrency: 'TWD', otherCurrency: null, originalExpense: '1000', convertedTwd: 1000, specialStatus: false };
+const PURCHASE_DETAILS: PurchaseDetails = {
+  billingCycle: 'annual',
+  billingPeriods: null,
+  softwareFunction: 'imaging',
+  otherFunction: null,
+  softwareName: '影像工具',
+  companyName: 'Example Inc.',
+  purchaseDate: '2026-08-30',
+  payerType: 'self_card',
+  originalCurrency: 'TWD',
+  otherCurrency: null,
+  originalExpense: '1000',
+  convertedTwd: 1000,
+  specialStatus: false,
+  invoiceNumber: null,
+  paymentSourceFingerprint: null,
+  subscriptionStartDate: '2026-08-01',
+  subscriptionEndDate: '2027-07-31',
+  applicantName: '測試申請人',
+};
 
 function savePurchaseDetails(db: ReturnType<typeof openDatabase>, crypto: FieldCrypto, caseId: string, details: PurchaseDetails = PURCHASE_DETAILS): void {
   upsertPurchaseDetailsForApplicant(db, { applicantId: IDS.applicant }, crypto, { caseId, details, now: NOW });
@@ -55,7 +74,7 @@ describe('submission service', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    const answer = cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    const answer = cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}` });
     const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
     lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
@@ -76,8 +95,21 @@ describe('submission service', () => {
     expect(result.submittedAt).toBe('2026-08-30T01:02:03.000Z');
     expect((db.prepare('SELECT COUNT(*) AS count FROM case_state_transitions WHERE case_id=? AND to_state=\'submitted\'').get(created.case.id) as { count: number }).count).toBe(1);
     expect((db.prepare('SELECT COUNT(*) AS count FROM notification_jobs WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(1);
-    expect((db.prepare('SELECT COUNT(*) AS count FROM rule_evaluations WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(4);
-    expect((db.prepare('SELECT outcome FROM rule_evaluations WHERE case_id=? AND evaluation_kind=\'invoice\' ORDER BY created_at DESC, id DESC LIMIT 1').get(created.case.id) as { outcome: string }).outcome).toBe('missing');
+    expect((db.prepare('SELECT COUNT(*) AS count FROM rule_evaluations WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(8);
+    expect((db.prepare('SELECT outcome FROM rule_evaluations WHERE case_id=? AND evaluation_kind=\'invoice\' ORDER BY created_at DESC, id DESC LIMIT 1').get(created.case.id) as { outcome: string }).outcome).toBe('pass');
+    const subsidy = db.prepare(`SELECT result_json FROM rule_evaluations WHERE case_id=? AND evaluation_kind='subsidy' ORDER BY created_at DESC, id DESC LIMIT 1`).get(created.case.id) as { result_json: string };
+    expect(JSON.parse(subsidy.result_json).steps.map((step: { label: string }) => step.label)).toEqual([
+      '合格購買金額',
+      '補助比例',
+      '比例計算',
+      '補助上限',
+      '核定金額',
+    ]);
+    const toolRule = db.prepare(`SELECT outcome, result_json FROM rule_evaluations WHERE case_id=? AND json_extract(result_json, '$.ruleCode')='tool_consistency'`).get(created.case.id) as { outcome: string; result_json: string };
+    expect(toolRule.outcome).toBe('needs_review');
+    expect(JSON.parse(toolRule.result_json).reasonCode).toBe('tool_mismatch');
+    const fingerprint = db.prepare(`SELECT outcome FROM rule_evaluations WHERE case_id=? AND json_extract(result_json, '$.ruleCode')='transaction_fingerprint'`).get(created.case.id) as { outcome: string };
+    expect(fingerprint.outcome).toBe('pass');
     expect((db.prepare('SELECT calculated_amount_twd FROM subsidy_calculations WHERE case_id=?').get(created.case.id) as { calculated_amount_twd: number }).calculated_amount_twd).toBe(500);
     expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: confirmed.version.id, ifMatch: '"4"' })).toThrowError(SubmissionCommandError);
   });
@@ -86,7 +118,7 @@ describe('submission service', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    const answer = cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    const answer = cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}` });
     const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
     const service = createSubmissionService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'submit-request' });
@@ -98,7 +130,7 @@ describe('submission service', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.docsCycle, idempotencyKey: 'case' });
-    const answer = cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    const answer = cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}` });
     const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
     const confirmed = lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });

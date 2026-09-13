@@ -188,9 +188,11 @@ function transactionally<T>(database: FlowPassDatabase, callback: () => T): T {
   }
 }
 
-export function retryDelayMilliseconds(attempts: number): number {
+export function retryDelayMilliseconds(attempts: number, jobType?: string): number {
   const exponent = Math.max(0, attempts - 1);
-  return Math.min(RETRY_BASE_MILLISECONDS * 2 ** exponent, RETRY_MAX_MILLISECONDS);
+  const base = jobType === 'ai_draft' ? 2_000 : RETRY_BASE_MILLISECONDS;
+  const max = jobType === 'ai_draft' ? 15_000 : RETRY_MAX_MILLISECONDS;
+  return Math.min(base * 2 ** exponent, max);
 }
 
 export class JobRepository {
@@ -352,7 +354,7 @@ export class JobRepository {
       }
     } else {
       const availableAt = new Date(
-        Date.parse(now) + retryDelayMilliseconds(leased.attempts),
+        Date.parse(now) + retryDelayMilliseconds(leased.attempts, leased.job_type),
       ).toISOString();
       const result = this.database
         .prepare(

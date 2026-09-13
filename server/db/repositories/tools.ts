@@ -1,3 +1,5 @@
+import { v7 as uuidv7 } from 'uuid';
+import { APPROVED_AI_TOOLS } from '../../../shared/approved-ai-tools';
 import type { FlowPassDatabase } from '../connection';
 import {
   requireAdminScope,
@@ -76,11 +78,61 @@ function mapToolVersion(row: ToolVersionRow): ToolVersionRecord {
   };
 }
 
+/** Idempotently sync the curated subsidy AI-tool list into tool_products. */
+export function ensureApprovedToolProducts(
+  database: FlowPassDatabase,
+  options: { idGenerator?: () => string; now?: () => string } = {},
+): number {
+  const idGenerator = options.idGenerator ?? uuidv7;
+  const now = options.now?.() ?? new Date().toISOString();
+  const findByVendorName = database.prepare(
+    `SELECT id, aliases_json, status FROM tool_products WHERE lower(vendor) = lower(?) AND lower(canonical_name) = lower(?)`,
+  );
+  const insert = database.prepare(
+    `INSERT INTO tool_products (id, vendor, canonical_name, aliases_json, status, created_at, row_version)
+     VALUES (?, ?, ?, ?, 'active', ?, 1)`,
+  );
+  const updateAliases = database.prepare(
+    `UPDATE tool_products SET aliases_json = ?, status = 'active', row_version = row_version + 1 WHERE id = ?`,
+  );
+
+  let inserted = 0;
+  const sync = database.transaction(() => {
+    for (const tool of APPROVED_AI_TOOLS) {
+      const aliases = [tool.id, tool.label].filter((value, index, all) => all.indexOf(value) === index);
+      const existing = findByVendorName.get(tool.company, tool.label) as
+        | { id: string; aliases_json: string; status: string }
+        | undefined;
+      if (!existing) {
+        insert.run(idGenerator(), tool.company, tool.label, JSON.stringify(aliases), now);
+        inserted += 1;
+        continue;
+      }
+      let currentAliases: string[] = [];
+      try {
+        const parsed = JSON.parse(existing.aliases_json) as unknown;
+        if (Array.isArray(parsed)) currentAliases = parsed.filter((item): item is string => typeof item === 'string');
+      } catch {
+        currentAliases = [];
+      }
+      const nextAliases = [...new Set([...currentAliases, ...aliases])];
+      const aliasesChanged = nextAliases.length !== currentAliases.length
+        || nextAliases.some((alias) => !currentAliases.includes(alias));
+      if (aliasesChanged || existing.status !== 'active') {
+        updateAliases.run(JSON.stringify(nextAliases), existing.id);
+      }
+    }
+  });
+  sync();
+  return inserted;
+}
+
 export function listActiveToolProductsForApplicant(
   database: FlowPassDatabase,
   scope: ApplicantScope,
 ): ToolProductRecord[] {
   requireApplicantScope(scope);
+  ensureApprovedToolProducts(database);
   const rows = database
     .prepare(`SELECT * FROM tool_products WHERE status = 'active' ORDER BY vendor ASC, canonical_name ASC`)
     .all() as ToolProductRow[];
@@ -93,6 +145,7 @@ export function listToolProductsForAdmin(
   scope: AdminScope,
 ): ToolProductRecord[] {
   requireAdminScope(scope);
+  ensureApprovedToolProducts(database);
   const rows = database
     .prepare('SELECT * FROM tool_products ORDER BY vendor ASC, canonical_name ASC')
     .all() as ToolProductRow[];

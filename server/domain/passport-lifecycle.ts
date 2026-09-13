@@ -6,8 +6,10 @@ import { decryptDatabaseText } from '../db/repositories/encrypted-fields';
 import { insertEncryptedPassportFollowUpAnswerForSystem, insertEncryptedPassportFollowUpQuestionForSystem, insertEncryptedPassportVersionForSystem } from '../db/repositories/passports';
 import { appendEncryptedAuditLog } from '../db/repositories/audit';
 import { inspectPassportDocument } from './passport-validation';
+import { rebuildPassportIndexes } from './passport-indexes';
 import type { FlowPassPassport, FollowUpQuestion } from '../../shared/passport-contract';
 import { parseQuotedEtag } from '../../shared/api-contract';
+import { isOtherChoiceLabel } from '../../shared/approved-ai-tools';
 
 export type PassportWorkflowState =
   | 'ai_drafting'
@@ -230,7 +232,12 @@ function validAnswer(answerSchema: unknown, answer: string): boolean {
   if (!answerSchema || typeof answerSchema !== 'object' || Array.isArray(answerSchema)) return false;
   const schema = answerSchema as { type?: unknown; choices?: unknown; maxLength?: unknown };
   if (schema.type === 'text') return typeof schema.maxLength === 'number' && Array.from(answer).length <= schema.maxLength;
-  if (schema.type === 'single_choice') return Array.isArray(schema.choices) && schema.choices.includes(answer);
+  if (schema.type === 'single_choice') {
+    if (!Array.isArray(schema.choices) || !schema.choices.every((choice): choice is string => typeof choice === 'string')) return false;
+    if (schema.choices.includes(answer)) return true;
+    // ChoiceList maps「其他」to a free-text field; accept non-empty free text when an other option exists.
+    return schema.choices.some((choice) => isOtherChoiceLabel(choice)) && Array.from(answer).length <= 400;
+  }
   if (schema.type === 'multi_choice') {
     const choices = Array.isArray(schema.choices) && schema.choices.every((choice): choice is string => typeof choice === 'string') ? schema.choices : null;
     if (!choices || choices.length === 0) return false;
@@ -323,8 +330,7 @@ export function createPassportLifecycle(options: PassportLifecycleOptions): Pass
       const version: PassportVersionSummary = { id, passportId, versionNo, parentVersionId: input.parentVersionId ?? null, origin: input.origin, workflowState: state, schemaVersion: 'flowpass.passport.v1', answerVersionId: input.answerVersionId, programRuleVersionId: caseRow.program_rule_version_id, createdAt: now };
       insertEncryptedPassportVersionForSystem(options.database, systemScope, options.crypto, { id, passportId, versionNo, parentVersionId: version.parentVersionId, origin: input.origin, workflowState: state, schemaVersion: version.schemaVersion, answerVersionId: input.answerVersionId, programRuleVersionId: caseRow.program_rule_version_id, payload: JSON.stringify(passport), contentSha256: input.contentSha256 ?? passportHash(passport, state, versionNo), createdByType: input.actorType, createdById: input.actorId, createdAt: now });
       const followUps = insertQuestions(version, passport);
-      passport.nodes.forEach((node) => options.database.prepare(`INSERT INTO passport_node_index (id, passport_version_id, node_key, kind, data_category, sensitivity, needs_confirmation) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), id, node.id, node.kind, node.data_category, node.sensitivity, node.needs_confirmation ? 1 : 0));
-      passport.edges.forEach((edge) => options.database.prepare(`INSERT INTO passport_edge_index (id, passport_version_id, edge_key, from_node_key, to_node_key, purpose_code, needs_confirmation) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), id, edge.id, edge.from_node_id, edge.to_node_id, edge.purpose, edge.needs_confirmation ? 1 : 0));
+      rebuildPassportIndexes(options.database, id, passport, idGenerator);
       const sequence = ((options.database.prepare('SELECT COALESCE(MAX(sequence_no), 0) AS max FROM timeline_events WHERE case_id = ?').get(input.caseId) as { max: number }).max) + 1;
       options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(idGenerator(), input.caseId, sequence, id, 'passport_version_created', '護照草稿已建立', JSON.stringify({ versionNo, workflowState: state }), input.actorType, now);
       appendEncryptedAuditLog(options.database, options.crypto, { id: idGenerator(), actorType: input.actorType, actorId: input.actorId, action: 'create', entityType: 'passport', entityId: id, beforeHash: null, afterHash: input.contentSha256 ?? null, detail: { kind: 'operation', operation: 'create', outcome: 'ok' }, requestId: idGenerator(), createdAt: now });
@@ -396,7 +402,6 @@ export function createPassportLifecycle(options: PassportLifecycleOptions): Pass
         for (const answer of input.answers) {
           const question = options.database.prepare('SELECT * FROM passport_follow_up_questions WHERE id = ? AND passport_version_id = ?').get(answer.questionId, source.id) as FollowUpRow | undefined;
           if (!question || question.status !== 'open') throw new PassportLifecycleError('STALE_VERSION');
-          if (question.required !== 1) throw new PassportLifecycleError('INVALID_REQUEST');
           if (!validAnswer(parseJson(question.answer_schema_json), answer.answer)) throw new PassportLifecycleError('INVALID_REQUEST');
           const existing = options.database.prepare('SELECT id FROM passport_follow_up_answers WHERE question_id = ?').get(question.id);
           if (existing) throw new PassportLifecycleError('INVALID_STATE');
@@ -412,9 +417,9 @@ export function createPassportLifecycle(options: PassportLifecycleOptions): Pass
         } else if (input.declarations.length > 0) {
           appendEncryptedAuditLog(options.database, options.crypto, { id: idGenerator(), actorType: 'applicant', actorId: input.applicantId, action: 'update', entityType: 'passport', entityId: source.id, beforeHash: null, afterHash: null, detail: { kind: 'field-change', field: 'passport', fieldCount: input.declarations.length, outcome: 'ok' }, requestId: idGenerator(), createdAt: now });
         }
-        if (requiredRemaining(options.database, source.id) > 0 || input.answers.length === 0) return { summary: versionSummary(source), revision: null as { jobId: string; state: string } | null };
-        const revision = options.enqueueRevision?.({ applicantId: input.applicantId, caseId: input.caseId, passportVersionId: source.id }) ?? null;
-        return { summary: versionSummary(source), revision };
+        // Persist answers only. Passport revision must be started by an explicit
+        // applicant CTA (POST /ai-drafts operation=revise), not by autosave.
+        return { summary: versionSummary(source), revision: null as { jobId: string; state: string } | null };
       });
       return { ...pending.summary, ...(pending.revision ? { revisionJobId: pending.revision.jobId, revisionJobState: pending.revision.state } : {}) };
     },

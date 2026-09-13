@@ -48,9 +48,10 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const PATH_LABELS: Record<string, string> = {
-  material: '會使用的資料', aiPurpose: '使用 AI 的目的', sensitiveData: '是否包含敏感資料', destinationAndAudience: '資料去向與使用對象',
+  material: '會使用的資料', aiPurpose: '使用 AI 的目的', sensitiveData: '是否包含敏感資料', destinationAndAudience: '資料去向與使用對象', applicantName: '申請人姓名',
   billingCycle: '計費方式', billingPeriods: '購買期數', softwareFunction: '軟體用途', otherFunction: '其他用途', softwareName: '軟體名稱', companyName: '供應商名稱',
   purchaseDate: '購買日期', payerType: '付款人類型', originalCurrency: '原始幣別', otherCurrency: '其他幣別', originalExpense: '原始金額', convertedTwd: '換算新台幣金額', specialStatus: '是否具特殊身分',
+  invoiceNumber: '發票號碼', paymentSourceFingerprint: '付款來源指紋', subscriptionStartDate: '訂閱開始日', subscriptionEndDate: '訂閱結束日',
   'use_case.title': '使用情境名稱', 'use_case.purpose': '使用目的', 'use_case.intended_outcome': '預期成果',
   'sharing_scope.audience': '資料分享對象', 'sharing_scope.needs_confirmation': '分享範圍是否待確認',
   'retention.storage_location': '資料保存位置', 'retention.duration': '保存期限', 'retention.deletion_plan': '刪除方式', 'retention.needs_confirmation': '保存方式是否待確認',

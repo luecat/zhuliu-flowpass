@@ -1,10 +1,12 @@
 import { v7 as uuidv7 } from 'uuid';
 import type { FieldCrypto } from '../crypto/field-crypto';
 import type { FlowPassDatabase } from '../db/connection';
-import { encryptDatabaseText } from '../db/repositories/encrypted-fields';
+import { decryptDatabaseText, encryptDatabaseText } from '../db/repositories/encrypted-fields';
 import { insertPublicNotificationJobForSystem } from '../db/repositories/notifications';
 import type { IncidentMatchStatus } from '../../shared/security-contract';
 import { matchIncident } from '../domain/incident-match';
+import { rebuildPassportIndexes } from '../domain/passport-indexes';
+import { inspectPassportDocument } from '../domain/passport-validation';
 import { parseUtcRfc3339Timestamp } from '../db/timestamps';
 
 export type SecurityIncidentSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -106,6 +108,30 @@ type CandidateRow = {
   usage_at: string | null;
 };
 
+
+function backfillPassportToolIndexes(options: SecurityIncidentServiceOptions, idGenerator: () => string): void {
+  const rows = options.database.prepare(`
+    SELECT pv.id AS passport_version_id, pv.payload_enc
+    FROM passport_versions pv
+    JOIN passports p ON p.id = pv.passport_id
+    JOIN cases c ON c.id = p.case_id AND c.submitted_passport_version_id = pv.id
+    WHERE c.state <> 'draft'
+      AND NOT EXISTS (
+        SELECT 1 FROM passport_tool_index pti WHERE pti.passport_version_id = pv.id
+      )
+  `).all() as Array<{ passport_version_id: string; payload_enc: string }>;
+  for (const row of rows) {
+    try {
+      const payload = decryptDatabaseText(options.crypto, 'passport_versions', 'payload_enc', row.passport_version_id, row.payload_enc);
+      const inspection = inspectPassportDocument({ passport_draft: JSON.parse(payload) as unknown });
+      if (!inspection.canonical) continue;
+      rebuildPassportIndexes(options.database, row.passport_version_id, inspection.canonical, idGenerator);
+    } catch {
+      // Skip undecryptable or invalid historical payloads; preview continues with remaining indexes.
+    }
+  }
+}
+
 export function createSecurityIncidentService(options: SecurityIncidentServiceOptions) {
   const now = () => (options.clock ?? (() => new Date()))().toISOString();
   const id = options.idGenerator ?? uuidv7;
@@ -143,6 +169,7 @@ export function createSecurityIncidentService(options: SecurityIncidentServiceOp
   }
 
   function previewMatches(incidentId: string): { incidentId: string; candidates: IncidentCandidate[] } {
+    backfillPassportToolIndexes(options, id);
     const incident = incidentRow(incidentId);
     const versions = affectedVersions(JSON.parse(incident.affected_criteria_json) as unknown);
     const rows = options.database.prepare(`SELECT DISTINCT c.id AS case_id, pv.id AS passport_version_id, tp.canonical_name AS tool_name, tv.version_label AS tool_version, tp.aliases_json, COALESCE(pti.usage_start_at, pti.usage_end_at) AS usage_at FROM passport_tool_index pti JOIN passport_versions pv ON pv.id = pti.passport_version_id JOIN passports p ON p.id = pv.passport_id JOIN cases c ON c.id = p.case_id AND c.submitted_passport_version_id = pv.id JOIN tool_products tp ON tp.id = pti.tool_product_id LEFT JOIN tool_versions tv ON tv.id = pti.tool_version_id WHERE pti.tool_product_id = ? AND c.state <> 'draft' ORDER BY c.id, pv.id`).all(incident.tool_product_id) as CandidateRow[];

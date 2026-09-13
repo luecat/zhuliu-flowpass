@@ -45,7 +45,7 @@ describe('admin passport data snapshot', () => {
       const passportId = uuidv7();
       const versionId = uuidv7();
       database.prepare(`INSERT INTO cases (id, case_code, applicant_id, program_cycle_id, program_rule_version_id, state, current_answer_version_id, current_passport_version_id, requested_amount_twd, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, ?, 'under_review', ?, ?, 200, ?, ?, 3)`).run(caseId, code, applicantId, cycleId, ruleId, answerId, versionId, NOW, NOW);
-      const answers = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '沒有', destinationAndAudience: '自己' });
+      const answers = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '沒有', destinationAndAudience: '自己', applicantName: '測試申請人' });
       database.prepare('INSERT INTO answer_versions (id, case_id, version_no, answers_enc, content_sha256, created_by_applicant_id, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)').run(
         answerId, caseId, encryptDatabaseText(crypto, 'answer_versions', 'answers_enc', answerId, answers), 'a'.repeat(64), applicantId, NOW,
       );
@@ -54,7 +54,7 @@ describe('admin passport data snapshot', () => {
       database.prepare(`INSERT INTO passport_versions (id, passport_id, version_no, origin, workflow_state, schema_version, answer_version_id, program_rule_version_id, payload_enc, content_sha256, created_by_type, created_by_id, created_at) VALUES (?, ?, 1, 'applicant_revision', 'confirmed', 'v1', ?, ?, ?, ?, 'applicant', ?, ?)`).run(
         versionId, passportId, answerId, ruleId, encryptDatabaseText(crypto, 'passport_versions', 'payload_enc', versionId, payload), 'b'.repeat(64), applicantId, NOW,
       );
-      const details = JSON.stringify({ billingCycle: 'annual', billingPeriods: null, softwareFunction: 'general', otherFunction: null, softwareName: software, companyName: '竹流', purchaseDate: '2026-09-01', payerType: 'self_card', originalCurrency: 'TWD', otherCurrency: null, originalExpense: '200', convertedTwd: 200, specialStatus: false });
+      const details = JSON.stringify({ billingCycle: 'annual', billingPeriods: null, softwareFunction: 'general', otherFunction: null, softwareName: software, companyName: '竹流', purchaseDate: '2026-09-01', payerType: 'self_card', originalCurrency: 'TWD', otherCurrency: null, originalExpense: '200', convertedTwd: 200, specialStatus: false, invoiceNumber: null, paymentSourceFingerprint: null, subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31', applicantName: '測試申請人' });
       database.prepare('INSERT INTO case_purchase_details (case_id, details_enc, content_sha256, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, ?, 1)').run(
         caseId, encryptDatabaseText(crypto, 'case_purchase_details', 'details_enc', caseId, details), 'c'.repeat(64), NOW, NOW,
       );

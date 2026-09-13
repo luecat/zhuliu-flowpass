@@ -17,7 +17,7 @@ const IDS = {
   rule: '0198f050-0000-7000-8000-000000000003',
 };
 const NOW = '2026-08-30T00:00:00.000Z';
-const answers = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊' };
+const answers = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', applicantName: '測試申請人' };
 
 function cryptoForTests(): FieldCrypto {
   const keyring: Keyring = { activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x44) : undefined };
@@ -108,13 +108,13 @@ describe('passport lifecycle', () => {
     expect(() => lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId, passportVersionId: first.version.id, ifMatch: '"1"' })).toThrowError(PassportLifecycleError);
   });
 
-  it('persists required answers and enqueues a revision atomically', () => {
+  it('persists required answers without auto-enqueueing a revision', () => {
     const { caseId, answerVersionId } = createCase();
     const lifecycle = createPassportLifecycle({ database: db, crypto: cryptoForTests(), clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, enqueueRevision: () => ({ jobId: 'revision-job', state: 'queued' }) });
     const first = lifecycle.createVersion({ caseId, answerVersionId, passport: samplePassport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker-1' });
     const pending = lifecycle.answerFollowUps({ applicantId: IDS.applicant, caseId, passportVersionId: first.version.id, ifMatch: '"1"', answers: first.followUps.map((question) => ({ questionId: question.id, answer: `回答-${question.questionKey}` })), declarations: [] });
     expect(pending.workflowState).toBe('follow_up_required');
-    expect(pending.revisionJobId).toBe('revision-job');
+    expect(pending.revisionJobId).toBeUndefined();
     const current = lifecycle.getForApplicant({ applicantId: IDS.applicant, caseId });
     if (!current) throw new Error('current passport missing');
     expect(current.version.versionNo).toBe(1);
@@ -122,28 +122,62 @@ describe('passport lifecycle', () => {
     expect(current.followUps.every((question) => question.status === 'answered')).toBe(true);
   });
 
-  it('rejects optional and out-of-schema multi-choice answers', () => {
+  it('rejects out-of-schema multi-choice answers but accepts open optional answers', () => {
     const { caseId, answerVersionId } = createCase();
-    const lifecycle = createPassportLifecycle({ database: db, crypto: cryptoForTests(), clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}` });
+    const lifecycle = createPassportLifecycle({ database: db, crypto: cryptoForTests(), clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, enqueueRevision: () => ({ jobId: 'revision-job', state: 'queued' }) });
     const passport = samplePassport();
     passport.follow_up_questions = [
-      { ...passport.follow_up_questions[0], required: false, answerSchema: { type: 'single_choice', choices: ['A'] } },
+      { ...passport.follow_up_questions[0], required: false, answerSchema: { type: 'single_choice', choices: ['A', 'B'] } },
       { ...passport.follow_up_questions[1], required: true, answerSchema: { type: 'multi_choice', choices: ['A', 'B'] } },
     ];
     const first = lifecycle.createVersion({ caseId, answerVersionId, passport, origin: 'ai_draft', actorType: 'system', actorId: 'worker-1' });
-    expect(() => lifecycle.answerFollowUps({ applicantId: IDS.applicant, caseId, passportVersionId: first.version.id, ifMatch: '"1"', answers: [{ questionId: first.followUps[0].id, answer: 'A' }], declarations: [] })).toThrowError(PassportLifecycleError);
     expect(() => lifecycle.answerFollowUps({ applicantId: IDS.applicant, caseId, passportVersionId: first.version.id, ifMatch: '"1"', answers: [{ questionId: first.followUps[1].id, answer: '["C"]' }], declarations: [] })).toThrowError(PassportLifecycleError);
+    const pending = lifecycle.answerFollowUps({
+      applicantId: IDS.applicant,
+      caseId,
+      passportVersionId: first.version.id,
+      ifMatch: '"1"',
+      answers: [
+        { questionId: first.followUps[0].id, answer: 'A' },
+        { questionId: first.followUps[1].id, answer: '["A"]' },
+      ],
+      declarations: [],
+    });
+    expect(pending.revisionJobId).toBeUndefined();
   });
 
-  it('rolls back follow-up answers when revision enqueue fails', () => {
+  it('accepts free-text answers when a single-choice question includes an other option', () => {
+    const { caseId, answerVersionId } = createCase();
+    const lifecycle = createPassportLifecycle({ database: db, crypto: cryptoForTests(), clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, enqueueRevision: () => ({ jobId: 'revision-job', state: 'queued' }) });
+    const passport = samplePassport();
+    passport.follow_up_questions = [
+      { ...passport.follow_up_questions[0], required: true, answerSchema: { type: 'single_choice', choices: ['ChatGPT', '其他（請說明）'] } },
+      { ...passport.follow_up_questions[1], required: true, answerSchema: { type: 'single_choice', choices: ['完全不含個人或敏感資料', '包含真實個人資料或金鑰', '其他（自行填寫）'] } },
+    ];
+    const first = lifecycle.createVersion({ caseId, answerVersionId, passport, origin: 'ai_draft', actorType: 'system', actorId: 'worker-1' });
+    const pending = lifecycle.answerFollowUps({
+      applicantId: IDS.applicant,
+      caseId,
+      passportVersionId: first.version.id,
+      ifMatch: '"1"',
+      answers: [
+        { questionId: first.followUps[0].id, answer: 'Gemini' },
+        { questionId: first.followUps[1].id, answer: '有 API 金鑰需先撤銷' },
+      ],
+      declarations: [],
+    });
+    expect(pending.revisionJobId).toBeUndefined();
+  });
+
+  it('keeps follow-up answers even when a revision helper is unavailable', () => {
     const { caseId, answerVersionId } = createCase();
     const lifecycle = createPassportLifecycle({ database: db, crypto: cryptoForTests(), clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, enqueueRevision: () => { throw new Error('queue unavailable'); } });
     const first = lifecycle.createVersion({ caseId, answerVersionId, passport: samplePassport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker-1' });
     const allAnswered = first.followUps.map((question) => ({ questionId: question.id, answer: `回答-${question.questionKey}` }));
-    expect(() => lifecycle.answerFollowUps({ applicantId: IDS.applicant, caseId, passportVersionId: first.version.id, ifMatch: '"1"', answers: allAnswered, declarations: [] })).toThrow('queue unavailable');
-    expect((db.prepare('SELECT COUNT(*) AS count FROM passport_follow_up_answers').get() as { count: number }).count).toBe(0);
-    expect((db.prepare('SELECT status FROM passport_follow_up_questions WHERE passport_version_id=? AND status=\'open\'').all(first.version.id) as unknown[]).length).toBe(first.followUps.length);
-    expect((db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count).toBe(0);
+    const pending = lifecycle.answerFollowUps({ applicantId: IDS.applicant, caseId, passportVersionId: first.version.id, ifMatch: '"1"', answers: allAnswered, declarations: [] });
+    expect(pending.revisionJobId).toBeUndefined();
+    expect((db.prepare('SELECT COUNT(*) AS count FROM passport_follow_up_answers').get() as { count: number }).count).toBe(first.followUps.length);
+    expect((db.prepare('SELECT status FROM passport_follow_up_questions WHERE passport_version_id=? AND status=\'answered\'').all(first.version.id) as unknown[]).length).toBe(first.followUps.length);
   });
 
   it('rejects an invalid confirmation declaration before creating a new version', () => {

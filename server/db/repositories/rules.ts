@@ -43,6 +43,9 @@ export interface ApplicantRuleEvaluationRecord {
   caseId: string;
   evaluationKind: string;
   outcome: string;
+  ruleCode: string | null;
+  explanation: string | null;
+  steps: Array<{ label: string; value: string }>;
   createdAt: string;
 }
 
@@ -64,11 +67,33 @@ function mapAdminRuleEvaluation(row: RuleEvaluationRow): AdminRuleEvaluationReco
 }
 
 function mapApplicantRuleEvaluation(row: RuleEvaluationRow): ApplicantRuleEvaluationRecord {
+  let ruleCode: string | null = null;
+  let explanation: string | null = null;
+  let steps: Array<{ label: string; value: string }> = [];
+  try {
+    const parsed = JSON.parse(row.result_json) as {
+      ruleCode?: string;
+      explanation?: string;
+      steps?: Array<{ label?: string; value?: string }>;
+    };
+    ruleCode = typeof parsed.ruleCode === 'string' ? parsed.ruleCode : null;
+    explanation = typeof parsed.explanation === 'string' ? parsed.explanation : null;
+    if (Array.isArray(parsed.steps) && (parsed.ruleCode === 'subsidy_estimate' || parsed.ruleCode === 'admin_data_recalculation')) {
+      steps = parsed.steps
+        .filter((step): step is { label: string; value: string } => typeof step?.label === 'string' && typeof step?.value === 'string')
+        .filter((step) => step.label !== '交易指紋');
+    }
+  } catch {
+    /* keep empty public projection */
+  }
   return {
     id: row.id,
     caseId: row.case_id,
     evaluationKind: row.evaluation_kind,
     outcome: row.outcome,
+    ruleCode,
+    explanation,
+    steps,
     createdAt: row.created_at,
   };
 }

@@ -2,7 +2,7 @@ import type { FlowPassDatabase } from '../connection';
 import type { FieldCrypto } from '../../crypto/field-crypto';
 import { encryptDatabaseText } from './encrypted-fields';
 import { decryptDatabaseText } from './encrypted-fields';
-import { validateCoreAnswers, type CoreAnswers } from '../../../shared/case-contract';
+import { parseStoredCoreAnswers, type CoreAnswers } from '../../../shared/case-contract';
 import {
   requireAdminScope,
   requireApplicantScope,
@@ -202,7 +202,7 @@ export function getCurrentAnswersForApplicant(
   ).get(caseId, scope.applicantId) as { id: string; answers_enc: string } | undefined;
   if (!row) return null;
   try {
-    return validateCoreAnswers(JSON.parse(
+    return parseStoredCoreAnswers(JSON.parse(
       decryptDatabaseText(crypto, 'answer_versions', 'answers_enc', row.id, row.answers_enc),
     ));
   } catch {

@@ -129,7 +129,7 @@ describe('LINE notification worker', () => {
     await sendLineNotification(job, {
       database,
       crypto,
-      client: { push: async (input) => { pushed.push(input); } },
+      client: { push: async (input) => { pushed.push(input); }, reply: async () => undefined },
       liffId: 'flowpass-liff',
       now: '2026-09-01T02:03:00.000Z',
     });
@@ -174,7 +174,7 @@ describe('LINE notification worker', () => {
     await sendLineNotification(job, {
       database,
       crypto,
-      client: { push: async (input) => { pushed.push(input); } },
+      client: { push: async (input) => { pushed.push(input); }, reply: async () => undefined },
       liffId: 'flowpass-liff',
     });
 
@@ -214,7 +214,7 @@ describe('LINE notification worker', () => {
     await sendLineNotification(job, {
       database,
       crypto,
-      client: { push: async (input) => { pushed.push(input); } },
+      client: { push: async (input) => { pushed.push(input); }, reply: async () => undefined },
       liffId: 'flowpass-liff',
     });
 

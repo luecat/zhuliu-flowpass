@@ -20,6 +20,7 @@ export interface LineNotificationPush {
 
 export interface LineMessagingClient {
   push(input: LineNotificationPush): Promise<void>;
+  reply(input: { replyToken: string; text: string }): Promise<void>;
 }
 
 function flexMessage(input: LineNotificationPush) {
@@ -93,9 +94,11 @@ export function createLineMessagingClient(options: {
   channelAccessToken: string;
   fetcher?: typeof fetch;
   endpoint?: string;
+  replyEndpoint?: string;
 }): LineMessagingClient {
   const fetcher = options.fetcher ?? fetch;
   const endpoint = options.endpoint ?? 'https://api.line.me/v2/bot/message/push';
+  const replyEndpoint = options.replyEndpoint ?? 'https://api.line.me/v2/bot/message/reply';
 
   return {
     async push(input) {
@@ -107,6 +110,20 @@ export function createLineMessagingClient(options: {
           'X-Line-Retry-Key': input.retryKey,
         },
         body: JSON.stringify({ to: input.to, messages: [flexMessage(input)] }),
+      });
+      if (!response.ok) throw new LineMessagingError(response.status);
+    },
+    async reply(input) {
+      const response = await fetcher(replyEndpoint, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${options.channelAccessToken}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          replyToken: input.replyToken,
+          messages: [{ type: 'text', text: input.text.slice(0, 4_000) }],
+        }),
       });
       if (!response.ok) throw new LineMessagingError(response.status);
     },

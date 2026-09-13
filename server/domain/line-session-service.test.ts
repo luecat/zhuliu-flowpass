@@ -361,13 +361,13 @@ describe('LineSessionService', () => {
 
   it('persists exact reusable rate-limit policies across fresh limiter instances', () => {
     expect(RATE_LIMIT_POLICIES).toMatchObject({
-      [RateLimitAction.CASE_CREATE]: { limit: 5, window: 'taipei-day' },
+      [RateLimitAction.CASE_CREATE]: { limit: 30, window: 'taipei-day' },
       [RateLimitAction.AI_DRAFT]: { limit: 20, window: 'taipei-day' },
       [RateLimitAction.UPLOAD_BYTES]: { limit: 60 * 1024 * 1024, window: 'taipei-day' },
       [RateLimitAction.INVALID_WEBHOOK]: { limit: 120, window: 'utc-minute' },
     });
     const first = new RateLimiter(database, crypto, clock.now);
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 30; index += 1) {
       expect(first.consume({ action: RateLimitAction.CASE_CREATE, scope: 'applicant-a' }).allowed).toBe(true);
     }
     const second = new RateLimiter(database, crypto, clock.now);

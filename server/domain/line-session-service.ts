@@ -52,7 +52,7 @@ export interface RateLimitPolicy {
 export const RATE_LIMIT_POLICIES: Readonly<Record<RateLimitAction, RateLimitPolicy>> = {
   [RateLimitAction.LOGIN_BOOTSTRAP]: { action: RateLimitAction.LOGIN_BOOTSTRAP, limit: 10, window: 'utc-minute' },
   [RateLimitAction.LOGIN_EXCHANGE]: { action: RateLimitAction.LOGIN_EXCHANGE, limit: 10, window: 'utc-minute' },
-  [RateLimitAction.CASE_CREATE]: { action: RateLimitAction.CASE_CREATE, limit: 5, window: 'taipei-day' },
+  [RateLimitAction.CASE_CREATE]: { action: RateLimitAction.CASE_CREATE, limit: 30, window: 'taipei-day' },
   [RateLimitAction.AI_DRAFT]: { action: RateLimitAction.AI_DRAFT, limit: 20, window: 'taipei-day' },
   [RateLimitAction.UPLOAD_BYTES]: { action: RateLimitAction.UPLOAD_BYTES, limit: 60 * 1024 * 1024, window: 'taipei-day' },
   [RateLimitAction.INVALID_WEBHOOK]: { action: RateLimitAction.INVALID_WEBHOOK, limit: 120, window: 'utc-minute' },

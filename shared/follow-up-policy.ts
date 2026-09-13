@@ -26,7 +26,7 @@ export function followUpTopics(...values: string[]): FollowUpTopic[] {
   if (includesAny(['儲存位置', '存放位置', '保存位置', '放在哪', '放哪裡', '存在哪', '雲端', 'google drive', 'dropbox', 'icloud', 'storage'])) topics.push('storage');
   if (includesAny(['保留多久', '保留期間', '保存多久', '保存期間', '刪除', '銷毀', '留存', 'retention'])) topics.push('retention');
   if (includesAny(['分享給誰', '誰會看到', '分享對象', '公開', '社群', 'instagram', 'ig', 'audience', 'destination'])) topics.push('audience');
-  if (includesAny(['個資', '個人資料', '敏感', '人臉', '姓名', '肖像', '聯絡方式', 'sensitive', 'personal'])) topics.push('sensitive_data');
+  if (includesAny(['個資', '個人資料', '敏感', '人臉', '姓名', '肖像', '聲音', '錄音', '聯絡方式', '身分', '未成年', '金融', '帳號', '位置', 'gps', 'api', '金鑰', '密碼', 'token', '營業秘密', '機密', '生物特徵', 'sensitive', 'personal', 'secret', 'biometric', 'minor'])) topics.push('sensitive_data');
   if (includesAny(['資料類型', '哪類資料', '什麼資料', '素材', '檔案類型', 'material'])) topics.push('material');
   if (includesAny(['想用 ai', '用 ai 做', '用途', '要完成什麼', '目的', 'purpose', 'intended_use'])) topics.push('purpose');
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { validateCoreAnswers, unicodeScalarLength } from './case-contract';
 
-const valid = { material: '資料', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' };
+const valid = { material: '資料', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' };
 
 describe('CoreAnswers contract', () => {
   it('counts Unicode scalars rather than UTF-16 units and preserves original text', () => {
@@ -9,9 +9,16 @@ describe('CoreAnswers contract', () => {
     expect(unicodeScalarLength(value)).toBe(3);
     expect(validateCoreAnswers({ ...valid, material: value }).material).toBe(value);
   });
-  it('rejects extra keys, blank fields, and scalar-over-limit values', () => {
-    expect(() => validateCoreAnswers({ ...valid, extra: 'x' })).toThrow();
+  it('allows complete stage-1 answers without applicantName', () => {
+    expect(validateCoreAnswers({ material: '資料', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' }).applicantName).toBe('');
+  });
+  it('rejects blank fields and scalar-over-limit values', () => {
     expect(() => validateCoreAnswers({ ...valid, material: '   ' })).toThrow();
     expect(() => validateCoreAnswers({ ...valid, material: '😀'.repeat(501) })).toThrow();
+  });
+  it('defaults missing applicantName for legacy stored answers', async () => {
+    const { parseStoredCoreAnswers } = await import('./case-contract');
+    const legacy = { material: '資料', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊' };
+    expect(parseStoredCoreAnswers(legacy).applicantName).toBe('');
   });
 });

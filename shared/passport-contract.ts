@@ -575,8 +575,9 @@ type GenerationSchema = {
 
 /**
  * LM Studio's local grammar compiler cannot consume the full runtime schema's
- * oneOf branch. Generation uses the text-question subset below; the complete
- * Zod and graph validator remains authoritative before anything is persisted.
+ * oneOf branch. Generation therefore uses a flat answerSchema with optional
+ * fields; the complete Zod and graph validator remains authoritative before
+ * anything is persisted.
  */
 export const PASSPORT_GENERATION_JSON_SCHEMA = (() => {
   const schema = structuredClone(PASSPORT_JSON_SCHEMA) as unknown as GenerationSchema;
@@ -586,10 +587,16 @@ export const PASSPORT_GENERATION_JSON_SCHEMA = (() => {
   schema.properties.passport_draft.properties.follow_up_questions.items.properties.answerSchema = {
     type: 'object',
     additionalProperties: false,
-    required: ['type', 'maxLength'],
+    required: ['type'],
     properties: {
-      type: { const: 'text' },
-      maxLength: { const: 400 },
+      type: { enum: ['text', 'single_choice', 'multi_choice', 'boolean'] },
+      maxLength: { type: 'integer', minimum: 1, maximum: 400 },
+      choices: {
+        type: 'array',
+        minItems: 2,
+        maxItems: 8,
+        items: nonEmptyStringSchema,
+      },
     },
   };
   return schema;

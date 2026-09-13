@@ -11,7 +11,7 @@ const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
 
 const decimalAmount = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/);
 
-export const PurchaseDetailsSchema = z.object({
+const purchaseDetailsBase = {
   billingCycle: z.enum(['annual', 'monthly']),
   billingPeriods: z.number().int().min(1).max(120).nullable(),
   softwareFunction: z.enum(PURCHASE_FUNCTIONS),
@@ -25,7 +25,25 @@ export const PurchaseDetailsSchema = z.object({
   originalExpense: decimalAmount,
   convertedTwd: z.number().int().min(1).max(100_000_000),
   specialStatus: z.boolean(),
-}).strict().superRefine((details, context) => {
+  invoiceNumber: z.string().trim().min(1).max(40).nullable(),
+  // Legacy rows may omit these; normalize missing to null on read.
+  subscriptionStartDate: calendarDate.nullish().transform((value) => value ?? null),
+  subscriptionEndDate: calendarDate.nullish().transform((value) => value ?? null),
+  // Collected in stage-2 purchase form; legacy rows may omit.
+  applicantName: z.string().trim().max(100).nullish().transform((value) => value?.trim() ? value.trim() : null),
+} as const;
+
+function refinePurchaseShape<T extends {
+  billingCycle: 'annual' | 'monthly';
+  billingPeriods: number | null;
+  softwareFunction: (typeof PURCHASE_FUNCTIONS)[number];
+  otherFunction: string | null;
+  originalCurrency: (typeof PURCHASE_CURRENCIES)[number];
+  otherCurrency: string | null;
+  subscriptionStartDate: string | null;
+  subscriptionEndDate: string | null;
+  applicantName: string | null;
+}>(details: T, context: z.RefinementCtx, options: { requireSubscriptionDates: boolean; requireApplicantName: boolean }) {
   if (details.billingCycle === 'monthly' && details.billingPeriods === null) {
     context.addIssue({ code: 'custom', path: ['billingPeriods'], message: '請填寫月費期數' });
   }
@@ -44,9 +62,73 @@ export const PurchaseDetailsSchema = z.object({
   if (details.originalCurrency !== 'OTHER' && details.otherCurrency !== null) {
     context.addIssue({ code: 'custom', path: ['otherCurrency'], message: '已選擇幣別時不需要其他說明' });
   }
+  if (options.requireSubscriptionDates) {
+    if (!details.subscriptionStartDate) {
+      context.addIssue({ code: 'custom', path: ['subscriptionStartDate'], message: '請填寫訂閱開始日' });
+    }
+    if (!details.subscriptionEndDate) {
+      context.addIssue({ code: 'custom', path: ['subscriptionEndDate'], message: '請填寫訂閱結束日' });
+    }
+  }
+  if (details.subscriptionStartDate && details.subscriptionEndDate) {
+    const start = new Date(details.subscriptionStartDate);
+    const end = new Date(details.subscriptionEndDate);
+    if (end < start) {
+      context.addIssue({
+        code: 'custom',
+        path: ['subscriptionEndDate'],
+        message: '訂閱結束日必須晚於或等於開始日'
+      });
+    }
+  }
+  if (options.requireApplicantName && !details.applicantName) {
+    context.addIssue({ code: 'custom', path: ['applicantName'], message: '請填寫申請人姓名' });
+  }
+}
+
+/** Persisted purchase details: never stores card last-four or cardholder name in plaintext. */
+export const PurchaseDetailsSchema = z.object({
+  ...purchaseDetailsBase,
+  paymentSourceFingerprint: z.string().min(16).max(128).nullable(),
+}).strict().superRefine((details, context) => {
+  refinePurchaseShape(details, context, { requireSubscriptionDates: false, requireApplicantName: false });
 });
 
 export type PurchaseDetails = z.infer<typeof PurchaseDetailsSchema>;
+
+/**
+ * Applicant write payload. Card last-four + cardholder name are accepted only to
+ * derive an HMAC fingerprint, then discarded before persistence.
+ */
+export const PurchaseDetailsWriteSchema = z.object({
+  ...purchaseDetailsBase,
+  cardLastFour: z.string().regex(/^\d{4}$/).nullable(),
+  cardholderName: z.string().trim().min(1).max(100).nullable(),
+  /** When true, keep the previously stored payment fingerprint without re-entering card digits. */
+  keepExistingPaymentSource: z.boolean().optional(),
+}).strict().superRefine((details, context) => {
+  refinePurchaseShape(details, context, { requireSubscriptionDates: true, requireApplicantName: true });
+  const hasCard = Boolean(details.cardLastFour);
+  const hasName = Boolean(details.cardholderName);
+  if (details.keepExistingPaymentSource) {
+    if (hasCard !== hasName) {
+      context.addIssue({
+        code: 'custom',
+        path: hasCard ? ['cardholderName'] : ['cardLastFour'],
+        message: '信用卡末四碼與持卡人姓名需一併填寫',
+      });
+    }
+    return;
+  }
+  if (!hasCard) {
+    context.addIssue({ code: 'custom', path: ['cardLastFour'], message: '請填寫信用卡末四碼' });
+  }
+  if (!hasName) {
+    context.addIssue({ code: 'custom', path: ['cardholderName'], message: '請填寫持卡人姓名' });
+  }
+});
+
+export type PurchaseDetailsWrite = z.infer<typeof PurchaseDetailsWriteSchema>;
 
 export const DOCUMENT_REQUIREMENT_KEYS = [
   'identity_front',
@@ -61,3 +143,13 @@ export const DOCUMENT_REQUIREMENT_KEYS = [
 
 export const DocumentRequirementKeySchema = z.enum(DOCUMENT_REQUIREMENT_KEYS);
 export type DocumentRequirementKey = z.infer<typeof DocumentRequirementKeySchema>;
+
+export function toPublicPurchaseDetails(details: PurchaseDetails): Omit<PurchaseDetails, 'paymentSourceFingerprint'> & {
+  paymentSourceRegistered: boolean;
+} {
+  const { paymentSourceFingerprint, ...rest } = details;
+  return {
+    ...rest,
+    paymentSourceRegistered: Boolean(paymentSourceFingerprint),
+  };
+}

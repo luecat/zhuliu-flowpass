@@ -3,18 +3,20 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import './admin.css';
 import './review.css';
 import { DataManager } from './data-manager';
+import { SecurityAlertPublisher } from './security-alert-publisher';
 
 const CSRF_COOKIE = 'flowpass_admin_csrf';
 type Envelope<T> = { data?: T; error?: { code?: string; message?: string } };
 type Session = { authenticated: boolean; displayName: string; mustChangePassword: boolean; passwordExpiresAt?: string };
-type Case = { id: string; caseCode: string; state: string; submittedAt?: string; updatedAt?: string; rowVersion?: string | number; applicantName?: string; programName?: string; requestedAmountTwd?: number; calculatedAmountTwd?: number; approvedAmountTwd?: number; disbursedAmountTwd?: number };
+type Case = { id: string; caseCode: string; state: string; submittedAt?: string; updatedAt?: string; rowVersion?: string | number; applicantName?: string; programName?: string; requestedAmountTwd?: number; calculatedAmountTwd?: number; approvedAmountTwd?: number; disbursedAmountTwd?: number; needsReviewCount?: number };
+type RuleEvaluationView = { id: string; ruleCode: string; outcome: string; explanation: string; steps: Array<{ label: string; value: string }>; createdAt?: string };
 type Attachment = { id: string; kind: string; requirementKey?: string; mediaType: string; byteSize: number; originalName: string; status: string; createdAt?: string; rowVersion?: number };
 type Review = { action: string; toState: string; label: string; cta: string; fromStates: string[]; reasonLabel?: string; reasonPlaceholder?: string; amount?: 'approved' | 'disbursed'; supplement?: 'documents' | 'correction'; confirm?: boolean; danger?: boolean };
 type ReviewDecision = { reason?: string; approvedAmountTwd?: number; disbursedAmountTwd?: number; title?: string; instructions?: string; passportReconfirmationRequired?: boolean };
 type AdminRequest = <T>(url: string, init?: RequestInit) => Promise<T>;
 type AiUsage = { provider: string; minuteKey: string; dayKey: string; models: Array<{ id: string; rpm: { used: number; limit: number; remaining: number }; tpm: { used: number; limit: number; remaining: number }; rpd: { used: number; limit: number; remaining: number }; recordedRuns: number }> };
 const REVIEWS: Review[] = [
-  { action: 'start_review', toState: 'under_review', label: '開始審核', cta: '開始審核', fromStates: ['submitted', 'resubmitted'], reasonLabel: '原因', reasonPlaceholder: '請說明開始審核的原因或目前處理情形' },
+  { action: 'start_review', toState: 'under_review', label: '開始審核', cta: '開始審核', fromStates: ['submitted', 'resubmitted'] },
   { action: 'request_documents', toState: 'awaiting_documents', label: '要求補件', cta: '送出補件要求', fromStates: ['under_review'], supplement: 'documents', confirm: true },
   { action: 'return_correction', toState: 'returned_for_correction', label: '退回修正', cta: '退回申請人修正', fromStates: ['under_review'], supplement: 'correction', confirm: true },
   { action: 'approve', toState: 'approved', label: '核准', cta: '核准案件', fromStates: ['under_review'], reasonLabel: '核准說明', reasonPlaceholder: '請說明核准依據', amount: 'approved', confirm: true },
@@ -38,7 +40,37 @@ async function api<T>(url: string, init: RequestInit = {}): Promise<T> {
   return (payload.data ?? payload) as T;
 }
 function sessionOf(value: unknown): Session { const v = record(value); return { authenticated: v.authenticated === true, displayName: string(v.displayName ?? v.display_name ?? v.name) ?? '管理員', mustChangePassword: v.mustChangePassword === true || v.must_change_password === true, passwordExpiresAt: string(v.passwordExpiresAt ?? v.password_expires_at) }; }
-function caseOf(value: unknown): Case | null { const v = record(value), id = string(v.id); if (!id) return null; return { id, caseCode: string(v.caseCode ?? v.case_code) ?? id, state: string(v.state) ?? 'unknown', submittedAt: string(v.submittedAt ?? v.submitted_at), updatedAt: string(v.updatedAt ?? v.updated_at), rowVersion: number(v.rowVersion ?? v.row_version) ?? string(v.rowVersion ?? v.row_version), applicantName: string(v.applicantName ?? v.applicant_name ?? v.applicantDisplayName), programName: string(v.programName ?? v.program_name ?? v.programTitle), requestedAmountTwd: number(v.requestedAmountTwd ?? v.requested_amount_twd), calculatedAmountTwd: number(v.calculatedAmountTwd ?? v.calculated_amount_twd), approvedAmountTwd: number(v.approvedAmountTwd ?? v.approved_amount_twd), disbursedAmountTwd: number(v.disbursedAmountTwd ?? v.disbursed_amount_twd) }; }
+function caseOf(value: unknown): Case | null { const v = record(value), id = string(v.id); if (!id) return null; return { id, caseCode: string(v.caseCode ?? v.case_code) ?? id, state: string(v.state) ?? 'unknown', submittedAt: string(v.submittedAt ?? v.submitted_at), updatedAt: string(v.updatedAt ?? v.updated_at), rowVersion: number(v.rowVersion ?? v.row_version) ?? string(v.rowVersion ?? v.row_version), applicantName: string(v.applicantName ?? v.applicant_name ?? v.applicantDisplayName), programName: string(v.programName ?? v.program_name ?? v.programTitle), requestedAmountTwd: number(v.requestedAmountTwd ?? v.requested_amount_twd), calculatedAmountTwd: number(v.calculatedAmountTwd ?? v.calculated_amount_twd), approvedAmountTwd: number(v.approvedAmountTwd ?? v.approved_amount_twd), disbursedAmountTwd: number(v.disbursedAmountTwd ?? v.disbursed_amount_twd), needsReviewCount: number(v.needsReviewCount ?? v.needs_review_count) ?? 0 }; }
+function evaluationOf(value: unknown): RuleEvaluationView | null {
+  const v = record(value), id = string(v.id), ruleCode = string(v.ruleCode ?? v.rule_code), outcome = string(v.outcome);
+  if (!id || !ruleCode || !outcome) return null;
+  const steps = Array.isArray(v.steps)
+    ? v.steps.map((step) => {
+        const item = record(step);
+        const label = string(item.label);
+        const stepValue = string(item.value);
+        return label && stepValue ? { label, value: stepValue } : null;
+      }).filter((step): step is { label: string; value: string } => step !== null)
+    : [];
+  return { id, ruleCode, outcome, explanation: string(v.explanation) ?? '', steps, createdAt: string(v.createdAt ?? v.created_at) };
+}
+function ruleLabel(code: string) {
+  return ({
+    submission_window: '申請期程',
+    purchase_window: '購買期程',
+    invoice_duplicate: '發票重複',
+    invoice_fingerprint: '發票指紋',
+    transaction_fingerprint: '交易指紋',
+    payment_source_fingerprint: '付款來源指紋',
+    exchange_rate_reasonableness: '匯率合理性',
+    tool_consistency: '工具一致性',
+    subsidy_estimate: '補助試算',
+    admin_data_recalculation: '補助重算',
+  } as Record<string, string>)[code] ?? code;
+}
+function outcomeLabel(outcome: string) {
+  return ({ pass: '通過', fail: '不符', needs_review: '紅燈', missing: '待補' } as Record<string, string>)[outcome] ?? outcome;
+}
 function attachmentOf(value: unknown): Attachment | null { const v = record(value), id = string(v.id), mediaType = string(v.mediaType ?? v.media_type), originalName = string(v.originalName ?? v.original_name), byteSize = number(v.byteSize ?? v.byte_size); if (!id || !mediaType || !originalName || byteSize === undefined) return null; return { id, kind: string(v.kind) ?? 'other', requirementKey: string(v.requirementKey ?? v.requirement_key), mediaType, byteSize, originalName, status: string(v.status) ?? 'unknown', createdAt: string(v.createdAt ?? v.created_at), rowVersion: number(v.rowVersion ?? v.row_version) }; }
 function date(value?: string) { if (!value) return '—'; const d = new Date(value); return Number.isNaN(d.getTime()) ? value : new Intl.DateTimeFormat('zh-TW', { dateStyle: 'medium', timeStyle: 'short' }).format(d); }
 function money(value?: number) { return typeof value === 'number' ? new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(value) : '—'; }
@@ -50,8 +82,47 @@ function Rules({ password }: { password: string }) { const values: [string, bool
 function Login({ busy, error, submit, forgot }: { busy: boolean; error: string; submit: (account: string, password: string) => Promise<void>; forgot: () => void }) { const [password, setPassword] = useState(''); return <main className="auth"><section className="card"><p className="eyebrow">FLOWPASS · ADMIN</p><h1>管理後台登入</h1><p className="intro">登入後才能存取案件與審核資料。首次使用預設帳號後，系統會要求立即設定新密碼。</p><form onSubmit={(e) => { e.preventDefault(); void submit('admin', password).finally(() => setPassword('')); }}><div className="field"><span id="account-label">管理員帳號</span><output aria-labelledby="account-label" style={{ width: '100%', padding: '.68rem .75rem', border: '1px solid #b8c9bf', borderRadius: '.55rem', background: '#f3f7f4', color: '#1d2e26', fontWeight: 700 }}>admin</output></div><Password id="login-password" title="密碼" value={password} setValue={setPassword} />{error && <p className="error" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy ? '登入中…' : '登入'}</button></form><button className="link" onClick={forgot}>忘記密碼？</button><p className="security">遠端復原須先通過 Cloudflare Access Email OTP 驗證。</p></section></main>; }
 function PasswordChange({ forced, busy, error, save, back }: { forced: boolean; busy: boolean; error: string; save: (current: string, next: string) => Promise<void>; back: () => void }) { const [current, setCurrent] = useState(''), [next, setNext] = useState(''), [confirm, setConfirm] = useState(''), [local, setLocal] = useState(''); const submit = (e: FormEvent) => { e.preventDefault(); if (next !== confirm) { setLocal('兩次輸入的新密碼不一致。'); return; } setLocal(''); void save(current, next); }; return <main className="auth"><section className="card"><p className="eyebrow">帳號安全</p><h1>{forced ? '請先變更初始密碼' : '變更密碼'}</h1><p className="intro">{forced ? '完成前無法使用其他管理功能。' : '更新後，其他裝置上的登入工作階段將失效。'}</p><form onSubmit={submit}><Password id="current-password" title="目前密碼" value={current} setValue={setCurrent} /><Password id="new-password" title="新密碼" value={next} setValue={setNext} auto="new-password" /><Rules password={next} /><Password id="confirm-password" title="確認新密碼" value={confirm} setValue={setConfirm} auto="new-password" />{(error || local) && <p className="error" role="alert">{local || error}</p>}<button className="primary" disabled={busy}>{busy ? '儲存中…' : '儲存新密碼'}</button></form>{!forced && <button className="link" onClick={back}>返回案件總覽</button>}</section></main>; }
 function Recovery({ busy, error, start, complete, back }: { busy: boolean; error: string; start: () => Promise<string | null>; complete: (token: string, password: string) => Promise<void>; back: () => void }) { const [token, setToken] = useState<string | null>(null), [password, setPassword] = useState(''), [confirm, setConfirm] = useState(''), [notice, setNotice] = useState(''), [local, setLocal] = useState(''); const doStart = () => void start().then((value) => { setToken(value); setNotice(value ? '身分驗證已完成，請設定新密碼。' : '請在受 Cloudflare Access 保護的遠端入口完成 Email OTP 後，再開始復原。'); }); return <main className="auth"><section className="card"><p className="eyebrow">帳號復原</p><h1>忘記密碼</h1><p className="intro">復原只接受已驗證的指定管理信箱，不會在本機顯示或傳送復原信箱。</p>{!token ? <><button className="primary" onClick={doStart} disabled={busy}>{busy ? '驗證中…' : '開始安全復原'}</button>{notice && <p className="notice" role="status">{notice}</p>}</> : <form onSubmit={(e) => { e.preventDefault(); if (password !== confirm) { setLocal('兩次輸入的新密碼不一致。'); return; } void complete(token, password); }}><Password id="recovery-password" title="新密碼" value={password} setValue={setPassword} auto="new-password" /><Rules password={password} /><Password id="recovery-confirm" title="確認新密碼" value={confirm} setValue={setConfirm} auto="new-password" /><button className="primary" disabled={busy}>{busy ? '重設中…' : '重設密碼並返回登入'}</button></form>}{(error || local) && <p className="error" role="alert">{local || error}</p>}<button className="link" onClick={back}>返回登入</button></section></main>; }
-function Queue({ cases, selected, select, manage, refresh, refreshing }: { cases: Case[]; selected: Case | null; select: (value: Case) => void; manage: (value: Case) => void; refresh: () => void; refreshing: boolean }) { const [query, setQuery] = useState(''), [state, setState] = useState('all'); const list = useMemo(() => cases.filter((item) => (state === 'all' || item.state === state) && (!query.trim() || [item.caseCode, item.applicantName, item.programName].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase()))), [cases, query, state]); const states = [...new Set(cases.map((item) => item.state))].sort(); const cards: [string, number][] = [['待審案件', cases.filter((item) => ['submitted', 'under_review'].includes(item.state)).length], ['待補件', cases.filter((item) => item.state === 'awaiting_documents').length], ['今日新增', cases.filter((item) => item.submittedAt && new Date(item.submittedAt).toDateString() === new Date().toDateString()).length]]; return <section className="work"><header className="work-head"><div><p className="eyebrow">案件總覽</p><h1>審核佇列</h1><p>只顯示目前登入管理者可存取的案件資料。</p></div><button className="secondary" onClick={refresh} disabled={refreshing}>{refreshing ? '更新中…' : '重新整理'}</button></header><div className="metrics">{cards.map(([text, value]) => <div className="metric" key={text}><span>{text}</span><strong>{value}</strong></div>)}</div><section className="queue"><div className="queue-head"><div><h2>案件清單</h2><p>{list.length} 筆符合目前篩選</p></div><div className="filters"><label><span className="sr">搜尋案件</span><input type="search" value={query} placeholder="案件編號、申請人或方案" onChange={(e) => setQuery(e.target.value)} /></label><label><span className="sr">狀態</span><select value={state} onChange={(e) => setState(e.target.value)}><option value="all">所有狀態</option>{states.map((item) => <option value={item} key={item}>{label(item)}</option>)}</select></label></div></div>{cases.length === 0 ? <Empty title="目前沒有案件" text="案件送出後會出現在這裡。" /> : list.length === 0 ? <Empty title="找不到符合的案件" text="請調整關鍵字或狀態篩選。" /> : <div className="table-wrap"><table><thead><tr><th>案件</th><th>申請人</th><th>方案</th><th>狀態</th><th>最後更新</th><th><span className="sr">操作</span></th></tr></thead><tbody>{list.map((item) => <tr className={selected?.id === item.id ? 'selected' : ''} key={item.id}><td><strong>{item.caseCode}</strong><small>{date(item.submittedAt)}</small></td><td>{item.applicantName ?? '—'}</td><td>{item.programName ?? '—'}</td><td><span className={`status state-${item.state}`}>{label(item.state)}</span></td><td>{date(item.updatedAt)}</td><td><span className="queue-actions"><button className="link" onClick={() => select(item)} aria-label={`開啟案件 ${item.caseCode}`}>檢視</button><button className="link" onClick={() => manage(item)} aria-label={`管理案件 ${item.caseCode} 的全部資料`}>資料管理</button></span></td></tr>)}</tbody></table></div>}</section></section>; }
+function Queue({ cases, selected, select, manage, refresh, refreshing, loadError, onRetry }: { cases: Case[]; selected: Case | null; select: (value: Case) => void; manage: (value: Case) => void; refresh: () => void; refreshing: boolean; loadError: string; onRetry: () => void }) {
+  const saved = typeof window !== 'undefined' ? window.sessionStorage.getItem('flowpass-admin-queue-filter') : null;
+  const initial = saved ? (() => { try { return JSON.parse(saved) as { query?: string; state?: string; quick?: string }; } catch { return {}; } })() : {};
+  const [query, setQuery] = useState(initial.query ?? ''), [state, setState] = useState(initial.state ?? 'all'), [quick, setQuick] = useState(initial.quick ?? 'all');
+  useEffect(() => { window.sessionStorage.setItem('flowpass-admin-queue-filter', JSON.stringify({ query, state, quick })); }, [query, state, quick]);
+  const list = useMemo(() => cases.filter((item) => {
+    if (state !== 'all' && item.state !== state) return false;
+    if (quick === 'high-risk' && !(item.needsReviewCount && item.needsReviewCount > 0)) return false;
+    if (quick === 'awaiting-documents' && item.state !== 'awaiting_documents') return false;
+    if (query.trim() && ![item.caseCode, item.applicantName, item.programName].filter(Boolean).join(' ').toLowerCase().includes(query.trim().toLowerCase())) return false;
+    return true;
+  }).slice().sort((left, right) => (right.needsReviewCount ?? 0) - (left.needsReviewCount ?? 0) || String(right.updatedAt ?? '').localeCompare(String(left.updatedAt ?? ''))), [cases, query, quick, state]);
+  const states = [...new Set(cases.map((item) => item.state))].sort();
+  const cards: [string, number, string][] = [
+    ['待審案件', cases.filter((item) => ['submitted', 'under_review'].includes(item.state)).length, 'all'],
+    ['紅燈例外', cases.filter((item) => (item.needsReviewCount ?? 0) > 0).length, 'high-risk'],
+    ['待補件', cases.filter((item) => item.state === 'awaiting_documents').length, 'awaiting-documents'],
+    ['今日新增', cases.filter((item) => item.submittedAt && new Date(item.submittedAt).toDateString() === new Date().toDateString()).length, 'all'],
+  ];
+  return <section className="work"><header className="work-head"><div><p className="eyebrow">案件總覽</p><h1>審核佇列</h1><p>排序：紅燈件數多者優先，其次依最後更新時間由新到舊。</p></div><button className="secondary" onClick={refresh} disabled={refreshing}>{refreshing ? '更新中…' : '重新整理'}</button></header><div className="metrics">{cards.map(([text, value, filter]) => <button type="button" className={`metric${quick === filter && filter !== 'all' ? ' is-active' : ''}`} key={text} onClick={() => setQuick(filter)}><span>{text}</span><strong>{value}</strong></button>)}</div><section className="queue"><div className="queue-head"><div><h2>案件清單</h2><p>{list.length} 筆符合目前篩選；篩選會保存在此瀏覽器工作階段。</p></div><div className="filters"><label><span className="sr">搜尋案件</span><input type="search" value={query} placeholder="案件編號、申請人或方案" onChange={(e) => setQuery(e.target.value)} /></label><label><span className="sr">狀態</span><select value={state} onChange={(e) => setState(e.target.value)}><option value="all">所有狀態</option>{states.map((item) => <option value={item} key={item}>{label(item)}</option>)}</select></label><label><span className="sr">快速檢視</span><select value={quick} onChange={(e) => setQuick(e.target.value)}><option value="all">全部案件</option><option value="high-risk">高風險／紅燈</option><option value="awaiting-documents">待補件</option></select></label></div></div>{loadError ? <div className="empty" role="alert"><h3>案件清單載入失敗</h3><p>{loadError}</p><button type="button" className="secondary" onClick={onRetry}>重試</button></div> : cases.length === 0 ? <Empty title="目前沒有案件" text="案件送出後會出現在這裡。" /> : list.length === 0 ? <Empty title="找不到符合的案件" text="請調整關鍵字或狀態篩選。" /> : <div className="table-wrap"><table><thead><tr><th>案件</th><th>申請人</th><th>方案</th><th>狀態</th><th>勾稽</th><th>最後更新</th><th><span className="sr">操作</span></th></tr></thead><tbody>{list.map((item) => <tr className={selected?.id === item.id ? 'selected' : ''} key={item.id}><td><strong>{item.caseCode}</strong><small>{date(item.submittedAt)}</small></td><td>{item.applicantName ?? '—'}</td><td>{item.programName ?? '—'}</td><td><span className={`status state-${item.state}`}>{label(item.state)}</span></td><td>{(item.needsReviewCount ?? 0) > 0 ? <span className="status state-needs-review">紅燈 {item.needsReviewCount}</span> : <span className="status state-pass">通過</span>}</td><td>{date(item.updatedAt)}</td><td><span className="queue-actions"><button className="link" onClick={() => select(item)} aria-label={`開啟案件 ${item.caseCode}`}>檢視</button><button className="link" onClick={() => manage(item)} aria-label={`管理案件 ${item.caseCode} 的全部資料`}>資料管理</button></span></td></tr>)}</tbody></table></div>}</section></section>;
+}
 function Empty({ title, text }: { title: string; text: string }) { return <div className="empty"><h3>{title}</h3><p>{text}</p></div>; }
+function Evaluations({ caseId }: { caseId: string }) {
+  const [items, setItems] = useState<RuleEvaluationView[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    void api<unknown>(`/admin/v1/cases/${encodeURIComponent(caseId)}/evaluations`).then((value) => {
+      if (!active) return;
+      const data = record(value);
+      setItems((Array.isArray(data.evaluations) ? data.evaluations : []).map(evaluationOf).filter((item): item is RuleEvaluationView => item !== null));
+    }).catch(() => { if (active) setError('勾稽結果暫時無法載入。'); }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [caseId]);
+  const ordered = useMemo(() => items.slice().sort((left, right) => {
+    const rank = (outcome: string) => outcome === 'needs_review' ? 0 : outcome === 'fail' ? 1 : outcome === 'missing' ? 2 : 3;
+    return rank(left.outcome) - rank(right.outcome);
+  }), [items]);
+  return <section className="evaluations" aria-labelledby="evaluations-title"><div className="attachments-head"><h3 id="evaluations-title">勾稽結果（{ordered.length}）</h3>{loading && <span role="status">載入中…</span>}</div>{error ? <p className="error" role="alert">{error}</p> : !loading && ordered.length === 0 ? <p className="attachments-empty">尚無規則判定紀錄。</p> : <ul className="evaluation-list">{ordered.map((item) => <li key={item.id} className={`evaluation-item outcome-${item.outcome}`}><div className="evaluation-head"><strong>{ruleLabel(item.ruleCode)}</strong><span className={`status state-${item.outcome === 'needs_review' ? 'needs-review' : item.outcome}`}>{outcomeLabel(item.outcome)}</span></div>{item.explanation && <p>{item.explanation}</p>}{item.steps.length > 0 && <dl className="evaluation-steps">{item.steps.map((step) => <div key={`${item.id}-${step.label}`}><dt>{step.label}</dt><dd>{step.value}</dd></div>)}</dl>}</li>)}</ul>}</section>;
+}
 function AiUsagePanel({ request, onBack }: { request: AdminRequest; onBack: () => void }) {
   const [usage, setUsage] = useState<AiUsage | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,8 +158,26 @@ function Panel({ item, busy, error, close, clearError, update }: { item: Case; b
   const [confirming, setConfirming] = useState(false);
   const confirmationDialog = useRef<HTMLDialogElement>(null);
   const confirmationTrigger = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const review = availableReviews.find((value) => value.action === name);
   const amountLabel = review?.amount === 'disbursed' ? '匯款金額' : '核准金額';
+  // Runs once per panel open, not on every `confirming` toggle — otherwise reopening or
+  // closing the confirmation dialog would reschedule this and steal focus back from
+  // whatever the confirmation flow just focused (its trigger button, or itself).
+  useEffect(() => {
+    const timer = window.setTimeout(() => closeButtonRef.current?.focus(), 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || confirming) return;
+      event.preventDefault();
+      close();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [close, confirming]);
   useEffect(() => {
     if (!confirming) return;
     const dialog = confirmationDialog.current;
@@ -117,7 +206,11 @@ function Panel({ item, busy, error, close, clearError, update }: { item: Case; b
         ...(review.supplement === 'correction' ? { passportReconfirmationRequired: reconfirm } : {}),
       }
     : {
-        ...(review?.reasonLabel && reason.trim() ? { reason: reason.trim() } : {}),
+        ...(review?.action === 'start_review'
+          ? { reason: '開始審查' }
+          : review?.reasonLabel && reason.trim()
+            ? { reason: reason.trim() }
+            : {}),
         ...(review?.amount === 'approved' && amountIsValid ? { approvedAmountTwd: Number(amount) } : {}),
         ...(review?.amount === 'disbursed' && amountIsValid ? { disbursedAmountTwd: Number(amount) } : {}),
       };
@@ -144,17 +237,31 @@ function Panel({ item, busy, error, close, clearError, update }: { item: Case; b
     if (review.confirm) setConfirming(true);
     else void update(review, decision);
   };
-  return <aside className="panel" aria-labelledby="case-title">
-    <header><div><p className="eyebrow">案件詳情</p><h2 id="case-title">{item.caseCode}</h2></div><button className="close" onClick={close} aria-label="關閉案件詳情">×</button></header>
+  return <aside ref={panelRef} className="panel" role="dialog" aria-modal="true" aria-labelledby="case-title">
+    <header><div><p className="eyebrow">案件詳情</p><h2 id="case-title">{item.caseCode}</h2></div><button ref={closeButtonRef} className="close" onClick={close} aria-label="關閉案件詳情">×</button></header>
     <dl><div><dt>狀態</dt><dd><span className={`status state-${item.state}`}>{label(item.state)}</span></dd></div><div><dt>申請人</dt><dd>{item.applicantName ?? '尚未提供'}</dd></div><div><dt>方案</dt><dd>{item.programName ?? '尚未提供'}</dd></div><div><dt>送出時間</dt><dd>{date(item.submittedAt)}</dd></div><div><dt>申請金額</dt><dd>{money(item.requestedAmountTwd)}</dd></div><div><dt>系統計算</dt><dd>{money(item.calculatedAmountTwd)}</dd></div><div><dt>核准金額</dt><dd>{money(item.approvedAmountTwd)}</dd></div><div><dt>最後更新</dt><dd>{date(item.updatedAt)}</dd></div></dl>
+    <Evaluations key={`eval-${item.id}`} caseId={item.id} />
     <Attachments key={item.id} caseId={item.id} />
     {availableReviews.length === 0 ? <section className="review review-empty"><h3>更新案件狀態</h3><p>這個狀態目前沒有可執行的審核動作。</p></section> : <form className="review" onSubmit={submit}>
       <h3>更新案件狀態</h3>
       <p>只會顯示目前狀態可執行的動作；送出後會建立審核紀錄。</p>
       <div className="field"><label htmlFor="review-action">審核動作</label><select id="review-action" value={name} onChange={(event) => chooseReview(event.target.value)}><option value="" disabled>請選擇處理方式</option>{availableReviews.map((value) => <option value={value.action} key={value.action}>{value.label}</option>)}</select></div>
       {review?.supplement && <>
-        <div className="field"><label htmlFor="supplement-title">{review.supplement === 'documents' ? '補件項目（必填）' : '需修正項目（必填）'}</label><input id="supplement-title" maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={review.supplement === 'documents' ? '例如：完整的購買發票' : '例如：申請用途與預算'} /></div>
-        <div className="field"><label htmlFor="supplement-instructions">{review.supplement === 'documents' ? '給申請人的補件說明（必填）' : '給申請人的修正說明（必填）'}</label><textarea id="supplement-instructions" rows={4} maxLength={10000} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder={review.supplement === 'documents' ? '請具體說明缺少的文件、內容或清晰度要求' : '請具體說明需修正的內容'} /></div>
+        <aside className={`review-callout review-callout--${review.supplement}`} aria-label={review.supplement === 'documents' ? '補件說明' : '退回修正說明'}>
+          {review.supplement === 'documents' ? (
+            <>
+              <strong>要求補件：請申請人補上傳文件</strong>
+              <p>適用於發票、身分證明、切結書等缺件或影像不清。申請人會看到上傳檔案畫面，不會被要求改寫申請內容。</p>
+            </>
+          ) : (
+            <>
+              <strong>退回修正：請申請人改申請內容</strong>
+              <p>適用於用途、預算、工具或護照敘述有誤。申請人會看到修正說明與「前往修改」入口，不是補件上傳。</p>
+            </>
+          )}
+        </aside>
+        <div className="field"><label htmlFor="supplement-title">{review.supplement === 'documents' ? '補件項目（必填）' : '需修正項目（必填）'}</label><input id="supplement-title" maxLength={200} value={title} onChange={(event) => setTitle(event.target.value)} placeholder={review.supplement === 'documents' ? '例如：完整的購買發票' : '例如：申請用途寫法與實際流程不符'} /></div>
+        <div className="field"><label htmlFor="supplement-instructions">{review.supplement === 'documents' ? '給申請人的補件說明（必填）' : '給申請人的修正說明（必填）'}</label><textarea id="supplement-instructions" rows={4} maxLength={10000} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder={review.supplement === 'documents' ? '請具體說明缺少的文件、內容或清晰度要求' : '請具體說明哪一段要改、正確應寫成什麼'} /></div>
         {review.supplement === 'correction' && <label className="choice"><input type="checkbox" checked={reconfirm} onChange={(event) => setReconfirm(event.target.checked)} />修正後請申請人重新確認申請內容</label>}
       </>}
       {review?.amount && <div className="field"><label htmlFor="approved-amount">{amountLabel}（新台幣，必填）</label><input id="approved-amount" type="number" inputMode="numeric" min="0" step="1" value={amount} onChange={(event) => setAmount(event.target.value)} /></div>}
@@ -164,7 +271,7 @@ function Panel({ item, busy, error, close, clearError, update }: { item: Case; b
       {error && <p className="error" role="alert">{error}</p>}
       {review && <button ref={confirmationTrigger} className={`primary${review.danger ? ' danger' : ''}`} aria-busy={busy} disabled={busy || missing.length > 0}>{busy ? '更新中…' : review.cta}</button>}
     </form>}
-    {confirming && review && <dialog ref={confirmationDialog} className="review-confirm-dialog" aria-labelledby="review-confirm-title" onCancel={(event) => { event.preventDefault(); closeConfirmation(); }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeConfirmation(); } }}>
+    {confirming && review && <dialog ref={confirmationDialog} className="review-confirm-dialog" aria-modal="true" aria-labelledby="review-confirm-title" onCancel={(event) => { event.preventDefault(); closeConfirmation(); }} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); closeConfirmation(); } }}>
       <p className="eyebrow">送出前確認</p>
       <h4 id="review-confirm-title">確認{review.cta}</h4>
       <p>案件狀態將更新為「{label(review.toState)}」，並建立一筆審核紀錄。</p>
@@ -179,20 +286,20 @@ function Panel({ item, busy, error, close, clearError, update }: { item: Case; b
     </dialog>}
   </aside>;
 }
-function App() { const [session, setSession] = useState<Session | null>(null), [view, setView] = useState<'login' | 'recovery' | 'password' | 'dashboard' | 'ai-usage'>('login'), [cases, setCases] = useState<Case[]>([]), [selected, setSelected] = useState<Case | null>(null), [managing, setManaging] = useState<Case | null>(null), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState('');
-  const refreshSession = async () => { try { const next = sessionOf(await api<unknown>('/admin/v1/session')); setSession(next); setView(!next.authenticated ? 'login' : next.mustChangePassword ? 'password' : 'dashboard'); return next; } catch (e) { const err = e as ApiError; if (err.status === 401 || err.status === 403) { setSession(null); setView('login'); return null; } setError(err.message); return null; } };
-  const load = async () => { setLoading(true); try { const data = record(await api<unknown>('/admin/v1/cases')); const next = (Array.isArray(data.cases) ? data.cases : []).map(caseOf).filter((value): value is Case => value !== null); setCases(next); setSelected((old) => old ? next.find((item) => item.id === old.id) ?? null : null); } catch (e) { const err = e as ApiError; if (err.status === 401) { setSession(null); setView('login'); } else setError(err.message); } finally { setLoading(false); } };
+function App() { const [session, setSession] = useState<Session | null>(null), [view, setView] = useState<'login' | 'recovery' | 'password' | 'dashboard' | 'ai-usage' | 'security-incidents'>('login'), [cases, setCases] = useState<Case[]>([]), [selected, setSelected] = useState<Case | null>(null), [managing, setManaging] = useState<Case | null>(null), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [queueError, setQueueError] = useState(''), [authError, setAuthError] = useState(''), [panelError, setPanelError] = useState(''), [notice, setNotice] = useState('');
+  const refreshSession = async () => { try { const next = sessionOf(await api<unknown>('/admin/v1/session')); setSession(next); setView(!next.authenticated ? 'login' : next.mustChangePassword ? 'password' : 'dashboard'); return next; } catch (e) { const err = e as ApiError; if (err.status === 401 || err.status === 403) { setSession(null); setView('login'); return null; } setAuthError(err.message); return null; } };
+  const load = async () => { setLoading(true); setQueueError(''); try { const data = record(await api<unknown>('/admin/v1/cases')); const next = (Array.isArray(data.cases) ? data.cases : []).map(caseOf).filter((value): value is Case => value !== null); setCases(next); setSelected((old) => old ? next.find((item) => item.id === old.id) ?? null : null); } catch (e) { const err = e as ApiError; if (err.status === 401) { setSession(null); setView('login'); } else setQueueError(err.message || '案件清單暫時無法載入。'); } finally { setLoading(false); } };
   useEffect(() => { const timer = window.setTimeout(() => { void refreshSession(); }, 0); return () => window.clearTimeout(timer); }, []);
   useEffect(() => { if (view !== 'dashboard' || !session?.authenticated || session.mustChangePassword) return; const timer = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(timer); }, [view, session?.authenticated, session?.mustChangePassword]);
-  const login = async (displayName: string, password: string) => { setBusy(true); setError(''); try { await api('/admin/v1/sessions', { method: 'POST', body: JSON.stringify({ displayName, password }) }); const next = await refreshSession(); if (next?.authenticated) setNotice(next.mustChangePassword ? '請先設定新密碼。' : '已登入管理後台。'); } catch (e) { setError((e as ApiError).message || '登入失敗，請確認帳號或密碼。'); } finally { setBusy(false); } };
-  const change = async (currentPassword: string, newPassword: string) => { setBusy(true); setError(''); try { await api('/admin/v1/password/change', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }); await refreshSession(); setNotice('密碼已更新；其他登入工作階段已失效。'); } catch (e) { setError((e as ApiError).message); } finally { setBusy(false); } };
-  const start = async () => { setBusy(true); setError(''); try { const data = record(await api<unknown>('/admin/v1/password-recovery/start', { method: 'POST', body: '{}' })); return string(data.challengeToken ?? data.token ?? record(data.challenge).token) ?? null; } catch (e) { setError((e as ApiError).message); return null; } finally { setBusy(false); } };
-  const complete = async (challengeToken: string, newPassword: string) => { setBusy(true); setError(''); try { await api('/admin/v1/password-recovery/complete', { method: 'POST', body: JSON.stringify({ challengeToken, newPassword }) }); setView('login'); setNotice('密碼已重設，請使用新密碼登入。'); } catch (e) { setError((e as ApiError).message); } finally { setBusy(false); } };
-  const logout = async () => { setBusy(true); setError(''); try { await api('/admin/v1/sessions/current', { method: 'DELETE' }); } catch (e) { if ((e as ApiError).status !== 401) setError((e as ApiError).message); } finally { setSession(null); setCases([]); setSelected(null); setManaging(null); setView('login'); setBusy(false); setNotice('已登出管理後台。'); } };
-  const update = async (review: Review, decision: ReviewDecision) => { if (!selected) return; setBusy(true); setError(''); const headers: Record<string, string> = { 'idempotency-key': uuid() }; if (selected.rowVersion !== undefined) headers['if-match'] = `"${selected.rowVersion}"`; const body: Record<string, unknown> = { action: review.action, toState: review.toState, ...decision }; try { const data = record(await api<unknown>(`/admin/v1/cases/${encodeURIComponent(selected.id)}/review`, { method: 'POST', headers, body: JSON.stringify(body) })); const changed = caseOf(data.case ?? data); if (changed) setSelected(changed); setNotice(`案件 ${selected.caseCode} 已更新為「${review.label}」。`); await load(); } catch (e) { const err = e as ApiError; setError(err.status === 409 ? '此案件已被更新，請重新整理後檢查最新狀態。' : err.message); } finally { setBusy(false); } };
-  if (view === 'login') return <Login busy={busy} error={error} submit={login} forgot={() => { setError(''); setView('recovery'); }} />;
-  if (view === 'recovery') return <Recovery busy={busy} error={error} start={start} complete={complete} back={() => { setError(''); setView('login'); }} />;
-  if (view === 'password') return <PasswordChange forced={session?.mustChangePassword === true} busy={busy} error={error} save={change} back={() => setView('dashboard')} />;
-  return <div className="shell"><a className="skip" href="#main">跳到主要內容</a><header className="top"><a className="brand" href="#main" onClick={() => { setManaging(null); setView('dashboard'); }}><b>FP</b><strong>FlowPass</strong><small>管理後台</small></a><div><span>{session?.displayName ?? '管理員'}</span>{view === 'dashboard' && <button className="link" onClick={() => { setError(''); setView('ai-usage'); }}>AI 用量</button>}<button className="link" onClick={() => { setError(''); setView('password'); }}>變更密碼</button><button className="link" onClick={() => void logout()} disabled={busy}>登出</button></div></header>{notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label="關閉通知">×</button></div>}{error && <div className="alert" role="alert">{error}<button onClick={() => setError('')} aria-label="關閉錯誤訊息">×</button></div>}<main id="main">{view === 'ai-usage' ? <AiUsagePanel request={api} onBack={() => setView('dashboard')} /> : managing ? <DataManager caseId={managing.id} caseCode={managing.caseCode} request={api} onBack={() => setManaging(null)} onDeleted={(result) => { setManaging(null); setSelected(null); setNotice(`案件 ${result.caseCode} 及其全部相關資料已永久刪除。`); void load(); }} /> : loading && !cases.length ? <div className="loading" role="status">正在載入案件資料…</div> : <Queue cases={cases} selected={selected} select={setSelected} manage={(item) => { setSelected(null); setManaging(item); }} refresh={() => void load()} refreshing={loading} />}</main>{!managing && selected && <div className="layer"><button className="backdrop" onClick={() => setSelected(null)} aria-label="關閉案件詳情" /><Panel key={`${selected.id}:${selected.state}:${selected.rowVersion ?? ''}`} item={selected} busy={busy} error={error} close={() => setSelected(null)} clearError={() => setError('')} update={update} /></div>}</div>;
+  const login = async (displayName: string, password: string) => { setBusy(true); setAuthError(''); try { await api('/admin/v1/sessions', { method: 'POST', body: JSON.stringify({ displayName, password }) }); const next = await refreshSession(); if (next?.authenticated) setNotice(next.mustChangePassword ? '請先設定新密碼。' : '已登入管理後台。'); } catch (e) { setAuthError((e as ApiError).message || '登入失敗，請確認帳號或密碼。'); } finally { setBusy(false); } };
+  const change = async (currentPassword: string, newPassword: string) => { setBusy(true); setAuthError(''); try { await api('/admin/v1/password/change', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }); await refreshSession(); setNotice('密碼已更新；其他登入工作階段已失效。'); } catch (e) { setAuthError((e as ApiError).message); } finally { setBusy(false); } };
+  const start = async () => { setBusy(true); setAuthError(''); try { const data = record(await api<unknown>('/admin/v1/password-recovery/start', { method: 'POST', body: '{}' })); return string(data.challengeToken ?? data.token ?? record(data.challenge).token) ?? null; } catch (e) { setAuthError((e as ApiError).message); return null; } finally { setBusy(false); } };
+  const complete = async (challengeToken: string, newPassword: string) => { setBusy(true); setAuthError(''); try { await api('/admin/v1/password-recovery/complete', { method: 'POST', body: JSON.stringify({ challengeToken, newPassword }) }); setView('login'); setNotice('密碼已重設，請使用新密碼登入。'); } catch (e) { setAuthError((e as ApiError).message); } finally { setBusy(false); } };
+  const logout = async () => { setBusy(true); setAuthError(''); try { await api('/admin/v1/sessions/current', { method: 'DELETE' }); } catch (e) { if ((e as ApiError).status !== 401) setAuthError((e as ApiError).message); } finally { setSession(null); setCases([]); setSelected(null); setManaging(null); setView('login'); setBusy(false); setNotice('已登出管理後台。'); } };
+  const update = async (review: Review, decision: ReviewDecision) => { if (!selected) return; setBusy(true); setPanelError(''); const headers: Record<string, string> = { 'idempotency-key': uuid() }; if (selected.rowVersion !== undefined) headers['if-match'] = `"${selected.rowVersion}"`; const body: Record<string, unknown> = { action: review.action, toState: review.toState, ...decision }; try { const data = record(await api<unknown>(`/admin/v1/cases/${encodeURIComponent(selected.id)}/review`, { method: 'POST', headers, body: JSON.stringify(body) })); const changed = caseOf(data.case ?? data); if (changed) setSelected(changed); setNotice(`案件 ${selected.caseCode} 已更新為「${review.label}」。`); await load(); } catch (e) { const err = e as ApiError; setPanelError(err.status === 409 ? '此案件已被更新，請重新整理後檢查最新狀態。' : err.message); } finally { setBusy(false); } };
+  if (view === 'login') return <Login busy={busy} error={authError} submit={login} forgot={() => { setAuthError(''); setView('recovery'); }} />;
+  if (view === 'recovery') return <Recovery busy={busy} error={authError} start={start} complete={complete} back={() => { setAuthError(''); setView('login'); }} />;
+  if (view === 'password') return <PasswordChange forced={session?.mustChangePassword === true} busy={busy} error={authError} save={change} back={() => setView('dashboard')} />;
+  return <div className="shell"><a className="skip" href="#main">跳到主要內容</a><header className="top"><a className="brand" href="#main" onClick={() => { setManaging(null); setView('dashboard'); }}><b>FP</b><strong>FlowPass</strong><small>管理後台</small></a><nav className="top-nav" aria-label="管理後台"><span>{session?.displayName ?? '管理員'}</span>{view === 'dashboard' && <><button className="link" onClick={() => { setAuthError(''); setView('ai-usage'); }}>AI 用量</button><button className="link" onClick={() => { setAuthError(''); setView('security-incidents'); }}>資安提醒</button></>}<button className="link" onClick={() => { setAuthError(''); setView('password'); }}>變更密碼</button><button className="link" onClick={() => void logout()} disabled={busy}>登出</button></nav></header>{notice && <div className="toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label="關閉通知">×</button></div>}<main id="main">{view === 'ai-usage' ? <AiUsagePanel request={api} onBack={() => setView('dashboard')} /> : view === 'security-incidents' ? <SecurityAlertPublisher request={api} onBack={() => setView('dashboard')} /> : managing ? <DataManager caseId={managing.id} caseCode={managing.caseCode} request={api} onBack={() => setManaging(null)} onDeleted={(result) => { setManaging(null); setSelected(null); setNotice(`案件 ${result.caseCode} 及其全部相關資料已永久刪除。`); void load(); }} /> : loading && !cases.length && !queueError ? <div className="loading" role="status">正在載入案件資料…</div> : <Queue cases={cases} selected={selected} select={setSelected} manage={(item) => { setSelected(null); setManaging(item); }} refresh={() => void load()} refreshing={loading} loadError={queueError} onRetry={() => void load()} />}</main>{!managing && selected && <div className="layer"><button className="backdrop" onClick={() => setSelected(null)} aria-label="關閉案件詳情" /><Panel key={`${selected.id}:${selected.state}:${selected.rowVersion ?? ''}`} item={selected} busy={busy} error={panelError} close={() => setSelected(null)} clearError={() => setPanelError('')} update={update} /></div>}</div>;
 }
 createRoot(document.getElementById('root')!).render(<App />);

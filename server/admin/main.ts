@@ -28,5 +28,10 @@ void (async () => {
   serve({ fetch: createAdminApp(database, dependencies).fetch, hostname: runtimeConfig.adminHost, port: runtimeConfig.adminPort });
 })();
 
-process.once('SIGINT', () => database.close());
-process.once('SIGTERM', () => database.close());
+function shutdown(): void {
+  database.close();
+  process.exit(0);
+}
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);

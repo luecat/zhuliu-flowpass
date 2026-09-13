@@ -9,6 +9,7 @@ import { hashToken } from '../crypto/token-hash';
 import { listAiRunsForAdmin } from '../db/repositories/ai-runs';
 import { decryptDatabaseText } from '../db/repositories/encrypted-fields';
 import { getDocumentForAdmin, listDocumentsForAdmin, type AdminDocumentRecord } from '../db/repositories/documents';
+import { listRuleEvaluationsForAdmin } from '../db/repositories/rules';
 import type { DocumentVault } from '../services/document-vault';
 import { localReadiness } from '../services/health-service';
 import { ADMIN_CSRF_COOKIE, ADMIN_SESSION_COOKIE, authenticateAdmin, createAdminSession, verifyAdminCsrf } from './auth/admin-session';
@@ -19,6 +20,8 @@ import { createIncidentRoutes } from './routes/incidents';
 import { createToolRoutes } from './routes/tools';
 import { createDataManagementRoutes } from './routes/data-management';
 import { DEFAULT_GEMINI_QUOTA_MODELS } from '../adapters/gemini/model-quota-router';
+import { parseStoredCoreAnswers } from '../../shared/case-contract';
+import { PurchaseDetailsSchema } from '../../shared/purchase-details-contract';
 
 export interface CloudflareAccessIdentity {
   email: string;
@@ -222,8 +225,64 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
     if (!auth) return context.json({ error: { code: 'UNAUTHENTICATED', message: '請重新登入。' } }, 401);
     const account = accountState(database, auth.adminId);
     if (!account || account.must_change_password === 1) return context.json({ error: { code: 'PASSWORD_CHANGE_REQUIRED', message: '請先變更初始密碼。' } }, 403);
-    const rows = database.prepare(`SELECT id, case_code, state, requested_amount_twd, calculated_amount_twd, approved_amount_twd, disbursed_amount_twd, submitted_at, updated_at, row_version FROM cases WHERE deleted_at IS NULL ORDER BY updated_at DESC`).all();
+    const rows = database.prepare(`
+      SELECT cases.id, cases.case_code, cases.state, cases.requested_amount_twd, cases.calculated_amount_twd,
+             cases.approved_amount_twd, cases.disbursed_amount_twd, cases.submitted_at, cases.updated_at, cases.row_version,
+             (
+               SELECT COUNT(*)
+               FROM rule_evaluations
+               WHERE rule_evaluations.case_id = cases.id
+                 AND rule_evaluations.outcome = 'needs_review'
+             ) AS needs_review_count
+      FROM cases
+      WHERE cases.deleted_at IS NULL
+      ORDER BY needs_review_count DESC, cases.updated_at DESC
+    `).all();
     return context.json({ data: { cases: rows } });
+  });
+
+  app.get('/admin/v1/cases/:caseId/evaluations', (context) => {
+    if (!database) return context.json({ error: { code: 'UNAVAILABLE', message: '服務暫時無法使用。' } }, 503);
+    const auth = authenticated(database, context);
+    if (!auth) return context.json({ error: { code: 'UNAUTHENTICATED', message: '請重新登入。' } }, 401);
+    const caseId = context.req.param('caseId');
+    const existingCase = database.prepare('SELECT id FROM cases WHERE id = ? AND deleted_at IS NULL').get(caseId);
+    if (!existingCase) return context.json({ error: { code: 'NOT_FOUND', message: '找不到這筆案件。' } }, 404);
+    const evaluations = listRuleEvaluationsForAdmin(database, { adminId: auth.adminId }, caseId).map((row) => {
+      let ruleCode = row.evaluationKind;
+      let explanation = '';
+      let steps: Array<{ label: string; value: string }> = [];
+      let reasonCode = '';
+      try {
+        const parsed = JSON.parse(row.resultJson) as {
+          ruleCode?: string;
+          explanation?: string;
+          reasonCode?: string;
+          steps?: Array<{ label?: string; value?: string }>;
+        };
+        ruleCode = parsed.ruleCode ?? ruleCode;
+        explanation = parsed.explanation ?? '';
+        reasonCode = parsed.reasonCode ?? '';
+        steps = Array.isArray(parsed.steps)
+          ? parsed.steps
+              .filter((step): step is { label: string; value: string } => typeof step?.label === 'string' && typeof step?.value === 'string')
+              .filter((step) => step.label !== '交易指紋' && step.label !== '付款來源指紋' && step.label !== '發票指紋')
+          : [];
+      } catch {
+        /* keep defaults */
+      }
+      return {
+        id: row.id,
+        evaluationKind: row.evaluationKind,
+        outcome: row.outcome,
+        ruleCode,
+        reasonCode,
+        explanation,
+        steps,
+        createdAt: row.createdAt,
+      };
+    });
+    return context.json({ data: { evaluations } });
   });
 
   app.get('/admin/v1/ai-usage', async (context) => {

@@ -110,7 +110,7 @@ describe('FlowPass admin review actions', () => {
       '駁回',
     ]);
     expect(screen.queryByRole('option', { name: '開始審核' })).not.toBeInTheDocument();
-    fireEvent.click(within(screen.getByRole('complementary', { name: CASE_CODE })).getByRole('button', { name: '關閉案件詳情' }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: CASE_CODE })).getByRole('button', { name: '關閉案件詳情' }));
 
     fireEvent.click(await screen.findByRole('button', { name: `開啟案件 ${closedCode}` }));
     expect(await screen.findByText('這個狀態目前沒有可執行的審核動作。')).toBeInTheDocument();
@@ -148,17 +148,18 @@ describe('FlowPass admin review actions', () => {
     expect(screen.getByRole('button', { name: '駁回案件' })).toBeDisabled();
   });
 
-  it('requires an applicant-visible reason before starting review', async () => {
-    stubAdmin([{ id: CASE_ID, case_code: CASE_CODE, state: 'submitted', submitted_at: '2026-09-01T00:53:00.000Z', updated_at: '2026-09-01T00:59:00.000Z', row_version: 15 }]);
+  it('starts review without requiring an applicant-visible reason', async () => {
+    const { reviewBodies } = stubAdmin([{ id: CASE_ID, case_code: CASE_CODE, state: 'submitted', submitted_at: '2026-09-01T00:53:00.000Z', updated_at: '2026-09-01T00:59:00.000Z', row_version: 15 }]);
     await mountAdmin();
     fireEvent.click(await screen.findByRole('button', { name: `開啟案件 ${CASE_CODE}` }));
     fireEvent.change(await screen.findByRole('combobox', { name: '審核動作' }), { target: { value: 'start_review' } });
-    const reason = screen.getByRole('textbox', { name: '原因（必填）' });
-    expect(reason).toBeInTheDocument();
-    expect(screen.getByText('原因會被申請者看到')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '開始審核' })).toBeDisabled();
-    fireEvent.change(reason, { target: { value: '已收到申請，現正在核對資料。' } });
-    expect(screen.getByRole('button', { name: '開始審核' })).toBeEnabled();
+    expect(screen.queryByRole('textbox', { name: '原因（必填）' })).not.toBeInTheDocument();
+    expect(screen.queryByText('原因會被申請者看到')).not.toBeInTheDocument();
+    const start = screen.getByRole('button', { name: '開始審核' });
+    expect(start).toBeEnabled();
+    fireEvent.click(start);
+    await waitFor(() => expect(reviewBodies).toHaveLength(1));
+    expect(reviewBodies[0]).toMatchObject({ action: 'start_review', toState: 'under_review', reason: '開始審查' });
   });
 
   it('confirms a complete supplement request before sending the backend contract', async () => {

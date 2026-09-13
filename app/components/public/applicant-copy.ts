@@ -61,48 +61,48 @@ export function followUpApplicantCopy(questionKey: string, prompt: string, reaso
   const topics = followUpTopics(questionKey, prompt, reason);
   const has = (topic: ReturnType<typeof followUpTopics>[number]) => topics.includes(topic);
   if (has('storage') && has('retention')) return {
-    prompt: '處理完成後，檔案會放在哪裡、保留多久？',
-    reason: '確認檔案的存放位置與刪除時間。',
-    placeholder: '例如：手機上傳後刪除，或 Google Drive 保留 30 天。',
+    prompt: '處理完成後，檔案存放在哪裡、保留多久？',
+    reason: '確認檔案存放位置與銷毀時間。',
+    placeholder: '例如：存於手機且上傳後刪除，或存於雲端保留 30 天。',
   };
   if (has('tool')) return {
-    prompt: '你會使用哪個 AI 工具？',
-    reason: '確認資料會交給哪個服務處理。',
-    placeholder: '例如：Adobe Firefly、Canva、ChatGPT，或其他工具。',
+    prompt: '使用哪個 AI 工具？',
+    reason: '確認資料處理的服務來源。',
+    placeholder: '例如：Adobe Firefly、Canva 或其他工具。',
   };
   if (has('storage')) return {
-    prompt: '處理完成後，檔案會存在哪裡？',
-    reason: '確認完成後檔案的存放位置。',
-    placeholder: '例如：只存在手機，或上傳到 Google Drive。',
+    prompt: '處理完成後，檔案存放在哪裡？',
+    reason: '確認檔案存放位置。',
+    placeholder: '例如：僅存於手機，或上傳至 Google Drive。',
   };
   if (has('retention')) return {
-    prompt: '處理完成後，檔案會保留多久？',
-    reason: '確認檔案何時會刪除。',
+    prompt: '處理完成後，檔案保留多久？',
+    reason: '確認檔案銷毀時間。',
     placeholder: '例如：上傳後刪除、保留 30 天，或長期保存。',
   };
   if (has('sensitive_data')) return {
-    prompt: '資料中有沒有人臉、姓名或其他個資？',
-    reason: '確認是否需要遮蔽資料或先取得同意。',
-    placeholder: '例如：有人臉與姓名；沒有也請直接寫「沒有」。',
+    prompt: '資料可能包含哪些敏感內容？',
+    reason: '系統需依此評估風險。請確認是否需遮蔽、撤銷金鑰或取得當事人同意。',
+    placeholder: '例如：人臉、姓名、密碼、帳號或未成年資料；若無請填「沒有」。',
   };
   if (has('audience')) return {
-    prompt: '完成後會放在哪裡、給誰看到？',
-    reason: '確認成果的分享位置與可見範圍。',
-    placeholder: '例如：只給社團成員，或公開發布在 Instagram。',
+    prompt: '完成後檔案存放在哪裡、分享給誰？',
+    reason: '確認檔案的可見範圍。',
+    placeholder: '例如：僅限社團成員，或發布於公開社群。',
   };
   if (has('material')) return {
-    prompt: '你要處理的是哪一類資料？',
-    reason: '確認資料會如何進入這個流程。',
-    placeholder: '例如：社團照片、活動影片或文字稿；不要貼實際內容。',
+    prompt: '處理哪一類資料？',
+    reason: '確認資料來源格式。',
+    placeholder: '例如：社團照片、活動影片或文字稿；請勿貼上實際內容。',
   };
   if (has('purpose')) return {
-    prompt: '你想用 AI 完成什麼工作？',
-    reason: '確認 AI 在流程中負責的工作。',
+    prompt: '想用 AI 完成什麼任務？',
+    reason: '確認 AI 在流程中的作用。',
     placeholder: '例如：修圖、整理文字或產生摘要。',
   };
   return {
-    prompt: applicantVisibleCopy(prompt, '請用一句話補充這項資訊。'),
-    reason: applicantVisibleCopy(reason, '這項資訊會影響資料流向與送出前的確認內容。'),
-    placeholder: '請依照你的實際情況回答。',
+    prompt: applicantVisibleCopy(prompt, '請用一句話補充此資訊。'),
+    reason: applicantVisibleCopy(reason, '確保資料流向紀錄準確。'),
+    placeholder: '請依實際情況填寫。',
   };
 }

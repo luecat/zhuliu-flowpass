@@ -10,16 +10,16 @@ type LoadState = 'loading' | 'ready' | 'error';
 type Milestone = TimelineEvent & { milestoneKey: string; sourceIndex: number };
 
 const PUBLIC_SUMMARY: Record<string, string> = {
-  received: '申請資料已收到',
+  received: '申請已收件',
   submitted: '申請已送出',
-  review_started: '已開始審查',
-  documents_requested: '需要補充資料',
-  correction_requested: '需要修正資料',
-  documents_resubmitted: '補充資料已收到',
-  passport_reconfirmed: '更新內容已確認',
+  review_started: '審查進行中',
+  documents_requested: '待補件',
+  correction_requested: '待修正',
+  documents_resubmitted: '已完成補件',
+  passport_reconfirmed: '更新已確認',
   approved: '申請已核定',
-  rejected: '審查已完成',
-  awaiting_disbursement: '等待撥款',
+  rejected: '審查已結束',
+  awaiting_disbursement: '待撥款',
   disbursed: '款項已撥付',
   closed: '申請已結案',
 };
@@ -78,14 +78,14 @@ export function CaseTimeline({ caseId, initial = [] }: { caseId: string; initial
   }, [api, caseId, initial.length]);
 
   const milestones = visibleMilestones(events);
-  if (loadState === 'loading' && events.length === 0) return <div className="applicant-inline-state" role="status">正在載入處理進度…</div>;
+  if (loadState === 'loading' && events.length === 0) return <div className="applicant-inline-state" role="status">處理進度載入中…</div>;
   if (loadState === 'error') return (
     <div className="applicant-inline-state applicant-inline-state--error" role="alert">
       <p>處理進度暫時無法載入。</p>
       <button type="button" className="text-action" onClick={() => { setLoadState('loading'); void load(); }}>重新載入</button>
     </div>
   );
-  if (milestones.length === 0) return <div className="applicant-inline-state"><p>目前還沒有可顯示的進度更新。</p></div>;
+  if (milestones.length === 0) return <div className="applicant-inline-state"><p>尚無進度更新。</p></div>;
 
   return (
     <ol className="applicant-timeline" aria-label="處理進度">

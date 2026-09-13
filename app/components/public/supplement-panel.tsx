@@ -39,18 +39,18 @@ const MAX_BYTES = 12 * 1024 * 1024;
 const ACCEPTED_FILES = '.jpg,.jpeg,.png,.pdf,.heic,.heif,image/jpeg,image/png,application/pdf';
 
 const ERROR_MESSAGES: Record<string, string> = {
-  FILE_TOO_LARGE: '單一檔案不可超過 12 MiB。',
-  IMAGE_TOO_LARGE: '圖片解析度太大，請壓縮或改存 JPG 再上傳。',
-  FILE_UNREADABLE: '讀不到這個檔案，可能已損毀，請重新存檔再試。',
-  FILE_ENCRYPTED: '這個 PDF 有加密，請改上傳沒有密碼的檔案。',
-  FILE_TOO_MANY_PAGES: 'PDF 超過 10 頁，請拆分或刪減後再上傳。',
-  UNSUPPORTED_FILE: '只支援 JPG、PNG、PDF，請轉檔後再上傳。',
+  FILE_TOO_LARGE: '單一檔案大小上限為 12 MB。',
+  IMAGE_TOO_LARGE: '圖片解析度過大，請壓縮或轉為 JPG 後上傳。',
+  FILE_UNREADABLE: '檔案無法讀取或已損毀，請重新存檔後上傳。',
+  FILE_ENCRYPTED: '此 PDF 已加密，請上傳未加密版本。',
+  FILE_TOO_MANY_PAGES: 'PDF 文件超過 10 頁，請精簡後上傳。',
+  UNSUPPORTED_FILE: '僅支援 JPG、PNG、PDF 格式，請轉檔後上傳。',
 };
 const FALLBACK_SPEC: UploadSpec = {
   kind: 'supplement',
   requirementKey: 'supplement_other',
   label: '補充文件',
-  hint: '請依上方說明上傳完整、清楚的文件。',
+  hint: '請依指示上傳清晰完整之文件。',
 };
 
 const DIRECT_SPECS: Partial<Record<string, UploadSpec>> = {
@@ -58,9 +58,9 @@ const DIRECT_SPECS: Partial<Record<string, UploadSpec>> = {
   purchase_proof: { kind: 'invoice', requirementKey: 'purchase_proof', label: '購買憑證或發票', hint: '文件需能清楚辨識購買資訊與金額。' },
   eligibility_proof: { kind: 'eligibility_proof', requirementKey: 'special_status_proof', label: '資格證明', hint: '請上傳可清楚辨識身分或資格的證明。' },
   special_status_proof: { kind: 'eligibility_proof', requirementKey: 'special_status_proof', label: '資格證明', hint: '請上傳可清楚辨識身分或資格的證明。' },
-  identity_front: { kind: 'eligibility_proof', requirementKey: 'identity_front', label: '身分證正面', hint: '照片需清楚、完整且沒有反光。' },
-  identity_back: { kind: 'eligibility_proof', requirementKey: 'identity_back', label: '身分證反面', hint: '照片需清楚、完整且沒有反光。' },
-  passbook_cover: { kind: 'supplement', requirementKey: 'passbook_cover', label: '存摺封面影本', hint: '需清楚顯示戶名與帳號。' },
+  identity_front: { kind: 'eligibility_proof', requirementKey: 'identity_front', label: '身分證正面', hint: '照片需清晰完整，避免反光。' },
+  identity_back: { kind: 'eligibility_proof', requirementKey: 'identity_back', label: '身分證反面', hint: '照片需清晰完整，避免反光。' },
+  passbook_cover: { kind: 'supplement', requirementKey: 'passbook_cover', label: '存摺封面影本', hint: '需包含完整戶名與帳號。' },
   affidavit: { kind: 'other', requirementKey: 'affidavit', label: '切結書', hint: '請確認文件已簽名後再上傳。' },
   representative_affidavit: { kind: 'other', requirementKey: 'representative_affidavit', label: '代付切結書', hint: '請確認雙方已簽名後再上傳。' },
   supplement: FALLBACK_SPEC,
@@ -85,7 +85,7 @@ function resolveUploadSpec(task: SupplementTask): UploadSpec {
 }
 
 function formatBytes(bytes: number): string {
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 export function SupplementPanel({ caseId, onCompleted }: { caseId: string; onCompleted: () => void | Promise<void> }) {
@@ -134,8 +134,8 @@ export function SupplementPanel({ caseId, onCompleted }: { caseId: string; onCom
 
   async function upload(file: File | null) {
     if (!file || !task) return;
-    if (file.size > MAX_BYTES) { setMessage('單一檔案不可超過 12 MiB。'); return; }
-    if (isHeic(file)) { setMessage('iPhone 拍的 HEIC 請先轉成 JPG 再上傳。'); return; }
+    if (file.size > MAX_BYTES) { setMessage('單一檔案大小上限為 12 MB。'); return; }
+    if (isHeic(file)) { setMessage('不支援 HEIC 格式。請轉為 JPG、PNG 或 PDF 後上傳。'); return; }
     setUploading(true); setUploadProgress(0); setMessage('');
     try {
       let etag = await ensureCaseEtag();
@@ -185,7 +185,7 @@ export function SupplementPanel({ caseId, onCompleted }: { caseId: string; onCom
         <div><strong>{spec.label}</strong><p>{spec.hint}</p>{uploaded && <small>已上傳 · {formatBytes(uploaded.byteSize)}</small>}</div>
         <label className="file-picker-button">{uploading ? `上傳中 ${uploadProgress}%` : uploaded ? '重新上傳' : '選擇檔案'}<input type="file" accept={ACCEPTED_FILES} disabled={uploading || submitting} onChange={(event) => { const file = event.target.files?.[0] ?? null; event.currentTarget.value = ''; void upload(file); }} /></label>
       </div>
-      <p className="field-hint">接受 JPEG、PNG 或非加密 PDF，單檔上限 12 MiB。</p>
+      <p className="field-hint">支援 JPEG、PNG 或未加密之 PDF。單一檔案上限 12 MB。不支援 HEIC 格式。</p>
       <button type="button" className="primary-action applicant-supplement-submit" disabled={!uploaded || uploading || submitting} onClick={() => void submit()}>{submitting ? '送出中…' : '送出補件'}</button>
     </section>
   );

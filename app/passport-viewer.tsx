@@ -32,6 +32,12 @@ const audienceLabels = {
   unknown: '未知',
 } as const;
 
+function displayRetention(value: string): string {
+  if (!value || value === 'unknown') return '尚未詢問（待確認）';
+  return value;
+}
+
+
 function InvalidResult({ result }: { result: FlowPassParseResult }) {
   return (
     <section className="passport-invalid" role="alert">
@@ -306,15 +312,15 @@ function DetailsSection({
           </div>
           <div>
             <dt>保存位置</dt>
-            <dd>{result.passport.retention.storage_location}</dd>
+            <dd>{displayRetention(result.passport.retention.storage_location)}</dd>
           </div>
           <div>
             <dt>保存期限</dt>
-            <dd>{result.passport.retention.duration}</dd>
+            <dd>{displayRetention(result.passport.retention.duration)}</dd>
           </div>
           <div>
             <dt>刪除計畫</dt>
-            <dd>{result.passport.retention.deletion_plan}</dd>
+            <dd>{displayRetention(result.passport.retention.deletion_plan)}</dd>
           </div>
           <div>
             <dt>指定工具</dt>

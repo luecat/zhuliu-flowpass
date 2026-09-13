@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PublicApiClient } from '../../lib/public-api';
-import { applicantCaseStatus, formatTaipeiDate } from './applicant-case-status';
+import { APPLICANT_PROGRAM_LABEL, applicantCaseStatus, formatTaipeiDate } from './applicant-case-status';
 
 export interface PassportCard {
   id: string;
@@ -48,29 +48,28 @@ export function PassportList({ initial = [] }: { initial?: PassportCard[] }) {
       <header className="applicant-page-heading">
         <p className="eyebrow">竹流 FlowPass</p>
         <h1 id="passport-list-title">申請紀錄</h1>
-        <p>查看每筆申請目前的處理進度。</p>
+        <p>檢視各項申請的處理進度。</p>
       </header>
 
       {loadState === 'loading' && items.length === 0 && (
         <div className="applicant-state-card" role="status">
           <span className="applicant-loading-mark" aria-hidden="true" />
-          <p>正在載入申請紀錄…</p>
+          <p>申請紀錄載入中…</p>
         </div>
       )}
 
       {loadState === 'error' && (
         <div className="applicant-state-card applicant-state-card--error" role="alert">
-          <h2>暫時無法載入</h2>
-          <p>請確認網路連線後再試一次。</p>
+          <h2>載入失敗</h2>
+          <p>請確認網路連線後再試。</p>
           <button type="button" className="secondary-action" onClick={() => { setLoadState('loading'); void load(); }}>重新載入</button>
         </div>
       )}
 
       {loadState === 'ready' && items.length === 0 && (
         <div className="applicant-state-card">
-          <h2>還沒有申請紀錄</h2>
-          <p>送出申請後，處理進度會顯示在這裡。</p>
-          <Link className="primary-action" href="/app/apply">開始申請</Link>
+          <h2>尚無申請紀錄</h2>
+          <p>送出申請後，進度將顯示於此。請由 LINE 選單開始申請。</p>
         </div>
       )}
 
@@ -84,8 +83,8 @@ export function PassportList({ initial = [] }: { initial?: PassportCard[] }) {
                 <li key={card.id}>
                   <Link className="applicant-record" href={`/app/passports/${encodeURIComponent(card.id)}`}>
                     <span className="applicant-record-copy">
-                      <strong>{card.programName}</strong>
-                      <span>{card.submittedAt ? `${formatTaipeiDate(card.submittedAt)}送出` : '送出時間待確認'}</span>
+                      <strong>{APPLICANT_PROGRAM_LABEL}</strong>
+                      <span>{card.submittedAt ? `${formatTaipeiDate(card.submittedAt)} 送出` : '送出時間待確認'}</span>
                     </span>
                     <span className={`applicant-status applicant-status--${status.tone}`}>{status.label}</span>
                     <span className="applicant-record-arrow" aria-hidden="true">›</span>

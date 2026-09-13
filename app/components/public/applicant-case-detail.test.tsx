@@ -4,41 +4,51 @@ import { inspectPassportJson } from '../../../server/domain/passport-validation'
 import { FLOWPASS_SAMPLE } from '../../passport-sample';
 import { ApplicantCaseDetail } from './applicant-case-detail';
 
-const mocks = vi.hoisted(() => ({ read: vi.fn() }));
+const mocks = vi.hoisted(() => ({ read: vi.fn(), readWithMeta: vi.fn() }));
 
 vi.mock('../../lib/public-api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../lib/public-api')>();
-  return { ...actual, PublicApiClient: class { read = mocks.read; } };
+  return { ...actual, PublicApiClient: class { read = mocks.read; readWithMeta = mocks.readWithMeta; } };
 });
 
 const passport = inspectPassportJson(JSON.stringify(FLOWPASS_SAMPLE)).canonical!;
 
 describe('ApplicantCaseDetail', () => {
   beforeEach(() => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
     mocks.read.mockReset();
+    mocks.readWithMeta.mockReset();
+    mocks.readWithMeta.mockResolvedValue({ data: { rowVersion: 3 }, etag: '"3"' });
     mocks.read.mockImplementation(async (path: string) => {
       if (path === '/api/v1/cases/case') return { id: 'case', state: 'under_review', approvedAmountTwd: null, submittedAt: '2026-09-01T04:59:37.894Z', updatedAt: '2026-09-01T05:10:04.889Z' };
-      if (path === '/api/v1/passports') return { passports: [{ id: 'case', caseCode: 'FP-SECRET', programName: '軟體補助申請', year: 2026, state: 'under_review', submittedAt: '2026-09-01T04:59:37.894Z', unresolvedTaskCount: 0, securityAlert: false }] };
       if (path === '/api/v1/cases/case/timeline') return { events: [
         { id: 'received', eventType: 'received', publicSummary: '案件已收件', createdAt: '2026-09-01T04:56:19.065Z' },
         { id: 'submitted', eventType: 'submitted', publicSummary: '申請已送出', createdAt: '2026-09-01T04:59:37.894Z' },
         { id: 'review', eventType: 'review_started', publicSummary: '已開始審查', createdAt: '2026-09-01T05:10:04.889Z' },
       ] };
       if (path === '/api/v1/cases/case/passport') return { version: { workflowState: 'confirmed' }, passport };
+      if (path === '/api/v1/cases/case/alerts') return { alerts: [] };
+      if (path === '/api/v1/cases/case/rules') return { evaluations: [] };
+      if (path === '/api/v1/cases/case/safety-card') return { model: { title: 't', purpose: 'p', flow: [], beforeUpload: [], whileUsing: [], beforePublish: [], incidentSteps: [], meta: { tool: 'x', audience: 'public', retention: '待確認' } } };
       throw new Error(`unexpected path: ${path}`);
     });
   });
 
-  it('shows the current public status without submission or internal workflow screens', async () => {
+  it('titles the record by its use case and shows each section once', async () => {
     render(<ApplicantCaseDetail caseId="case" />);
 
-    expect(await screen.findByRole('heading', { name: '軟體補助申請' })).toBeVisible();
+    expect(await screen.findByRole('heading', { level: 1, name: FLOWPASS_SAMPLE.passport_draft.use_case.title })).toBeVisible();
+    expect(screen.getByText('青年 AI 工具補助')).toBeVisible();
     expect(screen.getByRole('heading', { name: '審查中' })).toBeVisible();
-    expect(screen.getByText('承辦人員正在確認申請內容，暫時不需要進行其他操作。')).toBeVisible();
-    expect(await screen.findByText('已開始審查')).toBeVisible();
-    expect(await screen.findByText('已確認的資料流向')).toBeVisible();
-    expect(screen.queryByText('申請已正式送出')).not.toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/FP-SECRET|under_review|received|review_started|資安提醒|護照版本/);
+    expect(screen.getByText('承辦人員審查中，目前無須進行操作。')).toBeVisible();
+    expect(await screen.findByText('審查進行中')).toBeVisible();
+    expect(await screen.findByText('目前沒有需要處理的資安提醒。')).toBeVisible();
+    expect(screen.getAllByRole('heading', { name: /資安提醒/ })).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: '資料流向' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '安全使用卡' })).toBeVisible();
+    expect(screen.queryByRole('link', { name: /SVG/ })).not.toBeInTheDocument();
+    expect(mocks.read).not.toHaveBeenCalledWith('/api/v1/passports');
+    expect(document.body.textContent).not.toMatch(/FP-SECRET|軟體補助申請|under_review|received|review_started|資料流向版本/);
   });
 
   it('shows only the supplement task when the case is waiting for documents', async () => {

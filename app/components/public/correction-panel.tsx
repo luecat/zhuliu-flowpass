@@ -87,7 +87,7 @@ export function CorrectionPanel({ caseId, onCompleted }: { caseId: string; onCom
       <header>
         <p className="eyebrow">需要你修改內容</p>
         <h2 id="correction-title">請修正申請資料</h2>
-        <p>這次是「退回修正」，不是補上傳文件。請依承辦說明改掉申請內容後再送回。</p>
+        <p>本案件經審核需要修正內容（非補繳文件），請依承辦人員說明修改資料後重新送出。</p>
       </header>
 
       <div className="applicant-supplement-request applicant-correction-request">
@@ -97,11 +97,11 @@ export function CorrectionPanel({ caseId, onCompleted }: { caseId: string; onCom
       </div>
 
       <div className="applicant-correction-steps">
-        <p><strong>你可以這樣做</strong></p>
+        <p><strong>處理步驟</strong></p>
         <ol>
-          <li>打開申請內容，依上方說明修改填寫或護照確認資料。</li>
-          <li>確認修改後的內容正確。</li>
-          <li>回到這裡勾選並送出，案件會回到審核佇列。</li>
+          <li>點擊下方按鈕前往修改申請內容或確認護照資料。</li>
+          <li>確認修改後的內容正確無誤。</li>
+          <li>回到此頁勾選確認並送出，案件將重新進行審核。</li>
         </ol>
         <Link className="secondary-action" href={`/app/apply?caseId=${encodeURIComponent(caseId)}`}>
           前往修改申請內容

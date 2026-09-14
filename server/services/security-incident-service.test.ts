@@ -51,7 +51,7 @@ describe('security incident service', () => {
     const payload = database.prepare('SELECT payload_json FROM notification_jobs').get() as { payload_json: string };
     expect(payload.payload_json).not.toContain('Private');
     expect(payload.payload_json).toContain('security_alert');
-    expect(database.prepare('SELECT public_summary, public_guidance FROM alerts').get()).toMatchObject({ public_summary: '可能受影響的資安提醒', public_guidance: '請暫停使用並確認版本。' });
+    expect(database.prepare('SELECT public_summary, public_guidance FROM alerts').get()).toMatchObject({ public_summary: 'Private incident title', public_guidance: '請暫停使用並確認版本。' });
     service.confirmAlerts({ incidentId: incident.id, adminId: IDS.admin, matches: [{ matchId: preview.candidates[0].matchId, status: 'possible', publicGuidance: '請暫停使用並確認版本。' }] });
     expect((database.prepare('SELECT COUNT(*) AS count FROM alerts').get() as { count: number }).count).toBe(1);
     expect((database.prepare('SELECT COUNT(*) AS count FROM notification_jobs').get() as { count: number }).count).toBe(1);

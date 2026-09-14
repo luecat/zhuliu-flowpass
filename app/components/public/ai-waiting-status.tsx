@@ -1,10 +1,10 @@
 export type AiWaitingPhase = 'submitted' | 'queued' | 'working' | 'completed';
 
 const PHASE_COPY: Record<AiWaitingPhase, { title: string; detail: string }> = {
-  submitted: { title: '已送出', detail: '系統已收到資料，正在安排處理。' },
-  queued: { title: '排隊中', detail: '目前處理人數較多，請稍候。' },
-  working: { title: '整理中', detail: '正在產生資料流向草稿。' },
-  completed: { title: '整理完成', detail: '資料流向草稿已產生。' },
+  submitted: { title: '已送出', detail: '已收到您的申請需求，正在安排 AI 處理。' },
+  queued: { title: '排隊中', detail: '目前申請人數較多，請稍候片刻。' },
+  working: { title: '整理中', detail: '正在為您生成專屬的 AI 資料護照…' },
+  completed: { title: '整理完成', detail: 'AI 資料護照已生成，即將進入確認畫面。' },
 };
 
 export function AiWaitingStatus({

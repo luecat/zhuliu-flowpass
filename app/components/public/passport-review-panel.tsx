@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FlowPassPassport } from '../../../shared/passport-contract';
 import { findApprovedAiTool, type ApprovedAiTool } from '../../../shared/approved-ai-tools';
@@ -130,7 +131,7 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
         if (selectedTool) setPrefilledTool(selectedTool);
       }
       if (!regenerate) {
-        setMessage('答案已儲存。確認無誤後請重新產生資料流向。');
+        setMessage('答案已儲存。確認無誤後請重新產生護照。');
         await load(caseId);
         return;
       }
@@ -240,9 +241,9 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
       } catch { /* retain the original submission error */ }
       await load(caseId);
       setMessage(error instanceof PublicApiError && error.code === 'DOCUMENT_NOT_READY'
-        ? '必備附件尚未補齊（含切結書），請確認後再送出。'
+        ? '必備附件尚未補齊，請確認後再送出。'
         : error instanceof PublicApiError && error.code === 'PASSPORT_NOT_READY'
-          ? '請先完成資料流向確認，再送出申請。'
+          ? '請先完成護照確認，再送出申請。'
           : error instanceof PublicApiError && error.code === 'ETAG_MISMATCH'
             ? '申請內容已更新，請重新確認。'
             : '送出失敗，請稍後再試。');
@@ -255,6 +256,9 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
       <span className="submission-success-mark" aria-hidden="true">✓</span>
       <h2 id="submission-success-title">申請已送出</h2>
       <p>申請資料與流向紀錄皆已保存。請至 LINE 選單的「進度查詢」查看狀態。</p>
+      <div className="applicant-actions" style={{ justifyContent: 'center', marginTop: '1.25rem' }}>
+        <Link className="primary-action" href="/app/passports">查看申請紀錄</Link>
+      </div>
     </section>
   );
   if (!data) return <p className="pending-note" role="status">{message || '申請內容載入中…'}</p>;
@@ -262,7 +266,7 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
   const followUpsReadyToRevise = data.version.workflowState === 'follow_up_required'
     && openFollowUps.length === 0
     && data.followUps.some((question) => question.required && question.status === 'answered');
-  if (revisionJobId) return <section className="passport-review-panel passport-review-panel--waiting" aria-label="正在整理資料流向"><AiWaitingStatus phase={revisionProgressPercent >= 100 ? 'completed' : revisionProgressPercent > 5 ? 'working' : 'queued'} elapsedSeconds={Math.round(revisionProgressPercent * 2)} saved /></section>;
+  if (revisionJobId) return <section className="passport-review-panel passport-review-panel--waiting" aria-label="正在整理護照"><AiWaitingStatus phase={revisionProgressPercent >= 100 ? 'completed' : revisionProgressPercent > 5 ? 'working' : 'queued'} elapsedSeconds={Math.round(revisionProgressPercent * 2)} saved /></section>;
   if (data.version.workflowState === 'confirmed') return (
     <section className="passport-review-panel attachment-workflow" aria-label="附件與送出申請">
       {message && <p className="pending-note" role="status">{message}</p>}
@@ -276,7 +280,7 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
   return (
     <section className="passport-review-panel" aria-label="申請內容">
       {message && <p className="pending-note" role="status">{message}</p>}
-      {revisionFailed && <button type="button" onClick={() => void retryRevision()} disabled={busy}>重試整理</button>}
+      {revisionFailed && <button type="button" className="secondary-action" onClick={() => void retryRevision()} disabled={busy}>重新整理</button>}
       <ApplicantPassportSummary passport={data.passport} workflowState={data.version.workflowState} onContinue={data.version.workflowState === 'needs_applicant_confirmation' ? () => void confirmApplication() : undefined} busy={busy} />
       {openFollowUps.length > 0 && (
         <AiFollowUpForm
@@ -290,7 +294,7 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
       {followUpsReadyToRevise && (
         <div className="wizard-actions">
           <button type="button" className="primary-action" disabled={busy} onClick={() => { setBusy(true); void startRevision().catch(() => showRevisionFailure()).finally(() => setBusy(false)); }}>
-            {busy ? '重新產生中…' : '重新產生資料流向'}
+            {busy ? '重新產生中…' : '重新產生護照'}
           </button>
         </div>
       )}

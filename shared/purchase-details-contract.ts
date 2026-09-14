@@ -3,11 +3,15 @@ import { z } from 'zod';
 export const PURCHASE_FUNCTIONS = ['general', 'imaging', 'office', 'learning', 'other'] as const;
 export const PURCHASE_CURRENCIES = ['TWD', 'USD', 'JPY', 'EUR', 'AUD', 'HKD', 'OTHER'] as const;
 
-const calendarDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+const createCalendarDate = (label = '日期') => z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const [year, month, day] = value.split('-').map(Number);
   const parsed = new Date(Date.UTC(year, month - 1, day));
   return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
-}, '購買日期不正確');
+}, `${label}格式不正確`);
+
+const calendarDate = createCalendarDate('購買日期');
+const subscriptionStartDateSchema = createCalendarDate('訂閱開始日');
+const subscriptionEndDateSchema = createCalendarDate('訂閱結束日');
 
 const decimalAmount = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/);
 
@@ -27,8 +31,8 @@ const purchaseDetailsBase = {
   specialStatus: z.boolean(),
   invoiceNumber: z.string().trim().min(1).max(40).nullable(),
   // Legacy rows may omit these; normalize missing to null on read.
-  subscriptionStartDate: calendarDate.nullish().transform((value) => value ?? null),
-  subscriptionEndDate: calendarDate.nullish().transform((value) => value ?? null),
+  subscriptionStartDate: subscriptionStartDateSchema.nullish().transform((value) => value ?? null),
+  subscriptionEndDate: subscriptionEndDateSchema.nullish().transform((value) => value ?? null),
   // Collected in stage-2 purchase form; legacy rows may omit.
   applicantName: z.string().trim().max(100).nullish().transform((value) => value?.trim() ? value.trim() : null),
 } as const;

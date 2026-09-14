@@ -73,7 +73,7 @@ describe('AiFollowUpForm', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onRegenerate).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '重新產生資料流向' }));
+    fireEvent.click(screen.getByRole('button', { name: '重新產生護照' }));
     expect(onRegenerate).toHaveBeenCalledWith([
       { questionId: 'q-1', answer: 'ChatGPT' },
       { questionId: 'q-2', answer: '["完全沒有"]' },

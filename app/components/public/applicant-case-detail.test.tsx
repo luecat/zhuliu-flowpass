@@ -38,14 +38,14 @@ describe('ApplicantCaseDetail', () => {
     render(<ApplicantCaseDetail caseId="case" />);
 
     expect(await screen.findByRole('heading', { level: 1, name: FLOWPASS_SAMPLE.passport_draft.use_case.title })).toBeVisible();
-    expect(screen.getByText('青年 AI 工具補助')).toBeVisible();
+    expect(screen.getByText('申請進度')).toBeVisible();
     expect(screen.getByRole('heading', { name: '審查中' })).toBeVisible();
     expect(screen.getByText('承辦人員審查中，目前無須進行操作。')).toBeVisible();
     expect(await screen.findByText('審查進行中')).toBeVisible();
-    expect(await screen.findByText('目前沒有需要處理的資安提醒。')).toBeVisible();
+    expect(await screen.findByText('目前無待處理之資安提醒。')).toBeVisible();
     expect(screen.getAllByRole('heading', { name: /資安提醒/ })).toHaveLength(1);
-    expect(screen.getByRole('heading', { name: '資料流向' })).toBeVisible();
-    expect(await screen.findByRole('heading', { name: '安全使用卡' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '護照' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '安全檢查重點' })).toBeVisible();
     expect(screen.queryByRole('link', { name: /SVG/ })).not.toBeInTheDocument();
     expect(mocks.read).not.toHaveBeenCalledWith('/api/v1/passports');
     expect(document.body.textContent).not.toMatch(/FP-SECRET|軟體補助申請|under_review|received|review_started|資料流向版本/);
@@ -66,7 +66,7 @@ describe('ApplicantCaseDetail', () => {
     expect(screen.getByText('不夠完整')).toBeVisible();
     expect(screen.queryByText('目前狀態')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: '處理進度' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: '資料流向' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '護照' })).not.toBeInTheDocument();
     expect(mocks.read).not.toHaveBeenCalledWith('/api/v1/passports');
     expect(mocks.read).not.toHaveBeenCalledWith('/api/v1/cases/case/timeline');
     expect(mocks.read).not.toHaveBeenCalledWith('/api/v1/cases/case/passport');

@@ -8,10 +8,10 @@ import { AiWaitingStatus, type AiWaitingPhase } from './ai-waiting-status';
 import { useLiffSession } from './liff-session-provider';
 
 const fields: Array<{ key: keyof CoreAnswers; label: string; hint: string; placeholder: string; limit: number }> = [
-  { key: 'material', label: '要處理什麼資料？', hint: '僅需填寫資料類型，請勿貼上實際內容。', placeholder: '例如：社團照片、活動影片或文字稿', limit: CORE_ANSWER_LIMITS.material },
-  { key: 'aiPurpose', label: '想用 AI 做什麼？', hint: '以一句話描述預計完成的任務。', placeholder: '例如：修圖、整理文字或產生摘要', limit: CORE_ANSWER_LIMITS.aiPurpose },
+  { key: 'material', label: '要處理什麼資料？', hint: '僅需簡述資料類型（如照片、影片、文字稿），為保護隱私請勿貼上實際內容。', placeholder: '例如：社團照片、活動影片或演講文字稿', limit: CORE_ANSWER_LIMITS.material },
+  { key: 'aiPurpose', label: '想用 AI 做什麼？', hint: '以一句話描述預計完成的任務。', placeholder: '例如：修圖、剪輯影片、整理文字或產生摘要', limit: CORE_ANSWER_LIMITS.aiPurpose },
   { key: 'sensitiveData', label: '可能包含哪些個資或敏感資料？', hint: '勾選可能包含的敏感個資，例如人臉、姓名或金融帳號；若不確定請填「不確定」。', placeholder: '例如：人臉、姓名、金鑰；不確定可填「不確定」', limit: CORE_ANSWER_LIMITS.sensitiveData },
-  { key: 'destinationAndAudience', label: '完成後要放哪裡、分享給誰？', hint: '填寫預計使用的工具、存放位置或分享對象。', placeholder: '例如：團隊雲端、社團成員或公開社群', limit: CORE_ANSWER_LIMITS.destinationAndAudience },
+  { key: 'destinationAndAudience', label: '完成後要放哪裡、分享給誰？', hint: '填寫預計使用的工具、存放位置或公開分享對象。', placeholder: '例如：團隊雲端硬碟、社團內部成員或公開社群平台', limit: CORE_ANSWER_LIMITS.destinationAndAudience },
 ];
 const initial: CoreAnswers = { material: '', aiPurpose: '', sensitiveData: '', destinationAndAudience: '', applicantName: '' };
 const AI_JOB_POLL_INTERVAL_SECONDS = 5;
@@ -277,16 +277,30 @@ export function ApplicationWizard() {
         <h1 id="question-title">{current.label}</h1>
         <textarea id={`answer-${current.key}`} value={answers[current.key]} onChange={(event) => update(event.target.value)} placeholder={current.placeholder} required aria-required="true" aria-invalid={unicodeScalarLength(answers[current.key]) > current.limit} aria-labelledby="question-title" aria-describedby={`hint-${current.key} guidance-${current.key}`} autoFocus />
         <p id={`guidance-${current.key}`} className="field-guidance">{current.hint}</p>
-        <p id={`hint-${current.key}`} className="field-hint">必填 · {unicodeScalarLength(answers[current.key])}/{current.limit}{saveStatus === 'saving' ? ' · 儲存中' : saveStatus === 'saved' && hasPartialDraft ? ' · 已儲存' : ''}</p>
-        {unicodeScalarLength(answers[current.key]) > current.limit && <p role="alert">這一題超過上限，請刪減後再繼續。</p>}
+        <p id={`hint-${current.key}`} className="field-hint">必填 · {unicodeScalarLength(answers[current.key])}/{current.limit}{saveStatus === 'saving' ? ' · 儲存中' : saveStatus === 'saved' && hasPartialDraft ? ' · 已儲存' : saveStatus === 'error' ? ' · 儲存失敗' : ''}</p>
+        {unicodeScalarLength(answers[current.key]) > current.limit && <p role="alert">字數已超過上限，請精簡內容後再繼續。</p>}
         <div className="wizard-actions"><button type="button" onClick={() => setStep((value) => Math.max(0, value - 1))} disabled={step === 0}>上一題</button>
           {step < fields.length - 1 ? <button type="button" onClick={() => setStep((value) => value + 1)} disabled={!answers[current.key].trim() || unicodeScalarLength(answers[current.key]) > current.limit}>下一題</button> : <button type="button" onClick={() => setReview(true)} disabled={!complete}>檢查答案</button>}</div>
       </> : <>
         <h2 id="review-title">送出前確認</h2><dl>{fields.map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{answers[key]}</dd></div>)}</dl>
         <p>確認後會產生資料流向草稿，之後還需回答追問並上傳附件。</p>
         <div className="wizard-actions"><button type="button" onClick={() => setReview(false)}>返回修改</button><button type="button" onClick={() => void startAiDraft()} disabled={saveStatus !== 'saved' || aiState === 'completed'}>{aiState === 'completed' ? '已完成' : '產生資料流向草稿'}</button></div>
-        {(saveStatus === 'saving' || saveStatus === 'conflict' || saveStatus === 'error' || aiState === 'failed') && <p className="pending-note" role="status">{saveStatus === 'saving' ? '儲存中' : saveStatus === 'conflict' ? '資料衝突' : saveStatus === 'error' ? '儲存失敗' : aiFailureMessage || '處理失敗，請稍後再試。'}</p>}
-        {(saveStatus === 'conflict' || saveStatus === 'error') && caseState && <button type="button" onClick={() => enqueueSave(answersRef.current, caseRef.current)}>重試儲存</button>}
+        {(saveStatus === 'saving' || saveStatus === 'conflict' || saveStatus === 'error' || aiState === 'failed') && (
+          <p className="pending-note" role="status">
+            {saveStatus === 'saving'
+              ? '儲存中'
+              : saveStatus === 'conflict'
+                ? '資料版本不一致，請點擊重試'
+                : saveStatus === 'error'
+                  ? '儲存失敗，請點擊重試'
+                  : aiFailureMessage || '處理失敗，請稍後再試。'}
+          </p>
+        )}
+        {(saveStatus === 'conflict' || saveStatus === 'error') && caseState && (
+          <button type="button" className="secondary-action" onClick={() => enqueueSave(answersRef.current, caseRef.current)}>
+            重試儲存
+          </button>
+        )}
       </>}
     </>}
   </section>;

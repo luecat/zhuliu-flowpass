@@ -148,8 +148,8 @@ export function AiFollowUpForm({
     <form className="ai-follow-up-form" onSubmit={submit} aria-describedby={error ? 'ai-follow-up-error' : undefined}>
       <div className="ai-follow-up-heading">
         <p className="eyebrow">補充資料細節</p>
-        <h2>確認資料流向細節</h2>
-        <p>儲存答案並確認無誤後，請點擊「重新產生資料流向」。</p>
+        <h2>確認護照細節</h2>
+        <p>回答下方問題後點擊「重新產生護照」；亦可先點擊「儲存答案」暫存。</p>
       </div>
       {questions.map((question, index) => {
         const copy = followUpApplicantCopy(question.questionKey, question.prompt, question.reason);
@@ -279,7 +279,7 @@ export function AiFollowUpForm({
         );
       })}
       {error && <p id="ai-follow-up-error" role="alert">{error}</p>}
-      {saved && <p className="pending-note" role="status">答案已儲存。確認無誤後請重新產生資料流向。</p>}
+      {saved && <p className="pending-note" role="status">答案已儲存。確認無誤後請重新產生護照。</p>}
       <div className="wizard-actions">
         <button className="secondary-action" type="submit" disabled={busy}>{submitting ? '儲存中…' : '儲存答案'}</button>
         {onRegenerate && (
@@ -289,7 +289,7 @@ export function AiFollowUpForm({
             disabled={busy || !canRegenerate}
             onClick={() => void saveAnswers('regenerate')}
           >
-            {regenerating ? '重新產生中…' : '重新產生資料流向'}
+            {regenerating ? '重新產生中…' : '重新產生護照'}
           </button>
         )}
       </div>

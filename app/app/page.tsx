@@ -2,8 +2,8 @@ export default function ApplicantHome() {
   return (
     <section className="applicant-home" aria-labelledby="app-title">
       <p className="eyebrow">竹流 FlowPass</p>
-      <h1 id="app-title">建立清晰的 AI 資料流向</h1>
-      <p>約 10–15 分鐘可完成。開始前請先準備身分證、購買憑證（發票）與存摺封面。</p>
+      <h1 id="app-title">建立清晰的 AI 護照</h1>
+      <p>預估需 10–15 分鐘。請先準備：身分證、購買憑證（發票）與存摺封面。</p>
 
       <ol className="applicant-journey-steps" aria-label="申請步驟">
         <li>
@@ -30,7 +30,7 @@ export default function ApplicantHome() {
         <p>審核與防重複請領所需之個人資料皆會加密保存；信用卡資訊僅透過加密比對，系統不留存明文。</p>
       </aside>
 
-      <p className="pending-note" role="status">請從 LINE 選單開啟申請、進度查詢或護照檢測；未完成的草稿可從選單的申請入口接續填寫。</p>
+      <p className="pending-note" role="status">申請、進度查詢與檢測請由 LINE 選單進入。未完成的草稿亦可由此接續填寫。</p>
     </section>
   );
 }

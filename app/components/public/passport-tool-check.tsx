@@ -20,8 +20,14 @@ type PassportToolCheck = {
     recommendedActions: string[];
   }>;
   impacts: Array<{
+    caseId?: string;
+    passportTitle?: string;
     status: string;
+    severity?: string;
+    summary?: string;
+    incidentTitle?: string | null;
     guidance: string | null;
+    affectedDataKinds?: string[];
   }>;
 };
 
@@ -35,15 +41,15 @@ function incidentPeriod(start?: string | null, end?: string | null): string | nu
 function verdict(data: PassportToolCheck): { tone: ApplicantCaseTone; title: string; text: string } {
   const openImpacts = data.impacts.filter((item) => item.status !== 'resolved').length;
   if (data.tools.length === 0) {
-    return { tone: 'neutral', title: '還沒有可以比對的工具', text: '送出申請、確認資料流向後，這裡會自動比對你用的 AI 工具。' };
+    return { tone: 'neutral', title: '還沒有可以比對的工具', text: '完成申請並確認護照後，系統將自動比對您所使用工具的最新安全通報。' };
   }
   if (openImpacts > 0) {
-    return { tone: 'attention', title: `有 ${openImpacts} 則提醒需要你處理`, text: '比對後發現你的資料流向可能受到影響，請依下方步驟檢查。' };
+    return { tone: 'attention', title: `有 ${openImpacts} 則提醒需要你處理`, text: '比對發現您所使用的工具有相關事件通報，請查看下方說明與安全建議作法。' };
   }
   if (data.incidents.length > 0) {
-    return { tone: 'progress', title: `你用的工具有 ${data.incidents.length} 則公開事件`, text: '目前沒有判定與你的申請相關，仍建議看一下處置建議。' };
+    return { tone: 'progress', title: `你用的工具有 ${data.incidents.length} 則公開事件`, text: '目前初步判定未直接影響您的申請流程，仍建議您參考官方處置建議以策安全。' };
   }
-  return { tone: 'success', title: '目前沒有相符的資安事件', text: `已比對你的 ${data.tools.length} 項工具。沒有事件不代表絕對安全，之後有新事件會再通知你。` };
+  return { tone: 'success', title: '目前沒有相符的資安事件', text: `已為您比對 ${data.tools.length} 項工具。目前查無相符事件，後續如有新通報將及時通知您。` };
 }
 
 export function PassportToolCheck() {
@@ -76,27 +82,27 @@ export function PassportToolCheck() {
       <header className="applicant-page-heading">
         <p className="eyebrow">竹流 FlowPass</p>
         <h1 id="tool-check-title">工具安全檢測</h1>
-        <p>用你已確認的資料流向，比對市府整理的 AI 工具公開資安事件。不用自己輸入工具名稱。</p>
+        <p>系統將依據已確認的護照，自動比對相關工具的公開事件。</p>
       </header>
 
       {loadState === 'loading' && (
         <div className="applicant-state-card" role="status">
           <span className="applicant-loading-mark" aria-hidden="true" />
-          <p>正在比對你的工具…</p>
+          <p>公開事件比對中…</p>
         </div>
       )}
 
       {loadState === 'unauthenticated' && (
         <div className="applicant-state-card applicant-state-card--error" role="alert">
-          <h2>登入已失效</h2>
-          <p>請從 LINE 選單重新開啟「工具安全檢測」。</p>
+          <h2>請先登入</h2>
+          <p>檢測功能需讀取紀錄，請由 LINE 選單重新開啟。</p>
         </div>
       )}
 
       {loadState === 'error' && (
         <div className="applicant-state-card applicant-state-card--error" role="alert">
-          <h2>暫時無法比對</h2>
-          <p>可能是網路不穩，請再試一次。</p>
+          <h2>檢測失敗</h2>
+          <p>請稍後再試。</p>
           <button type="button" className="secondary-action" onClick={retry}>再試一次</button>
         </div>
       )}
@@ -120,15 +126,32 @@ export function PassportToolCheck() {
 
             {data.impacts.length > 0 && (
               <section className="applicant-case-section" aria-labelledby="tool-check-impacts">
-                <header><h2 id="tool-check-impacts">給你的提醒</h2><p>依你的資料流向個別判斷，只有你看得到。</p></header>
+                <header><h2 id="tool-check-impacts">專屬提醒</h2><p>依據您護照所登記之工具與資料流向個別比對，僅供您個人查閱。</p></header>
                 <ul className="tool-check-list">
                   {data.impacts.map((item, index) => {
                     const status = securityAlertStatus(item.status);
+                    const severity = securitySeverity(item.severity ?? '');
+                    const passportTitle = item.passportTitle?.trim() || '你的護照';
+                    const whatHappened = item.incidentTitle?.trim() || item.summary?.trim() || null;
+                    const caseHref = item.caseId ? `/app/passports/${encodeURIComponent(item.caseId)}` : '/app/passports';
                     return (
-                      <li key={`${item.status}-${index}`} className="tool-check-card">
-                        <span className={`applicant-status applicant-status--${status.tone}`}>{status.label}</span>
-                        <p>{item.guidance ?? '請依處置建議檢查你的資料流向。'}</p>
-                        <Link className="tool-check-inline-link" href="/app/passports">到申請紀錄查看 ›</Link>
+                      <li key={`${item.caseId ?? item.status}-${index}`}>
+                        <article className="tool-check-card">
+                          <div className="tool-check-card-meta">
+                            <span className={`applicant-status applicant-status--${status.tone}`}>{status.label}</span>
+                            <span className={`applicant-status applicant-status--${severity.tone}`}>影響程度：{severity.label}</span>
+                          </div>
+                          <h3>{passportTitle}</h3>
+                          {whatHappened && <p>{whatHappened}</p>}
+                          {item.affectedDataKinds && item.affectedDataKinds.length > 0 && (
+                            <p className="tool-check-period">可能相關資料：{item.affectedDataKinds.join('、')}</p>
+                          )}
+                          <div className="tool-check-actions">
+                            <h4>建議你這樣做</h4>
+                            <p>{item.guidance ?? '請依指示檢查護照與相關工具設定。'}</p>
+                          </div>
+                          <Link className="tool-check-inline-link" href={caseHref}>查看此護照 ›</Link>
+                        </article>
                       </li>
                     );
                   })}
@@ -138,7 +161,7 @@ export function PassportToolCheck() {
 
             {data.tools.length > 0 && (
               <section className="applicant-case-section" aria-labelledby="tool-check-tools">
-                <header><h2 id="tool-check-tools">比對的工具</h2><p>來自你已確認的資料流向。</p></header>
+                <header><h2 id="tool-check-tools">使用工具</h2><p>已自您確認的 AI 資料護照中自動帶入。</p></header>
                 <ul className="tool-check-chips">
                   {data.tools.map((tool) => <li key={tool}>{tool}</li>)}
                 </ul>
@@ -147,9 +170,9 @@ export function PassportToolCheck() {
 
             {data.tools.length > 0 && (
               <section className="applicant-case-section" aria-labelledby="tool-check-incidents">
-                <header><h2 id="tool-check-incidents">相關公開事件</h2><p>市府確認過來源的事件才會列在這裡。</p></header>
+                <header><h2 id="tool-check-incidents">相關公開事件</h2><p>收錄經主管機關與廠商官方公告之安全性事件，供您參考防範。</p></header>
                 {data.incidents.length === 0 ? (
-                  <p className="tool-check-empty">目前沒有與你工具相符的公開事件。</p>
+                  <p className="tool-check-empty">目前無相符的公開事件。請持續留意官方公告。</p>
                 ) : (
                   <ul className="tool-check-list">
                     {data.incidents.map((item) => {
@@ -174,7 +197,7 @@ export function PassportToolCheck() {
                             )}
                             {item.sourceUrl && (
                               <a className="tool-check-inline-link" href={item.sourceUrl} target="_blank" rel="noopener noreferrer">
-                                查看來源：{item.sourceTitle ?? '原始公告'} ↗
+                                查看來源：{item.sourceTitle ?? '來源'} ↗
                               </a>
                             )}
                           </article>

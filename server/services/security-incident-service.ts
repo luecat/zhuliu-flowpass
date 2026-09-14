@@ -201,7 +201,7 @@ export function createSecurityIncidentService(options: SecurityIncidentServiceOp
         if (!match) throw new SecurityIncidentError('MATCH_NOT_FOUND');
         options.database.prepare('UPDATE incident_matches SET status = ?, reviewed_by_admin_id = ?, reviewed_at = ? WHERE id = ?').run(selected.status, input.adminId, at, match.id);
         if (selected.status === 'not_affected') continue;
-        const summary = selected.status === 'confirmed_affected' ? '已確認受影響的資安提醒' : '可能受影響的資安提醒';
+        const summary = incident.title;
         const existing = options.database.prepare('SELECT id FROM alerts WHERE incident_match_id = ?').get(match.id) as { id: string } | undefined;
         const alertId = existing?.id ?? id();
         if (!existing) {

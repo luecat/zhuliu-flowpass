@@ -233,7 +233,7 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
               <li>若有填受影響版本：版本未知或落在清單內才會列入預覽。</li>
               <li>若有填影響期間：使用時點落在區間內才會列入；無使用時點則不因時間排除。</li>
               <li>「內部判斷依據」是你留下的人工結論，給後台留痕；預覽清單旁的標籤才是系統自動比對結果。</li>
-              <li>預覽只是候補清單；你按下發布後，申請人才會看到「給你的提醒」。</li>
+              <li>預覽只是候補清單；你按下發布後，申請人才會看到「專屬提醒」。</li>
             </ul>
           </aside>
 
@@ -316,7 +316,7 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
             <div className="field">
               <label htmlFor="incident-rationale">內部判斷依據（僅後台可見）</label>
               <p id="incident-rationale-help" className="field-hint">
-                這是給承辦同事看的審核筆記，不會顯示給申請人。請寫清「為什麼判定這些案件可能受影響」，例如：官方公告點名的產品／版本、你們對照護照後的判斷、為何仍通知版本未知的案件。
+                此處為承辦團隊之審核紀錄，不會公開給申請人。請具體說明判定受影響之推論過程，例如：官方公告所涵蓋之軟體版本、護照資料流程對照重點，以及針對版本未知案件之處置考量。
               </p>
               <textarea
                 id="incident-rationale"
@@ -331,7 +331,7 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
             </div>
             <div className="field">
               <label htmlFor="incident-guidance">給申請人的處理指引</label>
-              <textarea id="incident-guidance" rows={4} maxLength={1000} value={publicGuidance} onChange={(event) => setPublicGuidance(event.target.value)} required placeholder="申請人會看到這段文字，請寫清楚下一步該做什麼" />
+              <textarea id="incident-guidance" rows={4} maxLength={1000} value={publicGuidance} onChange={(event) => setPublicGuidance(event.target.value)} required placeholder="此內容將呈現於申請人的「專屬提醒」中，請提供具體、可操作的自我檢查或設定變更步驟。" />
             </div>
           </fieldset>
 
@@ -415,7 +415,7 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
         <section className="publisher-done" aria-labelledby="publisher-done-title">
           <p className="eyebrow">第 3 步</p>
           <h2 id="publisher-done-title">已完成發布</h2>
-          <p>已發布 {publishedCount} 筆資安提醒，並排入 {notificationCount} 則通知。申請人端「給你的提醒」會顯示這些內容；未確認的公開事件仍只出現在工具檢測的公開事件區。</p>
+          <p>已發布 {publishedCount} 筆資安提醒，並排入 {notificationCount} 則通知。申請人端「專屬提醒」會顯示這些內容；未確認的公開事件仍只出現在工具檢測的公開事件區。</p>
           <div className="publisher-done-actions">
             <button type="button" className="primary" onClick={resetComposer}>建立下一則事件</button>
             <button type="button" className="secondary" onClick={onBack}>返回案件總覽</button>

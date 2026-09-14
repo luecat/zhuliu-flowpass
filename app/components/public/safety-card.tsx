@@ -171,11 +171,11 @@ function layoutCard(ctx: CanvasRenderingContext2D, model: SafetyCardModel, draw:
     y = top + height + 24;
   };
 
-  panel('我的資料流向', model.flow, 'plain', (index) => String(index + 1));
+  panel('資料處理流程', model.flow, 'plain', (index) => String(index + 1));
   panel('上傳前', model.beforeUpload, 'plain', () => '✓');
   panel('使用中', model.whileUsing, 'plain', () => '✓');
   panel('公開前', model.beforePublish, 'plain', () => '✓');
-  panel('出事時：停、隔、留、報、查', model.incidentSteps.map((step) => step.action), 'amber', (index) => model.incidentSteps[index]?.key ?? '');
+  panel('遇到狀況時：停、隔、留、報、查', model.incidentSteps.map((step) => step.action), 'amber', (index) => model.incidentSteps[index]?.key ?? '');
 
   y += 8;
   y += text(`工具：${model.meta.tool}　分享對象：${model.meta.audience}　保存期間：${model.meta.retention}`, PAD, y, 26, COLOR.muted, 400, inner, 2);
@@ -189,8 +189,8 @@ function applicantModel(model: SafetyCardModel): SafetyCardModel {
   return {
     ...model,
     title: copy(model.title, 'AI 使用流程'),
-    purpose: copy(model.purpose, '依你確認的資料流向整理的安全重點'),
-    flow: model.flow.map((item) => copy(item, '資料流向')),
+    purpose: copy(model.purpose, '依確認之護照與資料流程整理的安全重點'),
+    flow: model.flow.map((item) => copy(item, '資料流程')),
     meta: {
       tool: copy(model.meta.tool, '待確認'),
       audience: AUDIENCE_LABELS[model.meta.audience] ?? copy(model.meta.audience, '待確認'),
@@ -260,7 +260,7 @@ export function SafetyCard({ caseId }: { caseId: string }) {
   }
 
   if (state.kind === 'loading') return <div className="applicant-inline-state" role="status">正在產生安全使用卡…</div>;
-  if (state.kind === 'error') return <div className="applicant-inline-state applicant-inline-state--error" role="alert"><p>安全使用卡暫時無法產生，請稍後再開啟這一頁。</p></div>;
+  if (state.kind === 'error') return <div className="applicant-inline-state applicant-inline-state--error" role="alert"><p>安全使用卡暫時無法產生，請稍後再試。</p></div>;
   return (
     <div className="applicant-safety-card">
       {/* A locally rendered data URL; next/image cannot optimize it and would break long-press saving. */}

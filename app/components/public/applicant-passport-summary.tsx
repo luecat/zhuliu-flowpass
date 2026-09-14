@@ -79,11 +79,11 @@ export function ApplicantPassportSummary({
   );
 
   return (
-    <section className="applicant-passport-summary" aria-label={draft ? undefined : '已確認的資料流向'} aria-labelledby={draft ? 'applicant-passport-title' : undefined}>
+    <section className="applicant-passport-summary" aria-label={draft ? undefined : '已確認之護照'} aria-labelledby={draft ? 'applicant-passport-title' : undefined}>
       {draft && (
         <>
           <header>
-            <p className="eyebrow">確認資料流向</p>
+            <p className="eyebrow">確認護照</p>
             <h2 id="applicant-passport-title">{title}</h2>
             <p>{purpose}</p>
           </header>
@@ -94,7 +94,7 @@ export function ApplicantPassportSummary({
         </>
       )}
       <section aria-labelledby="applicant-flow-title">
-        <h3 id="applicant-flow-title" className={draft ? 'applicant-flow-title' : 'sr-only'}>資料怎麼流動</h3>
+        <h3 id="applicant-flow-title" className={draft ? 'applicant-flow-title' : 'sr-only'}>資料處理流程</h3>
         <ol className="applicant-flow-stages">
           {stages.map((stage) => (
             <li className="applicant-flow-stage" key={stage.key}>
@@ -109,7 +109,7 @@ export function ApplicantPassportSummary({
                   </>
                 )}
                 {stage.key === 'share' && (
-                  <p className="applicant-flow-note">看得到成果的人：<strong>{audienceLabels[passport.sharing_scope.audience]}</strong></p>
+                  <p className="applicant-flow-note">成果可見範圍：<strong>{audienceLabels[passport.sharing_scope.audience]}</strong></p>
                 )}
               </div>
             </li>
@@ -118,7 +118,7 @@ export function ApplicantPassportSummary({
       </section>
       {passport.safety_actions.length > 0 && (
         <section className="applicant-safety-list" aria-labelledby="applicant-safety-title">
-          <h3 id="applicant-safety-title">{draft ? '送出前確認事項' : '使用時記得'}</h3>
+          <h3 id="applicant-safety-title">{draft ? '送出前確認事項' : '資料使用注意事項'}</h3>
           {passport.safety_actions.map((action) => (
             <article key={action.id}>
               <strong>{applicantVisibleCopy(action.action, '確認資料處理與分享方式')}</strong>
@@ -128,7 +128,7 @@ export function ApplicantPassportSummary({
         </section>
       )}
       {draft && workflowState === 'follow_up_required' && (
-        <p className="applicant-next-step">請先回答下方問題，確認後點擊「重新產生資料流向」。</p>
+        <p className="applicant-next-step">請先回答下方問題，確認後點擊「重新產生護照」。</p>
       )}
       {onContinue && (
         <div className="applicant-passport-controls">

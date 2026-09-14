@@ -14,8 +14,8 @@ describe('ApplicantPassportSummary', () => {
   it('shows applicant-facing flow content without internal diagnostics', () => {
     render(<ApplicantPassportSummary passport={passport} workflowState="follow_up_required" />);
     expect(screen.getByRole('heading', { name: FLOWPASS_SAMPLE.passport_draft.use_case.title })).toBeVisible();
-    expect(screen.getByRole('heading', { name: '資料怎麼流動' })).toBeVisible();
-    expect(screen.getByText('請先回答下方問題，確認後點擊「重新產生資料流向」。')).toBeVisible();
+    expect(screen.getByRole('heading', { name: '資料處理流程' })).toBeVisible();
+    expect(screen.getByText('請先回答下方問題，確認後點擊「重新產生護照」。')).toBeVisible();
     expect(screen.queryByText('GRAPH CHECK')).not.toBeInTheDocument();
     expect(screen.queryByText('解析檢查')).not.toBeInTheDocument();
     expect(screen.queryByText('未知欄位')).not.toBeInTheDocument();
@@ -39,7 +39,7 @@ describe('ApplicantPassportSummary', () => {
     render(<ApplicantPassportSummary passport={passport} workflowState="confirmed" mode="record" />);
     expect(screen.queryByRole('heading', { level: 2 })).not.toBeInTheDocument();
     expect(screen.queryByText('待確認')).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: '使用時記得' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '資料使用注意事項' })).toBeVisible();
   });
 
   it('replaces internal JSON names and enum literals in applicant-visible model copy', () => {

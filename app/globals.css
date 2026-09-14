@@ -3594,6 +3594,7 @@ textarea::placeholder {
 .tool-check-card-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; color: #68766f; font-size: 13px; }
 .tool-check-actions { justify-self: stretch; padding: 14px 16px; border-radius: 14px; background: #f3f7f4; }
 .tool-check-actions h4 { margin: 0 0 8px; color: #2c4a3c; font-size: 14px; }
+.tool-check-actions p { margin: 0; color: #34473e; line-height: 1.55; }
 .tool-check-actions ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .tool-check-actions li { position: relative; padding-left: 22px; color: #34473e; line-height: 1.55; }
 .tool-check-actions li::before { position: absolute; top: 0; left: 0; color: #267653; font-weight: 800; content: '✓'; }

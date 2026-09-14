@@ -3,12 +3,14 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PublicApiClient } from '../../lib/public-api';
-import { APPLICANT_PROGRAM_LABEL, applicantCaseStatus, formatTaipeiDate } from './applicant-case-status';
+import { applicantVisibleCopy } from './applicant-copy';
+import { applicantCaseStatus, formatTaipeiDate } from './applicant-case-status';
 
 export interface PassportCard {
   id: string;
   caseCode: string;
   programName: string;
+  title?: string | null;
   year: number;
   state: string;
   submittedAt: string | null;
@@ -79,11 +81,12 @@ export function PassportList({ initial = [] }: { initial?: PassportCard[] }) {
           <ul>
             {cards.map((card) => {
               const status = applicantCaseStatus(card.state);
+              const title = applicantVisibleCopy(card.title ?? '', '用途');
               return (
                 <li key={card.id}>
                   <Link className="applicant-record" href={`/app/passports/${encodeURIComponent(card.id)}`}>
                     <span className="applicant-record-copy">
-                      <strong>{APPLICANT_PROGRAM_LABEL}</strong>
+                      <strong>{title}</strong>
                       <span>{card.submittedAt ? `${formatTaipeiDate(card.submittedAt)} 送出` : '送出時間待確認'}</span>
                     </span>
                     <span className={`applicant-status applicant-status--${status.tone}`}>{status.label}</span>

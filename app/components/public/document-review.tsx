@@ -130,8 +130,8 @@ const REQUIREMENTS: Record<DocumentRequirementKey, RequirementSpec> = {
   special_status_proof: { key: 'special_status_proof', kind: 'eligibility_proof', label: '資格證明', hint: '請上傳可辨識身分之有效證明。', required: true },
   purchase_proof: { key: 'purchase_proof', kind: 'invoice', label: '購買憑證或發票', hint: '需包含購買人、軟體名稱、日期、期間、金額與付款方式。', required: true },
   passbook_cover: { key: 'passbook_cover', kind: 'supplement', label: '存摺封面影本', hint: '需包含完整戶名與帳號。', required: true },
-  affidavit: { key: 'affidavit', kind: 'other', label: '切結書', hint: '申請人親筆簽名後拍照或掃描上傳。', required: true },
-  representative_affidavit: { key: 'representative_affidavit', kind: 'other', label: '代付切結書', hint: '由父母、配偶或法定代理人代付時，需雙方簽名。', required: true },
+  affidavit: { key: 'affidavit', kind: 'other', label: '切結書', hint: '申請人親筆簽名後拍照或掃描上傳（可於官網或 LINE 選單下載範本）。', required: true },
+  representative_affidavit: { key: 'representative_affidavit', kind: 'other', label: '代付切結書', hint: '由父母、配偶或法定代理人代付時，需雙方簽名後拍照或掃描上傳。', required: true },
   supplement_other: { key: 'supplement_other', kind: 'supplement', label: '其他補充文件', hint: '依審核人員指示上傳補充文件。', required: true },
 };
 
@@ -536,26 +536,40 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
             </div>
             <label>軟體公司名稱 <span aria-hidden="true">＊</span><input data-field="companyName" value={draft.companyName} maxLength={200} autoComplete="organization" aria-invalid={Boolean(fieldErrors.companyName)} onChange={(event) => updateDraft('companyName', event.target.value)} />{fieldErrors.companyName && <p className="field-error" role="alert">{fieldErrors.companyName}</p>}</label>
             <label>購買日期 <span aria-hidden="true">＊</span><input data-field="purchaseDate" type="date" value={draft.purchaseDate} aria-invalid={Boolean(fieldErrors.purchaseDate)} onChange={(event) => updateDraft('purchaseDate', event.target.value)} />{fieldErrors.purchaseDate && <p className="field-error" role="alert">{fieldErrors.purchaseDate}</p>}</label>
-            <label>發票號碼<input data-field="invoiceNumber" value={draft.invoiceNumber} maxLength={40} autoComplete="off" placeholder="選填，有助於加速核對" onChange={(event) => updateDraft('invoiceNumber', event.target.value)} /></label>
-          </div>
-          <fieldset><legend>付款人 <span aria-hidden="true">＊</span></legend><div className="choice-stack"><label><input type="radio" name="payer" checked={draft.payerType === 'self_card'} onChange={() => updateDraft('payerType', 'self_card')} />本人信用卡</label><label><input type="radio" name="payer" checked={draft.payerType === 'representative'} onChange={() => updateDraft('payerType', 'representative')} />父母、配偶或法定代理人代付</label></div></fieldset>
-          <aside className="sensitive-data-note" aria-labelledby="card-privacy-title">
-            <h4 id="card-privacy-title">信用卡資訊用途</h4>
-            <p>系統僅透過末四碼與持卡人姓名進行加密比對，防範重複請領，不保留完整卡號明文。</p>
-          </aside>
-          <div className="purchase-field-grid"><label>信用卡末四碼 <span aria-hidden="true">＊</span><input data-field="cardLastFour" value={draft.cardLastFour} inputMode="numeric" maxLength={4} autoComplete="off" aria-invalid={Boolean(fieldErrors.cardLastFour)} placeholder={draft.paymentSourceRegistered ? '已登記（可留空）' : '例如 1234'} onChange={(event) => updateDraft('cardLastFour', event.target.value.replace(/\D/g, '').slice(0, 4))} /><small>{draft.paymentSourceRegistered ? '已登記付款指紋，可留空沿用。' : '僅用於防重複請領檢核。系統不保留明文。'}</small>{fieldErrors.cardLastFour && <p className="field-error" role="alert">{fieldErrors.cardLastFour}</p>}</label><label>持卡人姓名 <span aria-hidden="true">＊</span><input data-field="cardholderName" value={draft.cardholderName} maxLength={100} autoComplete="cc-name" aria-invalid={Boolean(fieldErrors.cardholderName)} placeholder={draft.paymentSourceRegistered ? '已登記（可留空）' : '須與卡片一致'} onChange={(event) => updateDraft('cardholderName', event.target.value)} />{fieldErrors.cardholderName && <p className="field-error" role="alert">{fieldErrors.cardholderName}</p>}</label></div>
-          <fieldset><legend>原始費用幣別 <span aria-hidden="true">＊</span></legend><div className="choice-grid currency-choices">{([['TWD', '新臺幣'], ['USD', '美金'], ['JPY', '日圓'], ['EUR', '歐元'], ['AUD', '澳幣'], ['HKD', '港幣'], ['OTHER', '其他']] as const).map(([value, label]) => <label key={value}><input type="radio" name="currency" checked={draft.originalCurrency === value} onChange={() => updateDraft('originalCurrency', value)} />{label}</label>)}</div>{draft.originalCurrency === 'OTHER' && <label>其他幣別<input data-field="otherCurrency" value={draft.otherCurrency} maxLength={24} onChange={(event) => updateDraft('otherCurrency', event.target.value)} /></label>}</fieldset>
-          <div className="purchase-field-grid"><label>原始費用 <span aria-hidden="true">＊</span><input data-field="originalExpense" type="text" inputMode="decimal" placeholder="例如 29.99" value={draft.originalExpense} aria-invalid={Boolean(fieldErrors.originalExpense)} onChange={(event) => updateDraft('originalExpense', event.target.value)} />{fieldErrors.originalExpense && <p className="field-error" role="alert">{fieldErrors.originalExpense}</p>}</label>{draft.originalCurrency === 'TWD' ? (
-            <p className="field-hint" data-field="convertedTwd">幣別為新臺幣時，系統會以原始費用自動帶入換算金額{draft.convertedTwd ? `（目前 NT$${Number(draft.convertedTwd).toLocaleString('zh-TW')}）` : ''}。</p>
-          ) : (
-            <label>換算新臺幣 <span aria-hidden="true">＊</span><input data-field="convertedTwd" type="number" min="1" max="100000000" inputMode="numeric" placeholder="請填寫整數" value={draft.convertedTwd} aria-invalid={Boolean(fieldErrors.convertedTwd)} onChange={(event) => updateDraft('convertedTwd', event.target.value)} />{(() => { const estimate = estimateConvertedTwd({ originalCurrency: draft.originalCurrency, otherCurrency: draft.otherCurrency || null, originalExpense: draft.originalExpense }); return estimate.estimatedTwd != null ? <small>參考試算約 NT${estimate.estimatedTwd.toLocaleString('zh-TW')}（匯率 {estimate.referenceRate}）</small> : null; })()}{fieldErrors.convertedTwd && <p className="field-error" role="alert">{fieldErrors.convertedTwd}</p>}</label>
-          )}</div>
-          <fieldset><legend>訂閱開始日 <span aria-hidden="true">＊</span></legend><input data-field="subscriptionStartDate" type="date" value={draft.subscriptionStartDate} aria-invalid={Boolean(fieldErrors.subscriptionStartDate)} onChange={(event) => updateDraft('subscriptionStartDate', event.target.value)} />{fieldErrors.subscriptionStartDate && <p className="field-error" role="alert">{fieldErrors.subscriptionStartDate}</p>}</fieldset>
-          <fieldset><legend>訂閱結束日 <span aria-hidden="true">＊</span></legend><input data-field="subscriptionEndDate" type="date" value={draft.subscriptionEndDate} aria-invalid={Boolean(fieldErrors.subscriptionEndDate)} onChange={(event) => updateDraft('subscriptionEndDate', event.target.value)} />{fieldErrors.subscriptionEndDate && <p className="field-error" role="alert">{fieldErrors.subscriptionEndDate}</p>}</fieldset>
-          <fieldset><legend>資格證明</legend><label className="checkbox-card"><input type="checkbox" checked={draft.specialStatus} onChange={(event) => updateDraft('specialStatus', event.target.checked)} /><span><strong>具備特定對象或文化語言保存者身分</strong><small>勾選後需上傳相關資格證明。</small></span></label></fieldset>
+          <label>發票號碼<input data-field="invoiceNumber" value={draft.invoiceNumber} maxLength={40} autoComplete="off" placeholder="選填，有助於加速核對發票或收據" onChange={(event) => updateDraft('invoiceNumber', event.target.value)} /></label>
+        </div>
+        <fieldset><legend>付款人 <span aria-hidden="true">＊</span></legend><div className="choice-stack"><label><input type="radio" name="payer" checked={draft.payerType === 'self_card'} onChange={() => updateDraft('payerType', 'self_card')} />本人信用卡</label><label><input type="radio" name="payer" checked={draft.payerType === 'representative'} onChange={() => updateDraft('payerType', 'representative')} />父母、配偶或法定代理人代付</label></div></fieldset>
+        <aside className="sensitive-data-note" aria-labelledby="card-privacy-title">
+          <h4 id="card-privacy-title">信用卡資訊用途與安全說明</h4>
+          <p>為核對購買真實性並防範重複請領，系統僅加密比對卡號末四碼與持卡人姓名，絕不留存完整卡號明文或安全碼。</p>
+        </aside>
+        <div className="purchase-field-grid"><label>信用卡末四碼 <span aria-hidden="true">＊</span><input data-field="cardLastFour" value={draft.cardLastFour} inputMode="numeric" maxLength={4} autoComplete="off" aria-invalid={Boolean(fieldErrors.cardLastFour)} placeholder={draft.paymentSourceRegistered ? '已登記（可留空）' : '例如 1234'} onChange={(event) => updateDraft('cardLastFour', event.target.value.replace(/\D/g, '').slice(0, 4))} /><small>{draft.paymentSourceRegistered ? '已登記付款卡號資訊，若未變更可留空。' : '僅用於防重複請領檢核。系統不保留明文。'}</small>{fieldErrors.cardLastFour && <p className="field-error" role="alert">{fieldErrors.cardLastFour}</p>}</label><label>持卡人姓名 <span aria-hidden="true">＊</span><input data-field="cardholderName" value={draft.cardholderName} maxLength={100} autoComplete="cc-name" aria-invalid={Boolean(fieldErrors.cardholderName)} placeholder={draft.paymentSourceRegistered ? '已登記（可留空）' : '須與卡片一致'} onChange={(event) => updateDraft('cardholderName', event.target.value)} />{fieldErrors.cardholderName && <p className="field-error" role="alert">{fieldErrors.cardholderName}</p>}</label></div>
+        <fieldset><legend>原始費用幣別 <span aria-hidden="true">＊</span></legend><div className="choice-grid currency-choices">{([['TWD', '新臺幣'], ['USD', '美金'], ['JPY', '日圓'], ['EUR', '歐元'], ['AUD', '澳幣'], ['HKD', '港幣'], ['OTHER', '其他']] as const).map(([value, label]) => <label key={value}><input type="radio" name="currency" checked={draft.originalCurrency === value} onChange={() => updateDraft('originalCurrency', value)} />{label}</label>)}</div>{draft.originalCurrency === 'OTHER' && <label>其他幣別<input data-field="otherCurrency" value={draft.otherCurrency} maxLength={24} onChange={(event) => updateDraft('otherCurrency', event.target.value)} /></label>}</fieldset>
+        <div className="purchase-field-grid"><label>原始費用 <span aria-hidden="true">＊</span><input data-field="originalExpense" type="text" inputMode="decimal" placeholder="例如 29.99" value={draft.originalExpense} aria-invalid={Boolean(fieldErrors.originalExpense)} onChange={(event) => updateDraft('originalExpense', event.target.value)} />{fieldErrors.originalExpense && <p className="field-error" role="alert">{fieldErrors.originalExpense}</p>}</label>{draft.originalCurrency === 'TWD' ? (
+          <p className="field-hint" data-field="convertedTwd">幣別為新臺幣，系統已自動為您帶入換算金額{draft.convertedTwd ? `（NT$${Number(draft.convertedTwd).toLocaleString('zh-TW')}）` : ''}，無需另外計算。</p>
+        ) : (
+          <label>換算新臺幣 <span aria-hidden="true">＊</span><input data-field="convertedTwd" type="number" min="1" max="100000000" inputMode="numeric" placeholder="請填寫整數" value={draft.convertedTwd} aria-invalid={Boolean(fieldErrors.convertedTwd)} onChange={(event) => updateDraft('convertedTwd', event.target.value)} />{(() => { const estimate = estimateConvertedTwd({ originalCurrency: draft.originalCurrency, otherCurrency: draft.otherCurrency || null, originalExpense: draft.originalExpense }); return estimate.estimatedTwd != null ? <small>參考試算約 NT${estimate.estimatedTwd.toLocaleString('zh-TW')}（匯率 {estimate.referenceRate}）</small> : null; })()}{fieldErrors.convertedTwd && <p className="field-error" role="alert">{fieldErrors.convertedTwd}</p>}</label>
+        )}</div>
+        <fieldset><legend>訂閱開始日 <span aria-hidden="true">＊</span></legend><input data-field="subscriptionStartDate" type="date" value={draft.subscriptionStartDate} aria-invalid={Boolean(fieldErrors.subscriptionStartDate)} onChange={(event) => updateDraft('subscriptionStartDate', event.target.value)} /><small>請依發票或訂閱憑證標示之啟用日填寫。</small>{fieldErrors.subscriptionStartDate && <p className="field-error" role="alert">{fieldErrors.subscriptionStartDate}</p>}</fieldset>
+        <fieldset><legend>訂閱結束日 <span aria-hidden="true">＊</span></legend><input data-field="subscriptionEndDate" type="date" value={draft.subscriptionEndDate} aria-invalid={Boolean(fieldErrors.subscriptionEndDate)} onChange={(event) => updateDraft('subscriptionEndDate', event.target.value)} /><small>請依發票或訂閱憑證標示之到期日填寫。</small>{fieldErrors.subscriptionEndDate && <p className="field-error" role="alert">{fieldErrors.subscriptionEndDate}</p>}</fieldset>
+        <fieldset><legend>資格證明</legend><label className="checkbox-card"><input type="checkbox" checked={draft.specialStatus} onChange={(event) => updateDraft('specialStatus', event.target.checked)} /><span><strong>具備特定對象或文化語言保存者身分</strong><small>若具備相關身分，請勾選並於下一步上傳證明文件。</small></span></label></fieldset>
           <div className="wizard-actions">
-            <button type="submit" className="primary-action" disabled={saving || detailsSaved}>{saving ? '儲存中…' : detailsSaved ? '購買資料已儲存' : '儲存並前往附件'}</button>
-            {detailsSaved && <button type="button" className="secondary-action" onClick={() => setStep('attachments')}>前往附件</button>}
+            {detailsSaved ? (
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => {
+                  setStep('attachments');
+                  if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+                }}
+              >
+                前往附件上傳
+              </button>
+            ) : (
+              <button type="submit" className="primary-action" disabled={saving}>
+                {saving ? '儲存中…' : '儲存並前往附件'}
+              </button>
+            )}
           </div>
         </form>
       </section>
@@ -566,10 +580,10 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
       <section className="attachment-section-card" aria-labelledby="required-files-title">
         <div className="attachment-section-heading"><div><span>2</span><h3 id="required-files-title">上傳必備文件</h3></div><strong className="attachment-progress">{completedCount} / {requiredSpecs.length}</strong></div>
         <aside className="sensitive-data-note" aria-labelledby="docs-privacy-title">
-          <h4 id="docs-privacy-title">個人證件與存摺用途</h4>
-          <p>檔案將加密存放，僅供補助審核使用，並依計畫規定期限銷毀。</p>
+          <h4 id="docs-privacy-title">個人證件與存摺隱私保護</h4>
+          <p>您上傳的個人證件與存摺封面均以專屬金鑰加密存放，僅供本計畫審核使用，並依規定安全銷毀。</p>
         </aside>
-        <p className="field-hint">支援 JPEG、PNG 或未加密之 PDF。單一檔案上限 12 MB。不支援 HEIC 格式。</p>
+        <p className="field-hint">支援 JPEG、PNG 或未加密之 PDF。單一檔案上限 12 MB。不支援 HEIC 格式（如使用 iPhone 請設定為相容格式 JPG）。</p>
         <div className="attachment-requirement-list">
           {visibleSpecs.map((spec) => {
             const document = latestDocument(spec.key); const isBusy = busyRequirements.has(spec.key); const isReady = document?.status === 'ready';
@@ -591,7 +605,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
           </p>
         )}
         {detailsSaved && completedCount < requiredSpecs.length && (
-          <p role="status">還有 {requiredSpecs.length - completedCount} 項必備文件尚未上傳（含切結書）。請先在上方完成上傳。</p>
+          <p role="status">尚有 {requiredSpecs.length - completedCount} 項必備文件未上傳。</p>
         )}
         {readyToSubmit && (
           <label className="final-confirmation">

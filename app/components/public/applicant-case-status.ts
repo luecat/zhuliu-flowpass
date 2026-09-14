@@ -20,22 +20,19 @@ const CASE_STATUS_COPY: Record<string, ApplicantCaseStatusCopy> = {
   closed: { label: '已結案', description: '申請流程已結束。', tone: 'neutral' },
 };
 
-/** Applicant-facing program name; the stored cycle name is an administrative label. */
-export const APPLICANT_PROGRAM_LABEL = '青年 AI 工具補助';
-
 type ToneLabel = { label: string; tone: ApplicantCaseTone };
 
 export const SECURITY_SEVERITY_COPY: Record<string, ToneLabel> = {
   critical: { label: '緊急', tone: 'danger' },
-  high: { label: '高風險', tone: 'danger' },
-  medium: { label: '中風險', tone: 'attention' },
-  low: { label: '低風險', tone: 'neutral' },
+  high: { label: '高', tone: 'danger' },
+  medium: { label: '中', tone: 'attention' },
+  low: { label: '低', tone: 'neutral' },
   info: { label: '資訊', tone: 'neutral' },
 };
 
 export const SECURITY_ALERT_STATUS_COPY: Record<string, ToneLabel> = {
   open: { label: '待處理', tone: 'attention' },
-  acknowledged: { label: '已確認收到', tone: 'progress' },
+  acknowledged: { label: '已確認', tone: 'progress' },
   resolved: { label: '已處理', tone: 'success' },
 };
 

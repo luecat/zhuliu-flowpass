@@ -9,6 +9,7 @@ export type PublicSecurityAlert = {
   status: AlertStatus;
   severity: string;
   summary: string;
+  incidentTitle: string | null;
   guidance: string;
   createdAt: string;
   resolvedAt: string | null;

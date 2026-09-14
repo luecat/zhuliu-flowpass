@@ -6,7 +6,7 @@ import type { FlowPassPassport } from '../../../shared/passport-contract';
 import { PublicApiClient, PublicApiError } from '../../lib/public-api';
 import { applicantVisibleCopy } from './applicant-copy';
 import { ApplicantPassportSummary } from './applicant-passport-summary';
-import { APPLICANT_PROGRAM_LABEL, applicantCaseStatus, formatTaipeiDate, formatTwd } from './applicant-case-status';
+import { applicantCaseStatus, formatTaipeiDate, formatTwd } from './applicant-case-status';
 import { CaseTimeline } from './case-timeline';
 import { SafetyCard } from './safety-card';
 import { SupplementPanel } from './supplement-panel';
@@ -39,7 +39,7 @@ type PassportState =
   | { kind: 'missing' }
   | { kind: 'error' };
 
-const FALLBACK_TITLE = '我的 AI 工具補助申請';
+const FALLBACK_TITLE = '竹流 FlowPass 申請';
 
 function SubsidyExplanation({ caseId }: { caseId: string }) {
   const api = useMemo(() => new PublicApiClient(), []);
@@ -65,8 +65,8 @@ function SubsidyExplanation({ caseId }: { caseId: string }) {
   return (
     <section className="applicant-case-section" aria-labelledby="subsidy-title">
       <header>
-        <h2 id="subsidy-title">金額怎麼算</h2>
-        <p>{derivation.explanation ?? '依公開規則試算，最後金額以承辦人員審核為準。'}</p>
+        <h2 id="subsidy-title">金額試算說明</h2>
+        <p>{derivation.explanation ?? '金額依公開規則試算，最終結果以人工審核為準。'}</p>
       </header>
       <dl className="applicant-subsidy-steps">
         {derivation.steps.map((step) => (
@@ -114,20 +114,20 @@ export function ApplicantCaseDetail({ caseId }: { caseId: string }) {
 
   if (loadState === 'loading') return (
     <section className="applicant-case" aria-label="申請進度">
-      <Link className="applicant-back-link" href="/app/passports">‹ 返回申請紀錄</Link>
+      <Link className="applicant-back-link" href="/app/passports">‹ 返回紀錄</Link>
       <div className="applicant-state-card" role="status">
         <span className="applicant-loading-mark" aria-hidden="true" />
-        <p>正在載入申請進度…</p>
+        <p>處理進度載入中…</p>
       </div>
     </section>
   );
 
   if (loadState === 'error' || !caseData) return (
     <section className="applicant-case" aria-label="申請進度">
-      <Link className="applicant-back-link" href="/app/passports">‹ 返回申請紀錄</Link>
+      <Link className="applicant-back-link" href="/app/passports">‹ 返回紀錄</Link>
       <div className="applicant-state-card applicant-state-card--error" role="alert">
-        <h1>暫時無法載入</h1>
-        <p>請確認網路連線後再試一次。</p>
+        <h1>載入失敗</h1>
+        <p>請確認網路連線後再試。</p>
         <button type="button" className="secondary-action" onClick={() => { setLoadState('loading'); void load(); }}>重新載入</button>
       </div>
     </section>
@@ -135,14 +135,14 @@ export function ApplicantCaseDetail({ caseId }: { caseId: string }) {
 
   if (caseData.state === 'awaiting_documents') return (
     <article className="applicant-case applicant-case--supplement-only" aria-label="補充申請資料">
-      <Link className="applicant-back-link" href="/app/passports">‹ 返回申請紀錄</Link>
+      <Link className="applicant-back-link" href="/app/passports">‹ 返回紀錄</Link>
       <SupplementPanel caseId={caseId} onCompleted={load} />
     </article>
   );
 
   if (caseData.state === 'returned_for_correction') return (
     <article className="applicant-case applicant-case--supplement-only" aria-label="修正申請內容">
-      <Link className="applicant-back-link" href="/app/passports">‹ 返回申請紀錄</Link>
+      <Link className="applicant-back-link" href="/app/passports">‹ 返回紀錄</Link>
       <CorrectionPanel caseId={caseId} onCompleted={load} />
     </article>
   );
@@ -154,9 +154,9 @@ export function ApplicantCaseDetail({ caseId }: { caseId: string }) {
 
   return (
     <article className="applicant-case">
-      <Link className="applicant-back-link" href="/app/passports">‹ 返回申請紀錄</Link>
+      <Link className="applicant-back-link" href="/app/passports">‹ 返回紀錄</Link>
       <header className="applicant-page-heading">
-        <p className="eyebrow">{APPLICANT_PROGRAM_LABEL}</p>
+        <p className="eyebrow">申請進度</p>
         <h1>{title}</h1>
         {purpose && <p>{purpose}</p>}
       </header>
@@ -187,12 +187,12 @@ export function ApplicantCaseDetail({ caseId }: { caseId: string }) {
       <SubsidyExplanation caseId={caseId} />
 
       <section className="applicant-case-section" aria-labelledby="flow-title">
-        <header><h2 id="flow-title">資料流向</h2><p>送出申請時，你確認過的資料使用方式。</p></header>
-        {passport.kind === 'loading' && <div className="applicant-inline-state" role="status">資料流向載入中…</div>}
-        {passport.kind === 'missing' && <p className="tool-check-empty">這筆申請沒有可顯示的資料流向。</p>}
+        <header><h2 id="flow-title">護照</h2><p>本次申請已確認之資料處理方式。</p></header>
+        {passport.kind === 'loading' && <div className="applicant-inline-state" role="status">護照載入中…</div>}
+        {passport.kind === 'missing' && <p className="tool-check-empty">尚無可檢視之護照。</p>}
         {passport.kind === 'error' && (
           <div className="applicant-inline-state applicant-inline-state--error" role="alert">
-            <p>資料流向暫時無法載入。</p>
+            <p>護照暫時無法載入。</p>
             <button type="button" className="text-action" onClick={() => void loadPassport()}>重新載入</button>
           </div>
         )}
@@ -204,8 +204,8 @@ export function ApplicantCaseDetail({ caseId }: { caseId: string }) {
       {passport.kind === 'ready' && (
         <section className="applicant-case-section" aria-labelledby="safety-card-title">
           <header>
-            <h2 id="safety-card-title">安全使用卡</h2>
-            <p>把這次的資料流向和該注意的事整理成一張圖，存到手機隨時可以看。</p>
+            <h2 id="safety-card-title">安全檢查重點</h2>
+            <p>依據資料流向自動產生的檢查重點。</p>
           </header>
           <SafetyCard caseId={caseId} />
         </section>

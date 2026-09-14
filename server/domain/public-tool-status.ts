@@ -16,11 +16,17 @@ export type PublicToolIncident = {
   sourceUrl: string | null;
   publishedAt: string | null;
   recommendedActions: string[];
+  relevantToPassport: boolean;
 };
 
 export type PersonalizedToolImpact = {
+  caseId: string;
   caseCode: string;
+  passportTitle: string;
   status: string;
+  severity: string;
+  summary: string;
+  incidentTitle: string | null;
   guidance: string | null;
   affectedDataKinds: string[];
   sharingAudience: string | null;
@@ -96,6 +102,7 @@ function listPublishedIncidents(database: FlowPassDatabase): Array<PublicToolInc
     publishedAt: row.published_at,
     recommendedActions: parseActions(row.recommended_actions_json),
     aliases: parseAliases(row.aliases_json),
+    relevantToPassport: false,
   }));
 }
 
@@ -106,36 +113,64 @@ function incidentMatchesTools(incident: PublicToolIncident & { aliases: string[]
 
 export function queryPublicToolIncidents(
   database: FlowPassDatabase,
-  toolQuery: string,
+  toolQuery?: string | null,
 ): PublicToolIncident[] {
-  const needle = toolQuery.trim();
-  if (!needle || needle.length > 120) return [];
+  const needle = toolQuery?.trim() ?? '';
+  if (needle.length > 120) return [];
   return listPublishedIncidents(database)
-    .filter((row) => incidentMatchesTools(row, [needle]))
-    .slice(0, 10)
-    .map(({ aliases: _aliases, ...incident }) => incident);
+    .filter((row) => !needle || incidentMatchesTools(row, [needle]))
+    .slice(0, needle ? 10 : 20)
+    .map(({ aliases: _aliases, ...incident }) => ({ ...incident, relevantToPassport: false }));
+}
+
+function readPassportFromVersion(
+  crypto: FieldCrypto,
+  passportVersionId: string,
+  payloadEnc: string,
+): FlowPassPassport | null {
+  try {
+    const raw = JSON.parse(
+      decryptDatabaseText(crypto, 'passport_versions', 'payload_enc', passportVersionId, payloadEnc),
+    ) as unknown;
+    const wrapped = raw && typeof raw === 'object' && !Array.isArray(raw) && 'passport_draft' in raw
+      ? raw
+      : { passport_draft: raw };
+    return inspectPassportDocument(wrapped).canonical;
+  } catch {
+    return null;
+  }
 }
 
 export function queryPersonalizedToolImpact(
   database: FlowPassDatabase,
+  crypto: FieldCrypto,
   input: { applicantId: string; toolQuery?: string | null },
 ): PersonalizedToolImpact[] {
   const needle = input.toolQuery?.trim().toLowerCase() ?? '';
   const rows = database.prepare(`
-    SELECT c.case_code AS case_code, a.status AS status, a.public_guidance AS guidance,
+    SELECT c.id AS case_id, c.case_code AS case_code, a.status AS status, a.severity AS severity,
+           a.public_summary AS summary, a.public_guidance AS guidance, si.title AS incident_title,
+           a.passport_version_id AS passport_version_id, pv.payload_enc AS payload_enc,
            tp.canonical_name AS tool_name, tp.aliases_json AS aliases_json
     FROM alerts a
     JOIN incident_matches im ON im.id = a.incident_match_id
     JOIN security_incidents si ON si.id = im.security_incident_id
     JOIN tool_products tp ON tp.id = si.tool_product_id
     JOIN cases c ON c.id = a.case_id AND c.applicant_id = ? AND c.deleted_at IS NULL
+    JOIN passport_versions pv ON pv.id = a.passport_version_id
     WHERE a.status IN ('open', 'acknowledged', 'resolved')
     ORDER BY a.created_at DESC
     LIMIT 20
   `).all(input.applicantId) as Array<{
+    case_id: string;
     case_code: string;
     status: string;
+    severity: string;
+    summary: string;
     guidance: string | null;
+    incident_title: string | null;
+    passport_version_id: string;
+    payload_enc: string;
     tool_name: string;
     aliases_json: string;
   }>;
@@ -146,16 +181,28 @@ export function queryPersonalizedToolImpact(
       const aliases = parseAliases(row.aliases_json);
       return [row.tool_name, ...aliases].join(' ').toLowerCase().includes(needle);
     })
-    .map((row) => ({
-      caseCode: row.case_code,
-      status: row.status,
-      guidance: row.guidance,
-      affectedDataKinds: [],
-      sharingAudience: null,
-    }));
+    .map((row) => {
+      const passport = readPassportFromVersion(crypto, row.passport_version_id, row.payload_enc);
+      const passportTitle = passport?.use_case.title?.trim() || '你的護照';
+      const affectedDataKinds = passport
+        ? [...new Set(passport.nodes.filter((node) => node.kind === 'data').map((node) => node.label).filter(Boolean))].slice(0, 6)
+        : [];
+      return {
+        caseId: row.case_id,
+        caseCode: row.case_code,
+        passportTitle,
+        status: row.status,
+        severity: row.severity,
+        summary: row.summary,
+        incidentTitle: row.incident_title,
+        guidance: row.guidance,
+        affectedDataKinds,
+        sharingAudience: null,
+      };
+    });
 }
 
-/** Passive check: use tools already declared on the applicant's passports. */
+/** Published incidents are public to everyone; passport tools only mark personal relevance. */
 export function queryPassportToolStatus(
   database: FlowPassDatabase,
   crypto: FieldCrypto,
@@ -180,19 +227,7 @@ export function queryPassportToolStatus(
   const toolSet = new Set<string>();
 
   for (const row of rows) {
-    let passport: FlowPassPassport | null = null;
-    try {
-      const raw = JSON.parse(
-        decryptDatabaseText(crypto, 'passport_versions', 'payload_enc', row.passport_version_id, row.payload_enc),
-      ) as unknown;
-      const wrapped = raw && typeof raw === 'object' && !Array.isArray(raw) && 'passport_draft' in raw
-        ? raw
-        : { passport_draft: raw };
-      const inspected = inspectPassportDocument(wrapped);
-      passport = inspected.canonical;
-    } catch {
-      continue;
-    }
+    const passport = readPassportFromVersion(crypto, row.passport_version_id, row.payload_enc);
     if (!passport) continue;
     const tools = passportToolLabels(passport);
     if (tools.length === 0) continue;
@@ -202,10 +237,22 @@ export function queryPassportToolStatus(
 
   const tools = [...toolSet];
   const incidents = listPublishedIncidents(database)
-    .filter((incident) => incidentMatchesTools(incident, tools))
-    .slice(0, 12)
-    .map(({ aliases: _aliases, ...incident }) => incident);
-  const impacts = queryPersonalizedToolImpact(database, { applicantId });
+    .slice(0, 20)
+    .map(({ aliases, ...incident }) => ({
+      ...incident,
+      relevantToPassport: tools.length > 0 && incidentMatchesTools({ ...incident, aliases }, tools),
+    }));
+  const impacts = queryPersonalizedToolImpact(database, crypto, { applicantId });
 
   return { tools, cases, incidents, impacts };
+}
+
+/** Public feed only — no applicant identity required. */
+export function queryPublicToolStatus(database: FlowPassDatabase): PassportToolCheck {
+  return {
+    tools: [],
+    cases: [],
+    incidents: queryPublicToolIncidents(database),
+    impacts: [],
+  };
 }

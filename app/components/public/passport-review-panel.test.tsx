@@ -98,7 +98,7 @@ async function renderLoadedPanel() {
 async function submitFollowUp(regenerate = true) {
   fireEvent.change(screen.getByLabelText('使用哪個 AI 工具？'), { target: { value: 'LM Studio' } });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: regenerate ? '重新產生資料流向' : '儲存答案' }));
+    fireEvent.click(screen.getByRole('button', { name: regenerate ? '重新產生護照' : '儲存答案' }));
     await Promise.resolve();
   });
 }
@@ -179,7 +179,7 @@ describe('PassportReviewPanel', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
 
     expect(screen.getByText('處理失敗，請稍後再試。')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '重試整理' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: '重新整理' })).toBeEnabled();
     expect(screen.queryByText('排隊中')).not.toBeInTheDocument();
     expect(screen.queryByText('整理中')).not.toBeInTheDocument();
   });
@@ -191,7 +191,7 @@ describe('PassportReviewPanel', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: '重試整理' }));
+      fireEvent.click(screen.getByRole('button', { name: '重新整理' }));
       await Promise.resolve();
     });
 
@@ -205,7 +205,7 @@ describe('PassportReviewPanel', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
 
     expect(screen.queryByText('處理失敗，請稍後再試。')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '重試整理' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重新整理' })).not.toBeInTheDocument();
   });
 
   it('opens attachments after confirmation and submits only from the second stage', async () => {

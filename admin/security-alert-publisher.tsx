@@ -226,13 +226,13 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
 
       {step === 'compose' && (
         <form className="incident-form" onSubmit={(event) => void createIncident(event)}>
-          <aside className="publisher-callout" aria-label="判斷依據說明">
+          <aside className="publisher-callout" aria-label="比對機制說明">
             <strong>系統如何預覽相符案件</strong>
             <ul>
               <li>系統預覽：比對護照中已確認的 AI 工具名稱（含別名）與本事件指定工具。</li>
               <li>若有填受影響版本：版本未知或落在清單內才會列入預覽。</li>
               <li>若有填影響期間：使用時點落在區間內才會列入；無使用時點則不因時間排除。</li>
-              <li>「內部判斷依據」是你留下的人工結論，給後台留痕；預覽清單旁的標籤才是系統自動比對結果。</li>
+              <li>「內部審核備註」為承辦人員的人工判斷筆記，供內部存查；清單旁的標籤則是系統自動比對的條件。</li>
               <li>預覽只是候補清單；你按下發布後，申請人才會看到「專屬提醒」。</li>
             </ul>
           </aside>
@@ -314,7 +314,7 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
           <fieldset className="publisher-fieldset">
             <legend>判斷與申請人指引</legend>
             <div className="field">
-              <label htmlFor="incident-rationale">內部判斷依據（僅後台可見）</label>
+              <label htmlFor="incident-rationale">內部審核備註（僅後台可見）</label>
               <p id="incident-rationale-help" className="field-hint">
                 此處為承辦團隊之審核紀錄，不會公開給申請人。請具體說明判定受影響之推論過程，例如：官方公告所涵蓋之軟體版本、護照資料流程對照重點，以及針對版本未知案件之處置考量。
               </p>
@@ -369,7 +369,7 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
                     <div>
                       <strong>案件 {shortId(candidate.caseId)}</strong>
                       <span className="publisher-case-id" title={candidate.caseId}>{candidate.caseId}</span>
-                      <div className="publisher-basis" aria-label="比對依據">
+                      <div className="publisher-basis" aria-label="比對條件">
                         {candidate.basis.map((item) => <span key={`${candidate.matchId}-${item}`}>{basisLabel(item)}</span>)}
                       </div>
                     </div>

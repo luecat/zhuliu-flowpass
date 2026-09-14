@@ -205,7 +205,7 @@ export function ApplicantCaseDetail({ caseId }: { caseId: string }) {
         <section className="applicant-case-section" aria-labelledby="safety-card-title">
           <header>
             <h2 id="safety-card-title">安全檢查重點</h2>
-            <p>依據資料流向自動產生的檢查重點。</p>
+            <p>根據您確認的 AI 資料流程自動產生的安全提醒。</p>
           </header>
           <SafetyCard caseId={caseId} />
         </section>

@@ -41,7 +41,7 @@ describe('SecurityAlertPublisher', () => {
     fireEvent.click(day!);
     fireEvent.click(within(dialog).getByRole('button', { name: '完成' }));
 
-    fireEvent.change(screen.getByRole('textbox', { name: '內部判斷依據（僅後台可見）' }), { target: { value: '版本受到影響。' } });
+    fireEvent.change(screen.getByRole('textbox', { name: '內部審核備註（僅後台可見）' }), { target: { value: '版本受到影響。' } });
     fireEvent.change(screen.getByRole('textbox', { name: '給申請人的處理指引' }), { target: { value: '請先更新至安全版本。' } });
     fireEvent.click(screen.getByRole('button', { name: '建立事件並比對案件' }));
 

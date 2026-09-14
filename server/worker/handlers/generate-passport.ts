@@ -243,7 +243,7 @@ function semanticRewriteIssues(passport: FlowPassPassport, projection: AiInputPr
       category: 'readiness',
       severity: 'warning',
       path: '$.passport_draft.safety_actions',
-      message: '公開或可能包含敏感資料的流程至少需要一項有依據的安全確認措施。',
+      message: '公開或可能包含敏感資料的流程至少需要一項明確的安全確認措施。',
     });
   }
   const visibleText: Array<{ path: string; value: string }> = [

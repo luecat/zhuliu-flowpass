@@ -19,7 +19,7 @@ const REVIEWS: Review[] = [
   { action: 'start_review', toState: 'under_review', label: '開始審核', cta: '開始審核', fromStates: ['submitted', 'resubmitted'] },
   { action: 'request_documents', toState: 'awaiting_documents', label: '要求補件', cta: '送出補件要求', fromStates: ['under_review'], supplement: 'documents', confirm: true },
   { action: 'return_correction', toState: 'returned_for_correction', label: '退回修正', cta: '退回申請人修正', fromStates: ['under_review'], supplement: 'correction', confirm: true },
-  { action: 'approve', toState: 'approved', label: '核准', cta: '核准案件', fromStates: ['under_review'], reasonLabel: '核准說明', reasonPlaceholder: '請說明核准依據', amount: 'approved', confirm: true },
+  { action: 'approve', toState: 'approved', label: '核准', cta: '核准案件', fromStates: ['under_review'], reasonLabel: '核准說明', reasonPlaceholder: '請填寫核准原因或審核摘要', amount: 'approved', confirm: true },
   { action: 'reject', toState: 'rejected', label: '駁回', cta: '駁回案件', fromStates: ['under_review'], reasonLabel: '駁回原因', reasonPlaceholder: '請具體說明駁回原因', confirm: true, danger: true },
   { action: 'await_disbursement', toState: 'awaiting_disbursement', label: '列入撥款', cta: '列入撥款', fromStates: ['approved'], reasonLabel: '列入撥款說明', reasonPlaceholder: '請留下撥款排程或核對說明', confirm: true },
   { action: 'disburse', toState: 'disbursed', label: '標記已撥款', cta: '確認已撥款', fromStates: ['awaiting_disbursement'], reasonLabel: '撥款紀錄', reasonPlaceholder: '請留下撥款日期或核對資訊', amount: 'disbursed', confirm: true },

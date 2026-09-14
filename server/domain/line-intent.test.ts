@@ -5,7 +5,10 @@ describe('classifyLineIntent', () => {
   it('routes FAQ, case status, subsidy, and tool status intents', () => {
     expect(classifyLineIntent('怎麼申請')).toMatchObject({ kind: 'faq' });
     expect(classifyLineIntent('常見問題')).toMatchObject({ kind: 'faq' });
-    expect(classifyLineIntent('FAQ')).toMatchObject({ kind: 'faq', answer: expect.stringContaining('請從 LINE 選單') });
+    const faq = classifyLineIntent('FAQ');
+    expect(faq).toMatchObject({ kind: 'faq', answer: expect.stringContaining('常見問題') });
+    if (faq.kind === 'faq') expect(faq.answer).not.toMatch(/無法個別回覆/);
+    expect(classifyLineIntent('護照是什麼')).toMatchObject({ kind: 'faq', answer: expect.stringContaining('護照') });
     expect(classifyLineIntent('我的案子到哪了')).toEqual({ kind: 'case_status' });
     expect(classifyLineIntent('進度查詢')).toEqual({ kind: 'case_status' });
     expect(classifyLineIntent('為什麼是這個金額')).toEqual({ kind: 'subsidy_amount' });

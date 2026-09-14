@@ -34,7 +34,7 @@ describe('PassportToolCheck', () => {
 
     render(<PassportToolCheck />);
 
-    expect(await screen.findByRole('heading', { name: '有 1 則提醒需要你處理' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '有 1 則專屬提醒需要你處理' })).toBeVisible();
     expect(screen.getByRole('heading', { name: '短影音後製流程' })).toBeVisible();
     expect(screen.getAllByText('素材分享連結外洩').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('影響程度：高')).toBeVisible();
@@ -46,20 +46,20 @@ describe('PassportToolCheck', () => {
     expect(document.body.textContent).not.toMatch(/FP-SECRET|\bhigh\b|\bopen\b/);
   });
 
-  it('offers a retry after a failure and explains the empty state', async () => {
+  it('offers a retry after a failure and still shows the public incidents section', async () => {
     mocks.read.mockRejectedValueOnce(new Error('offline'));
     mocks.read.mockResolvedValueOnce({ tools: [], cases: [], incidents: [], impacts: [] });
 
     render(<PassportToolCheck />);
     fireEvent.click(await screen.findByRole('button', { name: '再試一次' }));
 
-    expect(await screen.findByRole('heading', { name: '還沒有可以比對的工具' })).toBeVisible();
-    expect(screen.getByRole('link', { name: '查看申請紀錄' })).toHaveAttribute('href', '/app/passports');
+    expect(await screen.findByRole('heading', { name: '目前沒有公開資安事件' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '公開資安事件' })).toBeVisible();
   });
 
   it('asks the applicant to reopen from LINE when the session expired', async () => {
     mocks.read.mockRejectedValue(new PublicApiError({ code: 'UNAUTHENTICATED', message: 'expired', status: 401 }));
     render(<PassportToolCheck />);
-    expect(await screen.findByRole('heading', { name: '請先登入' })).toBeVisible();
+    expect(await screen.findByRole('heading', { name: '載入失敗' })).toBeVisible();
   });
 });

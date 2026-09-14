@@ -3,7 +3,7 @@ import type { FlowPassDatabase } from '../../db/connection';
 import type { FieldCrypto } from '../../crypto/field-crypto';
 import type { LineMessagingClient } from '../../adapters/line/messaging-client';
 import { classifyLineIntent } from '../../domain/line-intent';
-import { queryPassportToolStatus } from '../../domain/public-tool-status';
+import { queryPassportToolStatus, queryPublicToolIncidents } from '../../domain/public-tool-status';
 
 export function processLineEvent(job: DurableJob, input: {
   database: FlowPassDatabase;
@@ -33,21 +33,29 @@ export function processLineEvent(job: DurableJob, input: {
     let reply = 'FlowPass 只回答補助與案件相關問題。請從選單開啟申請頁，或輸入「怎麼申請」「我的案子到哪了」「補助多少」。';
     if (intent.kind === 'faq') reply = intent.answer;
     else if (intent.kind === 'tool_status') {
+      const publicIncidents = queryPublicToolIncidents(input.database, intent.tool || null).slice(0, 3);
+      const publicSummary = publicIncidents.length === 0
+        ? '目前尚無已發布的公開資安事件。'
+        : `公開事件包括：${publicIncidents.map((item) => `${item.toolName}「${item.title}」`).join('、')}。`;
       if (!userId || !input.crypto) {
-        reply = '請先從 LINE 選單登入 FlowPass，系統會依你的護照工具自動檢測。';
+        reply = `${publicSummary}\n完整清單請開選單「檢測」。登入後若與你的護照相關，會另顯示專屬提醒。`;
       } else {
         const subjectHash = input.crypto.hmacLookup(userId, 'line-subject');
         const identity = input.database.prepare('SELECT applicant_id FROM line_identities WHERE line_subject_hmac = ? AND unlinked_at IS NULL').get(subjectHash) as { applicant_id: string } | undefined;
         if (!identity) {
-          reply = '尚未綁定申請人身分。請先從 LINE 選單登入 FlowPass。';
+          reply = `${publicSummary}\n尚未綁定申請人身分。請先從 LINE 選單登入，以查看專屬提醒。`;
         } else {
           const check = queryPassportToolStatus(input.database, input.crypto, identity.applicant_id);
-          if (check.tools.length === 0) {
-            reply = '目前還沒有已確認護照上的工具。完成護照確認後，選單「檢測」會自動依護照比對公開事件。';
-          } else if (check.incidents.length === 0) {
-            reply = `已依護照工具（${check.tools.join('、')}）檢測，目前沒有相符的已確認公開事件。詳細結果可開啟選單「檢測」。`;
+          const relevant = check.incidents.filter((item) => item.relevantToPassport);
+          const openImpacts = check.impacts.filter((item) => item.status !== 'resolved').length;
+          if (openImpacts > 0) {
+            reply = `${publicSummary}\n另外你有 ${openImpacts} 則專屬提醒，請開選單「檢測」查看。`;
+          } else if (relevant.length > 0) {
+            reply = `${publicSummary}\n其中 ${relevant.length} 則與你的護照相關，請開選單「檢測」查看建議作法。`;
+          } else if (check.tools.length === 0) {
+            reply = `${publicSummary}\n你尚未確認護照工具；確認後若有相關事件會出現專屬提醒。詳情請開選單「檢測」。`;
           } else {
-            reply = `已依護照工具（${check.tools.join('、')}）檢測到 ${check.incidents.length} 筆事件，最新為：${check.incidents[0]?.title}。請開啟選單「檢測」查看處置建議。`;
+            reply = `${publicSummary}\n目前沒有需要你個人處理的專屬提醒。詳情請開選單「檢測」。`;
           }
         }
       }

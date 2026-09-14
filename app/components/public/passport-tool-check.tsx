@@ -18,6 +18,7 @@ type PassportToolCheck = {
     sourceUrl: string | null;
     publishedAt?: string | null;
     recommendedActions: string[];
+    relevantToPassport?: boolean;
   }>;
   impacts: Array<{
     caseId?: string;
@@ -31,7 +32,7 @@ type PassportToolCheck = {
   }>;
 };
 
-type LoadState = 'loading' | 'ready' | 'error' | 'unauthenticated';
+type LoadState = 'loading' | 'ready' | 'error';
 
 function incidentPeriod(start?: string | null, end?: string | null): string | null {
   if (!start) return null;
@@ -40,16 +41,24 @@ function incidentPeriod(start?: string | null, end?: string | null): string | nu
 
 function verdict(data: PassportToolCheck): { tone: ApplicantCaseTone; title: string; text: string } {
   const openImpacts = data.impacts.filter((item) => item.status !== 'resolved').length;
-  if (data.tools.length === 0) {
-    return { tone: 'neutral', title: '還沒有可以比對的工具', text: '完成申請並確認護照後，系統將自動比對您所使用工具的最新安全通報。' };
-  }
+  const relevant = data.incidents.filter((item) => item.relevantToPassport).length;
   if (openImpacts > 0) {
-    return { tone: 'attention', title: `有 ${openImpacts} 則提醒需要你處理`, text: '比對發現您所使用的工具有相關事件通報，請查看下方說明與安全建議作法。' };
+    return { tone: 'attention', title: `有 ${openImpacts} 則專屬提醒需要你處理`, text: '下方「專屬提醒」只給你看；公開事件則所有人都能查看。' };
+  }
+  if (relevant > 0) {
+    return { tone: 'progress', title: `公開事件中有 ${relevant} 則與你的護照相關`, text: '請先看標示「與你的護照相關」的事件；完整公開清單也列在下方。' };
   }
   if (data.incidents.length > 0) {
-    return { tone: 'progress', title: `你用的工具有 ${data.incidents.length} 則公開事件`, text: '目前初步判定未直接影響您的申請流程，仍建議您參考官方處置建議以策安全。' };
+    return {
+      tone: 'progress',
+      title: `目前有 ${data.incidents.length} 則公開資安事件`,
+      text: data.tools.length > 0 ? '目前沒有需要你個人處理的專屬提醒，仍可瀏覽下方公開事件。' : '公開事件所有人都能看。確認護照後，若有相關事件會另顯示專屬提醒。',
+    };
   }
-  return { tone: 'success', title: '目前沒有相符的資安事件', text: `已為您比對 ${data.tools.length} 項工具。目前查無相符事件，後續如有新通報將及時通知您。` };
+  if (data.tools.length === 0) {
+    return { tone: 'neutral', title: '目前沒有公開資安事件', text: '確認護照後，系統會依你的工具比對，並在有需要時顯示專屬提醒。' };
+  }
+  return { tone: 'success', title: '目前沒有公開資安事件', text: `已帶入你護照上的 ${data.tools.length} 項工具。之後有新的公開事件會顯示在這裡。` };
 }
 
 export function PassportToolCheck() {
@@ -68,9 +77,9 @@ export function PassportToolCheck() {
         setCheckedAt(new Date().toISOString());
         setLoadState('ready');
       })
-      .catch((error) => {
+      .catch(() => {
         if (!active) return;
-        setLoadState(error instanceof PublicApiError && error.status === 401 ? 'unauthenticated' : 'error');
+        setLoadState('error');
       });
     return () => { active = false; };
   }, [api, attempt]);
@@ -82,27 +91,20 @@ export function PassportToolCheck() {
       <header className="applicant-page-heading">
         <p className="eyebrow">竹流 FlowPass</p>
         <h1 id="tool-check-title">工具安全檢測</h1>
-        <p>系統將依據已確認的護照，自動比對相關工具的公開事件。</p>
+        <p>公開資安事件所有人都能查看；專屬提醒只在與你的護照相關時出現。</p>
       </header>
 
       {loadState === 'loading' && (
         <div className="applicant-state-card" role="status">
           <span className="applicant-loading-mark" aria-hidden="true" />
-          <p>公開事件比對中…</p>
-        </div>
-      )}
-
-      {loadState === 'unauthenticated' && (
-        <div className="applicant-state-card applicant-state-card--error" role="alert">
-          <h2>請先登入</h2>
-          <p>檢測功能需讀取紀錄，請由 LINE 選單重新開啟。</p>
+          <p>公開事件載入中…</p>
         </div>
       )}
 
       {loadState === 'error' && (
         <div className="applicant-state-card applicant-state-card--error" role="alert">
-          <h2>檢測失敗</h2>
-          <p>請稍後再試。</p>
+          <h2>載入失敗</h2>
+          <p>請稍後再試。若剛從 LINE 開啟，也可重新點一次選單「檢測」。</p>
           <button type="button" className="secondary-action" onClick={retry}>再試一次</button>
         </div>
       )}
@@ -115,18 +117,16 @@ export function PassportToolCheck() {
               <span className={`applicant-status applicant-status--${summary.tone}`}>檢測結果</span>
               <h2 id="tool-check-verdict">{summary.title}</h2>
               <p>{summary.text}</p>
-              {data.tools.length === 0 ? (
-                <Link className="secondary-action tool-check-link" href="/app/passports">查看申請紀錄</Link>
-              ) : checkedAt && (
+              {checkedAt && (
                 <dl className="applicant-case-meta">
-                  <div><dt>比對時間</dt><dd>{formatTaipeiDate(checkedAt, true)}</dd></div>
+                  <div><dt>更新時間</dt><dd>{formatTaipeiDate(checkedAt, true)}</dd></div>
                 </dl>
               )}
             </section>
 
             {data.impacts.length > 0 && (
               <section className="applicant-case-section" aria-labelledby="tool-check-impacts">
-                <header><h2 id="tool-check-impacts">專屬提醒</h2><p>依據您護照所登記之工具與資料流向個別比對，僅供您個人查閱。</p></header>
+                <header><h2 id="tool-check-impacts">專屬提醒</h2><p>依你的護照個別判斷，只有你看得到。</p></header>
                 <ul className="tool-check-list">
                   {data.impacts.map((item, index) => {
                     const status = securityAlertStatus(item.status);
@@ -161,53 +161,57 @@ export function PassportToolCheck() {
 
             {data.tools.length > 0 && (
               <section className="applicant-case-section" aria-labelledby="tool-check-tools">
-                <header><h2 id="tool-check-tools">使用工具</h2><p>已自您確認的 AI 資料護照中自動帶入。</p></header>
+                <header><h2 id="tool-check-tools">使用工具</h2><p>來自你已確認的護照。</p></header>
                 <ul className="tool-check-chips">
                   {data.tools.map((tool) => <li key={tool}>{tool}</li>)}
                 </ul>
               </section>
             )}
 
-            {data.tools.length > 0 && (
-              <section className="applicant-case-section" aria-labelledby="tool-check-incidents">
-                <header><h2 id="tool-check-incidents">相關公開事件</h2><p>收錄經主管機關與廠商官方公告之安全性事件，供您參考防範。</p></header>
-                {data.incidents.length === 0 ? (
-                  <p className="tool-check-empty">目前無相符的公開事件。請持續留意官方公告。</p>
-                ) : (
-                  <ul className="tool-check-list">
-                    {data.incidents.map((item) => {
-                      const severity = securitySeverity(item.severity);
-                      const period = incidentPeriod(item.incidentStartAt, item.incidentEndAt);
-                      return (
-                        <li key={`${item.toolName}-${item.title}`}>
-                          <article className="tool-check-card">
-                            <div className="tool-check-card-meta">
-                              <span className={`applicant-status applicant-status--${severity.tone}`}>{severity.label}</span>
-                              <span>{item.toolName}{item.vendor && item.vendor !== item.toolName ? ` · ${item.vendor}` : ''}</span>
+            <section className="applicant-case-section" aria-labelledby="tool-check-incidents">
+              <header>
+                <h2 id="tool-check-incidents">公開資安事件</h2>
+                <p>市府確認過來源的事件會列在這裡，所有人都能查看。</p>
+              </header>
+              {data.incidents.length === 0 ? (
+                <p className="tool-check-empty">目前沒有已發布的公開事件。請持續留意官方公告。</p>
+              ) : (
+                <ul className="tool-check-list">
+                  {data.incidents.map((item) => {
+                    const severity = securitySeverity(item.severity);
+                    const period = incidentPeriod(item.incidentStartAt, item.incidentEndAt);
+                    return (
+                      <li key={`${item.toolName}-${item.title}`}>
+                        <article className="tool-check-card">
+                          <div className="tool-check-card-meta">
+                            <span className={`applicant-status applicant-status--${severity.tone}`}>{severity.label}</span>
+                            <span>{item.toolName}{item.vendor && item.vendor !== item.toolName ? ` · ${item.vendor}` : ''}</span>
+                            {item.relevantToPassport && (
+                              <span className="applicant-status applicant-status--attention">與你的護照相關</span>
+                            )}
+                          </div>
+                          <h3>{item.title}</h3>
+                          {period && <p className="tool-check-period">發生期間：{period}</p>}
+                          {item.recommendedActions.length > 0 && (
+                            <div className="tool-check-actions">
+                              <h4>建議你這樣做</h4>
+                              <ul>
+                                {item.recommendedActions.map((action) => <li key={action}>{action}</li>)}
+                              </ul>
                             </div>
-                            <h3>{item.title}</h3>
-                            {period && <p className="tool-check-period">發生期間：{period}</p>}
-                            {item.recommendedActions.length > 0 && (
-                              <div className="tool-check-actions">
-                                <h4>建議你這樣做</h4>
-                                <ul>
-                                  {item.recommendedActions.map((action) => <li key={action}>{action}</li>)}
-                                </ul>
-                              </div>
-                            )}
-                            {item.sourceUrl && (
-                              <a className="tool-check-inline-link" href={item.sourceUrl} target="_blank" rel="noopener noreferrer">
-                                查看來源：{item.sourceTitle ?? '來源'} ↗
-                              </a>
-                            )}
-                          </article>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
-            )}
+                          )}
+                          {item.sourceUrl && (
+                            <a className="tool-check-inline-link" href={item.sourceUrl} target="_blank" rel="noopener noreferrer">
+                              查看來源：{item.sourceTitle ?? '來源'} ↗
+                            </a>
+                          )}
+                        </article>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           </>
         );
       })()}

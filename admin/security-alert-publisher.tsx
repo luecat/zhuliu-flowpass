@@ -88,6 +88,7 @@ export function SecurityAlertPublisher({ request, onBack }: { request: AdminRequ
     }
   }, [request]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- standard fetch-on-mount pattern; setState only runs after the awaited request settles.
   useEffect(() => { void loadTools(); }, [loadTools]);
 
   const counts = useMemo(() => {

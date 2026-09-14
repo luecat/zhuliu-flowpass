@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { PublicApiClient, PublicApiError } from '../../lib/public-api';
+import { PublicApiClient } from '../../lib/public-api';
 import { formatTaipeiDate, securityAlertStatus, securitySeverity, type ApplicantCaseTone } from './applicant-case-status';
 
 type PassportToolCheck = {

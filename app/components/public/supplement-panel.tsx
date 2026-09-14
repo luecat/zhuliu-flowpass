@@ -112,6 +112,7 @@ export function SupplementPanel({ caseId, onCompleted }: { caseId: string; onCom
 
   useEffect(() => {
     let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- standard fetch-on-mount pattern; setState only runs after the awaited request settles.
     void load().catch(() => { if (active) setMessage('補件內容暫時無法載入，請稍後再試。'); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [load]);

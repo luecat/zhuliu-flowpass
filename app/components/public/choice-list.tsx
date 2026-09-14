@@ -90,6 +90,7 @@ export function ChoiceList({
   useEffect(() => {
     if (!open) return;
     const selectedIndex = Math.max(0, filtered.findIndex((option) => option.value === value));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs the highlighted row to open/filtered/value together; no single render-time comparison captures all three.
     setActiveIndex(selectedIndex);
   }, [open, filtered, value]);
 

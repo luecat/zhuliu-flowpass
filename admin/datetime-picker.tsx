@@ -65,6 +65,7 @@ export function DateTimePicker({
   useEffect(() => {
     const next = parseLocal(value);
     if (!next) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncs the picker's open month/hour/minute to an externally-controlled value prop.
     setMonth(startOfMonth(next));
     setHour(next.getHours());
     setMinute(next.getMinutes() - (next.getMinutes() % 5));

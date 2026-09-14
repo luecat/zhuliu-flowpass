@@ -20,8 +20,6 @@ import { createIncidentRoutes } from './routes/incidents';
 import { createToolRoutes } from './routes/tools';
 import { createDataManagementRoutes } from './routes/data-management';
 import { DEFAULT_GEMINI_QUOTA_MODELS } from '../adapters/gemini/model-quota-router';
-import { parseStoredCoreAnswers } from '../../shared/case-contract';
-import { PurchaseDetailsSchema } from '../../shared/purchase-details-contract';
 
 export interface CloudflareAccessIdentity {
   email: string;

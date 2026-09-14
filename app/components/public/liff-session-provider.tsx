@@ -36,6 +36,7 @@ export function LiffSessionProvider({ children }: { children: ReactNode }) {
     if (!liffId) return;
     let cancelled = false;
     const retry = () => setAttempt((current) => current + 1);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets session status to "loading" when api/attempt/liffId change, before the async login check starts.
     setValue({
       api,
       status: 'loading',

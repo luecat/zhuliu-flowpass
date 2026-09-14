@@ -9,6 +9,8 @@ import { createPublicRouteHandlers } from '../../../../server/public/public-rout
 const BodySchema = z.object({
   programCycleId: z.string().min(1).max(128),
   reuseFromCaseId: z.string().min(1).max(128).nullable().optional(),
+  /** Discard the active draft and open a blank one; drafts blocked after their passport exists cannot be edited in place. */
+  startOver: z.boolean().optional(),
 }).strict();
 
 function cookie(request: Request, name: string): string | null {
@@ -45,9 +47,12 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = BodySchema.safeParse(body); if (!parsed.success) return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
   const now = runtime.clock?.() ?? new Date();
   const reuseFromCaseId = parsed.data.reuseFromCaseId ?? null;
-  const requestProjection = reuseFromCaseId
-    ? { programCycleId: parsed.data.programCycleId, reuseFromCaseId }
-    : { programCycleId: parsed.data.programCycleId };
+  const startOver = parsed.data.startOver === true;
+  const requestProjection = {
+    programCycleId: parsed.data.programCycleId,
+    ...(reuseFromCaseId ? { reuseFromCaseId } : {}),
+    ...(startOver ? { startOver } : {}),
+  };
   const replay = readApplicantMutation({ database: runtime.database, crypto: runtime.crypto, applicantId: csrf.applicantId, method: 'POST', normalizedRoute: '/api/v1/cases', idempotencyKey: key, requestProjection, now });
   if (replay?.kind === 'conflict') return toJsonResponse(apiFailure(ApiErrorCode.IDEMPOTENCY_KEY_REUSED, requestId));
   if (replay?.kind === 'replay') {
@@ -55,7 +60,7 @@ export async function POST(request: Request): Promise<Response> {
   }
   try {
     const cases = createCaseService({ database: runtime.database, crypto: runtime.crypto, clock: runtime.clock, requestIdGenerator: runtime.requestIdGenerator });
-    if (!reuseFromCaseId) {
+    if (!reuseFromCaseId && !startOver) {
       const active = cases.findActiveDraft(csrf.applicantId);
       if (active) {
         const response = apiSuccess({ case: active, reused: false }, requestId, active.rowVersion);

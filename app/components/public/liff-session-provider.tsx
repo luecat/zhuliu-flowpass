@@ -1,10 +1,10 @@
 'use client';
 
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
-import { bootLineLiffSession, loadLiffBrowserSdk } from '../../lib/liff-client';
+import { bootLineLiffSession, LiffBrowserError, loadLiffBrowserSdk } from '../../lib/liff-client';
 import { PublicApiClient } from '../../lib/public-api';
 
-type LiffSessionStatus = 'loading' | 'redirecting' | 'authenticated' | 'unavailable' | 'timeout';
+type LiffSessionStatus = 'loading' | 'redirecting' | 'authenticated' | 'unavailable' | 'timeout' | 'expired';
 
 interface LiffSessionValue {
   api: PublicApiClient | null;
@@ -53,7 +53,8 @@ export function LiffSessionProvider({ children }: { children: ReactNode }) {
     }, LOGIN_TIMEOUT_MS);
 
     void loadLiffBrowserSdk()
-      .then((liff) => bootLineLiffSession({ liff, api, config: { liffId } }))
+      // Only an explicit「重新登入」click may clear a rejected LINE token and restart login.
+      .then((liff) => bootLineLiffSession({ liff, api, config: { liffId }, forceLogin: attempt > 0 }))
       .then((result) => {
         if (cancelled) return;
         window.clearTimeout(timeout);
@@ -82,13 +83,14 @@ export function LiffSessionProvider({ children }: { children: ReactNode }) {
             : { api, status: 'redirecting', message: '轉往 LINE 登入中…', retry },
         );
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
         window.clearTimeout(timeout);
+        const expired = error instanceof LiffBrowserError && error.code === 'LINE_LOGIN_EXPIRED';
         setValue({
           api: null,
-          status: 'unavailable',
-          message: '請由竹流 FlowPass 的 LINE 官方帳號選單開啟此頁。',
+          status: expired ? 'expired' : 'unavailable',
+          message: expired ? 'LINE 登入已過期，請點「重新登入」重新登入 LINE。' : '請由竹流 FlowPass 的 LINE 官方帳號選單開啟此頁。',
           retry,
         });
       });
@@ -113,15 +115,18 @@ export function useLiffSession(): LiffSessionValue {
 export function LiffApplicantGate({ children }: { children: ReactNode }) {
   const session = useLiffSession();
   if (session.status === 'authenticated') return <>{children}</>;
-  const title = session.status === 'unavailable' || session.status === 'timeout'
-    ? '請由 LINE 官方帳號開啟'
-    : 'LINE 登入中';
+  const canRetry = session.status === 'unavailable' || session.status === 'timeout' || session.status === 'expired';
+  const title = session.status === 'expired'
+    ? 'LINE 登入已過期'
+    : canRetry
+      ? '請由 LINE 官方帳號開啟'
+      : 'LINE 登入中';
   return (
     <section className="liff-session-gate" aria-live="polite">
       <p className="eyebrow">竹流 FlowPass</p>
       <h1>{title}</h1>
       <p role="status">{session.message}</p>
-      {(session.status === 'unavailable' || session.status === 'timeout') && (
+      {canRetry && (
         <div className="wizard-actions">
           <button type="button" className="primary-action" onClick={() => session.retry()}>重新登入</button>
           <a className="secondary-action" href="https://line.me/R/ti/p/@flowpass" rel="noreferrer">返回 LINE</a>

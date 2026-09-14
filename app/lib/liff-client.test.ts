@@ -11,8 +11,16 @@ function createLiffSdk(overrides: Partial<LiffBrowserSdk> = {}): LiffBrowserSdk 
     init: vi.fn().mockResolvedValue(undefined),
     isLoggedIn: vi.fn().mockReturnValue(true),
     login: vi.fn(),
+    logout: vi.fn(),
     getIDToken: vi.fn().mockReturnValue('short-lived-id-token'),
     ...overrides,
+  };
+}
+
+function rejectedTokenApi() {
+  return {
+    bootstrapLineLogin: vi.fn().mockResolvedValue({ nonce: 'browser-only-nonce' }),
+    exchangeLineIdToken: vi.fn().mockRejectedValue(Object.assign(new Error('rejected'), { code: 'LINE_TOKEN_INVALID' })),
   };
 }
 
@@ -63,6 +71,26 @@ describe('bootLineLiffSession', () => {
     ).resolves.toEqual({ kind: 'redirecting_to_line_login' });
     expect(liff.login).toHaveBeenCalledTimes(1);
     expect(api.exchangeLineIdToken).not.toHaveBeenCalled();
+  });
+
+  it('reports an expired LINE sign-in on page load without redirecting on its own', async () => {
+    const liff = createLiffSdk();
+
+    await expect(
+      bootLineLiffSession({ liff, api: rejectedTokenApi(), config: createLiffPublicConfig('public-liff-id') }),
+    ).rejects.toMatchObject({ code: 'LINE_LOGIN_EXPIRED' } satisfies Partial<LiffBrowserError>);
+    expect(liff.logout).not.toHaveBeenCalled();
+    expect(liff.login).not.toHaveBeenCalled();
+  });
+
+  it('clears the rejected cached token and restarts LINE login when the applicant retries', async () => {
+    const liff = createLiffSdk();
+
+    await expect(
+      bootLineLiffSession({ liff, api: rejectedTokenApi(), config: createLiffPublicConfig('public-liff-id'), forceLogin: true }),
+    ).resolves.toEqual({ kind: 'redirecting_to_line_login' });
+    expect(liff.logout).toHaveBeenCalledTimes(1);
+    expect(liff.login).toHaveBeenCalledTimes(1);
   });
 
   it('fails closed when LIFF does not return an ID token and never sends a profile or local subject', async () => {

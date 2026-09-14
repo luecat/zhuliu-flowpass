@@ -3,7 +3,8 @@ import { z } from 'zod';
 export const PURCHASE_FUNCTIONS = ['general', 'imaging', 'office', 'learning', 'other'] as const;
 export const PURCHASE_CURRENCIES = ['TWD', 'USD', 'JPY', 'EUR', 'AUD', 'HKD', 'OTHER'] as const;
 
-const createCalendarDate = (label = '日期') => z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+// Applicant forms show these messages verbatim, so every issue carries plain Chinese copy.
+const createCalendarDate = (label = '日期') => z.string().regex(/^\d{4}-\d{2}-\d{2}$/, `請選擇${label}`).refine((value) => {
   const [year, month, day] = value.split('-').map(Number);
   const parsed = new Date(Date.UTC(year, month - 1, day));
   return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
@@ -13,21 +14,21 @@ const calendarDate = createCalendarDate('購買日期');
 const subscriptionStartDateSchema = createCalendarDate('訂閱開始日');
 const subscriptionEndDateSchema = createCalendarDate('訂閱結束日');
 
-const decimalAmount = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/);
+const decimalAmount = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, '請填寫金額（數字，最多兩位小數）');
 
 const purchaseDetailsBase = {
   billingCycle: z.enum(['annual', 'monthly']),
-  billingPeriods: z.number().int().min(1).max(120).nullable(),
+  billingPeriods: z.number({ error: '請填寫月費期數' }).int('月費期數請填寫整數').min(1, '月費期數需介於 1 到 120 期').max(120, '月費期數需介於 1 到 120 期').nullable(),
   softwareFunction: z.enum(PURCHASE_FUNCTIONS),
   otherFunction: z.string().trim().max(100).nullable(),
-  softwareName: z.string().trim().min(1).max(200),
-  companyName: z.string().trim().min(1).max(200),
+  softwareName: z.string().trim().min(1, '請選擇軟體名稱').max(200),
+  companyName: z.string().trim().min(1, '請填寫軟體公司名稱').max(200),
   purchaseDate: calendarDate,
   payerType: z.enum(['self_card', 'representative']),
   originalCurrency: z.enum(PURCHASE_CURRENCIES),
   otherCurrency: z.string().trim().max(24).nullable(),
   originalExpense: decimalAmount,
-  convertedTwd: z.number().int().min(1).max(100_000_000),
+  convertedTwd: z.number({ error: '請填寫換算後的新臺幣金額' }).int('換算金額請填寫整數').min(1, '請填寫換算後的新臺幣金額').max(100_000_000, '換算金額超過上限'),
   specialStatus: z.boolean(),
   invoiceNumber: z.string().trim().min(1).max(40).nullable(),
   // Legacy rows may omit these; normalize missing to null on read.
@@ -106,7 +107,7 @@ export type PurchaseDetails = z.infer<typeof PurchaseDetailsSchema>;
  */
 export const PurchaseDetailsWriteSchema = z.object({
   ...purchaseDetailsBase,
-  cardLastFour: z.string().regex(/^\d{4}$/).nullable(),
+  cardLastFour: z.string().regex(/^\d{4}$/, '信用卡末四碼請填寫 4 位數字').nullable(),
   cardholderName: z.string().trim().min(1).max(100).nullable(),
   /** When true, keep the previously stored payment fingerprint without re-entering card digits. */
   keepExistingPaymentSource: z.boolean().optional(),

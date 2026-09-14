@@ -24,8 +24,9 @@ interface ListedCase {
 
 const COMPLETE_ANSWERS = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端', applicantName: '' };
 
-function useAuthenticatedApi(cases: ListedCase[], options: { answers?: typeof COMPLETE_ANSWERS | null; jobStates?: Array<string | Error> } = {}) {
+function useAuthenticatedApi(cases: ListedCase[], options: { answers?: typeof COMPLETE_ANSWERS | null; jobStates?: Array<string | Error>; draftErrors?: Error[] } = {}) {
   const jobStates = [...(options.jobStates ?? [])];
+  const draftErrors = [...(options.draftErrors ?? [])];
   const read = vi.fn(async (path: string) => {
     if (path === '/api/v1/cases') return { cases };
     if (path === '/api/v1/programs/current') return { id: 'program-current' };
@@ -56,7 +57,11 @@ function useAuthenticatedApi(cases: ListedCase[], options: { answers?: typeof CO
       return { case: { id: 'new-case', rowVersion: 1, updatedAt: '2026-08-31T12:00:00.000Z' } };
     }
     if (path.endsWith('/answers')) return { case: { rowVersion: 2 } };
-    if (path.endsWith('/ai-drafts')) return { jobId: 'job-1', state: 'queued' };
+    if (path.endsWith('/ai-drafts')) {
+      const draftError = draftErrors.shift();
+      if (draftError) throw draftError;
+      return { jobId: 'job-1', state: 'queued' };
+    }
     throw new Error(`unexpected mutation: ${path}`);
   });
   liffSession.value = { api: { read, mutate }, status: 'authenticated', message: '' };
@@ -113,8 +118,8 @@ describe('ApplicationWizard boundaries', () => {
     expect(screen.getByRole('heading', { name: '可能包含哪些個資或敏感資料？' })).toBeInTheDocument();
     const input = screen.getByRole('textbox');
     expect(input).toHaveAttribute('placeholder', '例如：人臉、姓名、金鑰；不確定可填「不確定」');
-    expect(input.getAttribute('placeholder')).not.toMatch(/勾選可能包含/);
-    expect(screen.getByText(/勾選可能包含的敏感個資/)).toBeInTheDocument();
+    expect(input.getAttribute('placeholder')).not.toMatch(/簡述可能包含/);
+    expect(screen.getByText(/簡述可能包含的敏感個資/)).toBeInTheDocument();
   });
 
   it('marks every field required and rejects Unicode scalar overflow without UTF-16 maxLength', () => {
@@ -163,7 +168,8 @@ describe('ApplicationWizard boundaries', () => {
     render(<ApplicationWizard />);
     await startAiDraft();
 
-    expect(screen.getByText('已送出')).toBeInTheDocument();
+    expect(screen.getByText('準備中')).toBeInTheDocument();
+    expect(screen.queryByText(/申請人數較多/)).not.toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
     expect(read.mock.calls.filter(([path]) => String(path).startsWith('/api/v1/jobs/'))).toHaveLength(0);
     await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
@@ -223,5 +229,40 @@ describe('ApplicationWizard boundaries', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(screen.getByText('處理失敗，請稍後再試。')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '產生資料流向草稿' })).toBeEnabled();
+  });
+
+  it('blocks regenerating unsafe answers until they change and drops the stale warning after editing', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-31T12:00:00.000Z'));
+    const { mutate } = useAuthenticatedApi([
+      { id: 'active', state: 'draft', rowVersion: 2, updatedAt: '2026-08-31T11:55:00.000Z' },
+    ], {
+      answers: COMPLETE_ANSWERS,
+      jobStates: ['queued'],
+      draftErrors: [new PublicApiError({ code: 'AI_INPUT_UNSAFE', message: 'unsafe', status: 422 })],
+    });
+    render(<ApplicationWizard />);
+    await startAiDraft();
+    await act(async () => { await Promise.resolve(); });
+
+    const warning = screen.getByRole('alert');
+    expect(warning).toHaveTextContent('內容包含系統指令');
+    const generate = screen.getByRole('button', { name: '產生資料流向草稿' });
+    expect(generate).toBeDisabled();
+    // The warning sits before the action buttons so short screens show it without scrolling.
+    expect(warning.compareDocumentPosition(generate) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.click(generate);
+    expect(mutate.mock.calls.filter(([path]) => String(path).endsWith('/ai-drafts'))).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '返回修改' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '團隊雲端，只給社團幹部' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    fireEvent.click(screen.getByRole('button', { name: '檢查答案' }));
+
+    expect(screen.queryByText(/內容包含系統指令/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '產生資料流向草稿' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: '產生資料流向草稿' }));
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+    expect(mutate.mock.calls.filter(([path]) => String(path).endsWith('/ai-drafts'))).toHaveLength(2);
   });
 });

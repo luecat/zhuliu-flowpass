@@ -1,11 +1,13 @@
 export type LineIntent =
   | { kind: 'faq'; answer: string }
+  | { kind: 'subsidy_policy' }
   | { kind: 'case_status' }
   | { kind: 'subsidy_amount' }
   | { kind: 'tool_status'; tool: string }
   | { kind: 'fallback' };
 
-const FAQ: Array<{ title: string; patterns: RegExp[]; answer: string }> = [
+// `answer: null` marks topics whose reply must be built from live data instead of fixed copy.
+const FAQ: Array<{ title: string; patterns: RegExp[]; answer: string | null }> = [
   {
     title: '怎麼申請',
     patterns: [/怎麼申請/, /如何申請/, /開始申請/, /要準備什麼/, /需要什麼文件/, /準備哪些/],
@@ -19,7 +21,7 @@ const FAQ: Array<{ title: string; patterns: RegExp[]; answer: string }> = [
   {
     title: '補助多少',
     patterns: [/補助多少/, /可以領多少/, /補助上限/, /補助比例/, /補助金額/],
-    answer: '青年 AI 工具補助標準如下：\n• 一般青年：補助合格購買金額的 50%，上限 3,000 元。\n• 特定對象（如低收／中低收入戶等）：補助合格金額的 90%，上限 6,000 元。\n\n實際補助金額依公開規則試算與承辦人員審核為準。若已送件，亦可輸入「為什麼是這個金額」或由「進度查詢」查看金額試算說明。',
+    answer: null,
   },
   {
     title: '撥款與入帳',
@@ -66,9 +68,20 @@ export function classifyLineIntent(text: string): LineIntent {
   const toolMatch = value.match(/(?:工具出事|出事了嗎|有沒有出事)[:：\s]*(.+)$/i) ?? value.match(/^(.+?)(?:出事了嗎|有沒有出事)/);
   if (toolMatch?.[1]?.trim()) return { kind: 'tool_status', tool: toolMatch[1].trim().slice(0, 80) };
   for (const item of FAQ) {
-    if (item.patterns.some((pattern) => pattern.test(value))) return { kind: 'faq', answer: item.answer };
+    if (item.patterns.some((pattern) => pattern.test(value))) {
+      return item.answer === null ? { kind: 'subsidy_policy' } : { kind: 'faq', answer: item.answer };
+    }
   }
   return { kind: 'fallback' };
+}
+
+/** Subsidy figures come from the published rule so chat replies never disagree with the case calculation. */
+export function subsidyPolicyReply(rule: { rateBps: number; capTwd: number } | null): string {
+  if (!rule) {
+    return '目前沒有開放中的補助方案。實際補助比例與上限以公開規則為準，開放申請後可再詢問「補助多少」。';
+  }
+  const rate = Number.isInteger(rule.rateBps / 100) ? String(rule.rateBps / 100) : (rule.rateBps / 100).toFixed(2);
+  return `目前公開規則：補助合格購買金額的 ${rate}%，每案上限 NT$${rule.capTwd.toLocaleString('en-US')}。\n\n實際補助金額依公開規則試算與承辦人員審核為準。若已送件，亦可輸入「為什麼是這個金額」或由「進度查詢」查看金額試算說明。`;
 }
 
 export function lineFallbackReply(): string {

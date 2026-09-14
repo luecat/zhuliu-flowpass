@@ -7,6 +7,7 @@ export interface LiffBrowserSdk {
   init(input: { liffId: string }): Promise<void>;
   isLoggedIn(): boolean;
   login(): void;
+  logout(): void;
   getIDToken(): string | null;
 }
 
@@ -57,6 +58,10 @@ export async function loadLiffBrowserSdk(): Promise<LiffBrowserSdk> {
   return liff;
 }
 
+function isRejectedLineToken(error: unknown): boolean {
+  return Boolean(error && typeof error === 'object' && (error as { code?: unknown }).code === 'LINE_TOKEN_INVALID');
+}
+
 /**
  * Starts the only permitted browser identity flow:
  * LIFF init/login -> ID token -> bootstrap nonce -> exchange -> forget secrets.
@@ -66,6 +71,12 @@ export async function bootLineLiffSession(input: {
   liff: LiffBrowserSdk;
   api: LiffSessionApi;
   config: LiffPublicConfig;
+  /**
+   * Set only for an explicit applicant retry: LIFF keeps a cached ID token after it
+   * expires, so a rejected token must be cleared before LINE can issue a new one.
+   * Never set on page load, which would loop if LINE kept returning a bad token.
+   */
+  forceLogin?: boolean;
 }): Promise<LiffBootResult> {
   const config = createLiffPublicConfig(input.config.liffId);
   let nonce: string | undefined;
@@ -86,6 +97,14 @@ export async function bootLineLiffSession(input: {
     return { kind: 'authenticated', expiresAt: session.expiresAt };
   } catch (error) {
     if (error instanceof LiffBrowserError) throw error;
+    if (isRejectedLineToken(error)) {
+      if (input.forceLogin) {
+        input.liff.logout();
+        input.liff.login();
+        return { kind: 'redirecting_to_line_login' };
+      }
+      throw new LiffBrowserError('LINE_LOGIN_EXPIRED', 'The LINE sign-in has expired');
+    }
     // Do not surface SDK/provider exception text: it could contain credentials.
     throw new LiffBrowserError('LIFF_SESSION_FAILED', 'Unable to sign in with LINE');
   } finally {

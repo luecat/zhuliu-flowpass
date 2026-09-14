@@ -234,6 +234,7 @@ function publicComparable(details: {
 }
 
 function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
@@ -357,7 +358,10 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
       for (const issue of parsed.error.issues) {
         const key = String(issue.path[0] ?? '');
         if (!key || nextErrors[key]) continue;
-        nextErrors[key] = issue.message || `請完成${FIELD_LABELS[key] ?? key}`;
+        // TWD hides the converted field; the original-expense error already tells the applicant what to fix.
+        if (key === 'convertedTwd' && draft.originalCurrency === 'TWD') continue;
+        const label = FIELD_LABELS[key] ?? key;
+        nextErrors[key] = issue.message && /[一-鿿]/.test(issue.message) ? issue.message : `請確認${label}`;
       }
       if (Object.keys(nextErrors).length === 0) nextErrors.form = '請完成所有必填之購買資料。';
       setFieldErrors(nextErrors);

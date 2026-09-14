@@ -20,6 +20,16 @@ interface PassportApiData {
 
 const REVISION_PROGRESS_DURATION_SECONDS = 200;
 const REVISION_POLL_INTERVAL_MS = 5_000;
+const UNSAFE_ORIGINAL_ANSWERS_MESSAGE = '申請內容包含系統指令或不當要求，無法產生護照。請點下方「放棄這筆、重新填寫」，只描述實際的資料流程。';
+const INVALID_ORIGINAL_ANSWERS_MESSAGE = '申請內容不像實際的資料流程，無法產生護照。請點下方「放棄這筆、重新填寫」，重新描述實際的資料類型、用途與分享對象。';
+
+/** Carries the terminal job error so the applicant sees why a revision stopped instead of a generic failure. */
+class RevisionJobError extends Error {
+  constructor(readonly code: string | null) {
+    super('revision failed');
+    this.name = 'RevisionJobError';
+  }
+}
 
 function caseIdFromLocation(): string | null {
   if (typeof window === 'undefined') return null;
@@ -49,6 +59,10 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
   const [revisionFailed, setRevisionFailed] = useState(false);
   const [revisionProgressPercent, setRevisionProgressPercent] = useState(0);
   const [prefilledTool, setPrefilledTool] = useState<ApprovedAiTool | null>(null);
+  // The four original answers can no longer be edited once a passport exists; a rejected revision can only start over.
+  const [inputBlocked, setInputBlocked] = useState(false);
+  const [confirmStartOver, setConfirmStartOver] = useState(false);
+  const [startingOver, setStartingOver] = useState(false);
   const revisionRunRef = useRef(0);
   const revisionCountdownTimerRef = useRef<number | null>(null);
   const api = useMemo(() => new PublicApiClient(), []);
@@ -104,6 +118,21 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
     setMessage('處理失敗，請稍後再試。');
   }
 
+  function handleRevisionError(error: unknown) {
+    setRevisionJobId(null);
+    if (error instanceof PublicApiError && error.code === 'AI_INPUT_UNSAFE') {
+      setInputBlocked(true);
+      setMessage(UNSAFE_ORIGINAL_ANSWERS_MESSAGE);
+      return;
+    }
+    if (error instanceof RevisionJobError && error.code === 'AI_INPUT_INVALID') {
+      setInputBlocked(true);
+      setMessage(INVALID_ORIGINAL_ANSWERS_MESSAGE);
+      return;
+    }
+    showRevisionFailure();
+  }
+
   async function startRevision(retry = false) {
     if (!caseId) return;
     const current = await api.read<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
@@ -120,6 +149,7 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
     const openIds = new Set(data.followUps.filter((question) => question.status === 'open').map((question) => question.id));
     const pendingAnswers = answers.filter((answer) => openIds.has(answer.questionId) && answer.answer.trim());
     const selectedTool = approvedToolFromFollowUpAnswers(data.followUps, answers);
+    let stage: 'answers' | 'revision' = 'answers';
     setBusy(true);
     try {
       if (pendingAnswers.length > 0) {
@@ -131,19 +161,23 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
         if (selectedTool) setPrefilledTool(selectedTool);
       }
       if (!regenerate) {
-        setMessage('答案已儲存。確認無誤後請重新產生護照。');
         await load(caseId);
+        // load() clears the banner, so confirm the save only after the refreshed passport is shown.
+        setMessage('答案已儲存。確認無誤後請點擊「重新產生護照」。');
         return;
       }
+      stage = 'revision';
       await startRevision();
     } catch (error) {
-      if (error instanceof PublicApiError && error.code === 'AI_INPUT_UNSAFE') {
-        setMessage('回答中包含無效指令，請填寫實際情況後再儲存。');
+      if (error instanceof PublicApiError && error.code === 'ETAG_MISMATCH') {
+        await load(caseId);
+        setMessage('申請內容已更新，請重新儲存。');
+      } else if (stage === 'revision') {
+        handleRevisionError(error);
+      } else if (error instanceof PublicApiError && error.code === 'AI_INPUT_UNSAFE') {
+        setMessage('追問的回答包含系統指令，請改成實際情況後再儲存。');
       } else if (error instanceof PublicApiError && error.code === 'INVALID_REQUEST') {
         setMessage('答案格式錯誤。若選擇「其他」，請填寫實際內容。');
-      } else if (error instanceof PublicApiError && error.code === 'ETAG_MISMATCH') {
-        setMessage('申請內容已更新，請重新儲存。');
-        await load(caseId);
       } else {
         showRevisionFailure();
       }
@@ -178,11 +212,8 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
           setRevisionJobId(null);
           return;
         }
-        if (job.state === 'failed_terminal' && job.errorCode === 'AI_INPUT_INVALID') {
-          setMessage('內容缺乏具體流程，請重新描述資料類型、用途與分享對象。');
-        }
         if (job.state !== 'queued' && job.state !== 'leased') {
-          throw new Error('revision failed');
+          throw new RevisionJobError(job.state === 'failed_terminal' ? job.errorCode ?? null : null);
         }
       }
     } finally {
@@ -198,7 +229,23 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
     setBusy(true);
     try {
       await startRevision(true);
-    } catch { showRevisionFailure(); } finally { setBusy(false); }
+    } catch (error) { handleRevisionError(error); } finally { setBusy(false); }
+  }
+
+  async function startOver() {
+    setStartingOver(true);
+    try {
+      const program = await api.read<{ id: string }>('/api/v1/programs/current');
+      await api.mutate('/api/v1/cases', { method: 'POST', body: { programCycleId: program.id, startOver: true } });
+      // Reload without a caseId: the fresh draft is now the only active one, and a caseId in the URL
+      // would make this panel look up a passport that does not exist yet and show a stray notice.
+      window.location.replace('/app/apply');
+    } catch (error) {
+      setStartingOver(false);
+      setMessage(error instanceof PublicApiError && error.code === 'RATE_LIMITED'
+        ? '今天建立申請的次數已用完，請明天再試。'
+        : '暫時無法重新開始，請稍後再試。');
+    }
   }
 
   async function confirmApplication() {
@@ -279,10 +326,10 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
   );
   return (
     <section className="passport-review-panel" aria-label="申請內容">
-      {message && <p className="pending-note" role="status">{message}</p>}
-      {revisionFailed && <button type="button" className="secondary-action" onClick={() => void retryRevision()} disabled={busy}>重新整理</button>}
+      {message && <p className="pending-note" role={inputBlocked ? 'alert' : 'status'}>{message}</p>}
+      {revisionFailed && !inputBlocked && <button type="button" className="secondary-action" onClick={() => void retryRevision()} disabled={busy}>重新整理</button>}
       <ApplicantPassportSummary passport={data.passport} workflowState={data.version.workflowState} onContinue={data.version.workflowState === 'needs_applicant_confirmation' ? () => void confirmApplication() : undefined} busy={busy} />
-      {openFollowUps.length > 0 && (
+      {openFollowUps.length > 0 && !inputBlocked && (
         <AiFollowUpForm
           questions={openFollowUps}
           onSubmit={(answers) => void saveFollowUps(answers, false)}
@@ -291,13 +338,24 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
           regenerating={busy}
         />
       )}
-      {followUpsReadyToRevise && (
+      {followUpsReadyToRevise && !inputBlocked && (
         <div className="wizard-actions">
-          <button type="button" className="primary-action" disabled={busy} onClick={() => { setBusy(true); void startRevision().catch(() => showRevisionFailure()).finally(() => setBusy(false)); }}>
+          <button type="button" className="primary-action" disabled={busy} onClick={() => { setBusy(true); void startRevision().catch((error) => handleRevisionError(error)).finally(() => setBusy(false)); }}>
             {busy ? '重新產生中…' : '重新產生護照'}
           </button>
         </div>
       )}
+      <div className="wizard-actions">
+        {confirmStartOver ? (
+          <>
+            <p role="alert">放棄後，這筆草稿和已產生的護照都會刪除，需要重新回答四題。</p>
+            <button type="button" className="secondary-action" onClick={() => setConfirmStartOver(false)} disabled={startingOver}>取消</button>
+            <button type="button" className="primary-action" onClick={() => void startOver()} disabled={startingOver}>{startingOver ? '處理中…' : '確定放棄並重新填寫'}</button>
+          </>
+        ) : (
+          <button type="button" className={inputBlocked ? 'primary-action' : 'secondary-action'} onClick={() => setConfirmStartOver(true)} disabled={busy}>放棄這筆、重新填寫</button>
+        )}
+      </div>
     </section>
   );
 }

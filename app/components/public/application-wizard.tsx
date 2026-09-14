@@ -10,11 +10,12 @@ import { useLiffSession } from './liff-session-provider';
 const fields: Array<{ key: keyof CoreAnswers; label: string; hint: string; placeholder: string; limit: number }> = [
   { key: 'material', label: '要處理什麼資料？', hint: '僅需簡述資料類型（如照片、影片、文字稿），為保護隱私請勿貼上實際內容。', placeholder: '例如：社團照片、活動影片或演講文字稿', limit: CORE_ANSWER_LIMITS.material },
   { key: 'aiPurpose', label: '想用 AI 做什麼？', hint: '以一句話描述預計完成的任務。', placeholder: '例如：修圖、剪輯影片、整理文字或產生摘要', limit: CORE_ANSWER_LIMITS.aiPurpose },
-  { key: 'sensitiveData', label: '可能包含哪些個資或敏感資料？', hint: '勾選可能包含的敏感個資，例如人臉、姓名或金融帳號；若不確定請填「不確定」。', placeholder: '例如：人臉、姓名、金鑰；不確定可填「不確定」', limit: CORE_ANSWER_LIMITS.sensitiveData },
+  { key: 'sensitiveData', label: '可能包含哪些個資或敏感資料？', hint: '簡述可能包含的敏感個資，例如人臉、姓名或金融帳號；若不確定請填「不確定」。', placeholder: '例如：人臉、姓名、金鑰；不確定可填「不確定」', limit: CORE_ANSWER_LIMITS.sensitiveData },
   { key: 'destinationAndAudience', label: '完成後要放哪裡、分享給誰？', hint: '填寫預計使用的工具、存放位置或公開分享對象。', placeholder: '例如：團隊雲端硬碟、社團內部成員或公開社群平台', limit: CORE_ANSWER_LIMITS.destinationAndAudience },
 ];
 const initial: CoreAnswers = { material: '', aiPurpose: '', sensitiveData: '', destinationAndAudience: '', applicantName: '' };
 const AI_JOB_POLL_INTERVAL_SECONDS = 5;
+const UNSAFE_INPUT_MESSAGE = '內容包含系統指令，請點「返回修改」刪除相關文字，只描述實際流程後再產生。';
 interface ApplicantApplicationCase {
   id: string;
   state: string;
@@ -30,6 +31,10 @@ function firstIncompleteStep(answers: CoreAnswers): number {
 
 function fieldComplete(answers: CoreAnswers, key: keyof CoreAnswers, limit: number): boolean {
   return answers[key].trim().length > 0 && unicodeScalarLength(answers[key]) <= limit;
+}
+
+function sameAnswers(left: CoreAnswers, right: CoreAnswers): boolean {
+  return fields.every(({ key }) => left[key] === right[key]);
 }
 
 function waitingPhase(state: string): AiWaitingPhase {
@@ -50,6 +55,8 @@ export function ApplicationWizard() {
   const [aiState, setAiState] = useState<'idle' | 'queued' | 'completed' | 'failed'>('idle');
   const [aiPhase, setAiPhase] = useState<AiWaitingPhase>('submitted');
   const [aiFailureMessage, setAiFailureMessage] = useState('');
+  // Answers that produced the last failure: the message only applies to them, and unsafe input must change before retrying.
+  const [failedAnswers, setFailedAnswers] = useState<{ answers: CoreAnswers; unsafe: boolean } | null>(null);
   const [aiElapsedSeconds, setAiElapsedSeconds] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [resumedDraft, setResumedDraft] = useState(false);
@@ -63,6 +70,8 @@ export function ApplicationWizard() {
   const totalScalars = useMemo(() => fields.reduce((total, field) => total + unicodeScalarLength(answers[field.key]), 0), [answers]);
   const complete = useMemo(() => fields.every(({ key, limit }) => fieldComplete(answers, key, limit)) && totalScalars <= CORE_ANSWER_LIMITS.total, [answers, totalScalars]);
   const hasPartialDraft = useMemo(() => fields.some(({ key, limit }) => fieldComplete(answers, key, limit)), [answers]);
+  const failureStillApplies = aiState === 'failed' && (failedAnswers === null || sameAnswers(failedAnswers.answers, answers));
+  const blockedByUnsafeInput = Boolean(failedAnswers?.unsafe) && failureStillApplies;
   const update = (value: string) => { const next = { ...answersRef.current, [current.key]: value }; answersRef.current = next; setAnswers(next); };
   const runSaveQueue = useCallback(async () => {
     let conflictRetries = 0;
@@ -121,15 +130,18 @@ export function ApplicationWizard() {
       }
       if (job.state === 'failed_terminal') {
         setAiFailureMessage(job.errorCode === 'AI_INPUT_INVALID'
-          ? '內容缺乏具體流程，請重新描述實際的資料類型、用途與分享對象。'
+          ? '內容不像實際的申請流程，請點「返回修改」，重新描述實際的資料類型、用途與分享對象。'
           : job.errorCode === 'MODEL_UNAVAILABLE' || job.errorCode === 'AI_ADAPTER_UNAVAILABLE'
             ? '系統暫時無法使用，請稍後再試。'
             : '處理失敗，請稍後再試。');
+        // Invalid or manipulative answers would be rejected again, so require an edit before retrying.
+        setFailedAnswers({ answers: answersRef.current, unsafe: job.errorCode === 'AI_INPUT_INVALID' });
         setAiState('failed');
         return;
       }
       if (job.state !== 'queued' && job.state !== 'leased') {
         setAiFailureMessage('處理失敗，請稍後再試。');
+        setFailedAnswers({ answers: answersRef.current, unsafe: false });
         setAiState('failed');
         return;
       }
@@ -138,7 +150,7 @@ export function ApplicationWizard() {
   const startAiDraft = useCallback(async () => {
     const api = apiRef.current;
     const currentCase = caseRef.current;
-    if (!api || !currentCase || saveStatus !== 'saved' || !complete) return;
+    if (!api || !currentCase || saveStatus !== 'saved' || !complete || blockedByUnsafeInput) return;
     setAiState('queued');
     setAiFailureMessage('');
     setAiElapsedSeconds(0);
@@ -156,22 +168,25 @@ export function ApplicationWizard() {
       caseRef.current = matched;
       setCaseState(matched);
       const queued = await api.mutate<{ jobId: string; state: string }>(`/api/v1/cases/${encodeURIComponent(matched.id)}/ai-drafts`, { method: 'POST', ifMatch: `"${matched.rowVersion}"`, body: { operation: 'draft', ...(aiState === 'failed' ? { retry: true } : {}) } });
+      setFailedAnswers(null);
       if (typeof window !== 'undefined') {
         window.history.replaceState(null, '', `/app/apply?caseId=${encodeURIComponent(matched.id)}`);
       }
       setAiPhase(waitingPhase(queued.state));
       await pollAiJob(api, queued.jobId, matched.id);
     } catch (error) {
-      setAiFailureMessage(error instanceof PublicApiError && error.code === 'AI_INPUT_UNSAFE'
-        ? '內容包含系統指令，請僅填寫實際流程。'
+      const unsafe = error instanceof PublicApiError && error.code === 'AI_INPUT_UNSAFE';
+      setAiFailureMessage(unsafe
+        ? UNSAFE_INPUT_MESSAGE
         : error instanceof PublicApiError && error.code === 'ETAG_MISMATCH'
           ? '資料已更新，請重新點擊「產生資料流向草稿」。'
           : error instanceof PublicApiError && error.code === 'RATE_LIMITED'
             ? '整理次數已達上限，請稍後再試。'
             : '處理失敗，請稍後再試。');
+      setFailedAnswers({ answers: answersRef.current, unsafe });
       setAiState('failed');
     }
-  }, [aiState, complete, openPassportReview, pollAiJob, saveStatus]);
+  }, [aiState, blockedByUnsafeInput, complete, openPassportReview, pollAiJob, saveStatus]);
   useEffect(() => {
     const api = liffSession.api;
     if (liffSession.status !== 'authenticated' || !api || caseRef.current) return;
@@ -268,6 +283,13 @@ export function ApplicationWizard() {
       </section>
     );
   }
+  const saveNote = saveStatus === 'saving'
+    ? '儲存中'
+    : saveStatus === 'conflict'
+      ? '資料版本不一致，請點擊重試'
+      : saveStatus === 'error'
+        ? '儲存失敗，請點擊重試'
+        : '';
   return <section className="application-wizard" aria-labelledby={review ? 'review-title' : 'question-title'}>
     {sessionMessage && <p className="pending-note" role="status">{sessionMessage}</p>}
     {(sessionReady || liffSession.status !== 'authenticated') && !sessionMessage && <>
@@ -277,25 +299,18 @@ export function ApplicationWizard() {
         <h1 id="question-title">{current.label}</h1>
         <textarea id={`answer-${current.key}`} value={answers[current.key]} onChange={(event) => update(event.target.value)} placeholder={current.placeholder} required aria-required="true" aria-invalid={unicodeScalarLength(answers[current.key]) > current.limit} aria-labelledby="question-title" aria-describedby={`hint-${current.key} guidance-${current.key}`} autoFocus />
         <p id={`guidance-${current.key}`} className="field-guidance">{current.hint}</p>
-        <p id={`hint-${current.key}`} className="field-hint">必填 · {unicodeScalarLength(answers[current.key])}/{current.limit}{saveStatus === 'saving' ? ' · 儲存中' : saveStatus === 'saved' && hasPartialDraft ? ' · 已儲存' : saveStatus === 'error' ? ' · 儲存失敗' : ''}</p>
+        <p id={`hint-${current.key}`} className="field-hint">必填 · {unicodeScalarLength(answers[current.key])}/{current.limit}{saveStatus === 'saving' ? ' · 儲存中' : saveStatus === 'saved' && answers[current.key].trim() ? ' · 已儲存' : saveStatus === 'error' ? ' · 儲存失敗' : ''}</p>
         {unicodeScalarLength(answers[current.key]) > current.limit && <p role="alert">字數已超過上限，請精簡內容後再繼續。</p>}
         <div className="wizard-actions"><button type="button" onClick={() => setStep((value) => Math.max(0, value - 1))} disabled={step === 0}>上一題</button>
           {step < fields.length - 1 ? <button type="button" onClick={() => setStep((value) => value + 1)} disabled={!answers[current.key].trim() || unicodeScalarLength(answers[current.key]) > current.limit}>下一題</button> : <button type="button" onClick={() => setReview(true)} disabled={!complete}>檢查答案</button>}</div>
       </> : <>
         <h2 id="review-title">送出前確認</h2><dl>{fields.map(({ key, label }) => <div key={key}><dt>{label}</dt><dd>{answers[key]}</dd></div>)}</dl>
         <p>確認後會產生資料流向草稿，之後還需回答追問並上傳附件。</p>
-        <div className="wizard-actions"><button type="button" onClick={() => setReview(false)}>返回修改</button><button type="button" onClick={() => void startAiDraft()} disabled={saveStatus !== 'saved' || aiState === 'completed'}>{aiState === 'completed' ? '已完成' : '產生資料流向草稿'}</button></div>
-        {(saveStatus === 'saving' || saveStatus === 'conflict' || saveStatus === 'error' || aiState === 'failed') && (
-          <p className="pending-note" role="status">
-            {saveStatus === 'saving'
-              ? '儲存中'
-              : saveStatus === 'conflict'
-                ? '資料版本不一致，請點擊重試'
-                : saveStatus === 'error'
-                  ? '儲存失敗，請點擊重試'
-                  : aiFailureMessage || '處理失敗，請稍後再試。'}
-          </p>
-        )}
+        {/* Keep status above the buttons so it stays visible on short mobile screens. */}
+        {saveNote
+          ? <p className="pending-note" role="status">{saveNote}</p>
+          : failureStillApplies && <p className="pending-note" role="alert">{aiFailureMessage || '處理失敗，請稍後再試。'}</p>}
+        <div className="wizard-actions"><button type="button" onClick={() => setReview(false)}>返回修改</button><button type="button" onClick={() => void startAiDraft()} disabled={saveStatus !== 'saved' || aiState === 'completed' || blockedByUnsafeInput}>{aiState === 'completed' ? '已完成' : '產生資料流向草稿'}</button></div>
         {(saveStatus === 'conflict' || saveStatus === 'error') && caseState && (
           <button type="button" className="secondary-action" onClick={() => enqueueSave(answersRef.current, caseRef.current)}>
             重試儲存

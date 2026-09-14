@@ -2,7 +2,8 @@ import type { DurableJob } from '../../db/repositories/jobs';
 import type { FlowPassDatabase } from '../../db/connection';
 import type { FieldCrypto } from '../../crypto/field-crypto';
 import type { LineMessagingClient } from '../../adapters/line/messaging-client';
-import { classifyLineIntent } from '../../domain/line-intent';
+import { classifyLineIntent, subsidyPolicyReply } from '../../domain/line-intent';
+import { reviewStatusLabel } from '../../domain/notification-template';
 import { queryPassportToolStatus, queryPublicToolIncidents } from '../../domain/public-tool-status';
 
 export function processLineEvent(job: DurableJob, input: {
@@ -32,7 +33,16 @@ export function processLineEvent(job: DurableJob, input: {
     const intent = classifyLineIntent(text);
     let reply = 'FlowPass 只回答補助與案件相關問題。請從選單開啟申請頁，或輸入「怎麼申請」「我的案子到哪了」「補助多少」。';
     if (intent.kind === 'faq') reply = intent.answer;
-    else if (intent.kind === 'tool_status') {
+    else if (intent.kind === 'subsidy_policy') {
+      const rule = input.database.prepare(`
+        SELECT subsidy_rate_bps, per_case_cap_twd
+        FROM program_rule_versions
+        WHERE status = 'published'
+        ORDER BY published_at DESC
+        LIMIT 1
+      `).get() as { subsidy_rate_bps: number; per_case_cap_twd: number } | undefined;
+      reply = subsidyPolicyReply(rule ? { rateBps: rule.subsidy_rate_bps, capTwd: rule.per_case_cap_twd } : null);
+    } else if (intent.kind === 'tool_status') {
       const publicIncidents = queryPublicToolIncidents(input.database, intent.tool || null).slice(0, 3);
       const publicSummary = publicIncidents.length === 0
         ? '目前尚無已發布的公開資安事件。'
@@ -80,7 +90,8 @@ export function processLineEvent(job: DurableJob, input: {
         if (!latest) {
           reply = '目前還沒有申請案件。請從選單開啟申請頁開始建立護照。';
         } else if (intent.kind === 'case_status') {
-          reply = `你的案件 ${latest.case_code} 目前狀態是「${latest.state}」。詳細進度請開啟申請紀錄查看。`;
+          const stateLabel = latest.state === 'draft' ? '尚未送出（草稿）' : reviewStatusLabel(latest.state);
+          reply = `你的案件 ${latest.case_code} 目前狀態是「${stateLabel}」。詳細進度請開啟申請紀錄查看。`;
         } else {
           const amount = latest.approved_amount_twd ?? latest.calculated_amount_twd;
           reply = amount == null

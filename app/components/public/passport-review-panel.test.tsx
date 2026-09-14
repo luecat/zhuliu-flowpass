@@ -273,4 +273,46 @@ describe('PassportReviewPanel', () => {
     expect(screen.getByRole('heading', { name: '申請已送出' })).toBeVisible();
     expect(screen.queryByText('送出失敗，請稍後再試。')).not.toBeInTheDocument();
   });
+
+  it('explains a blocked regeneration and lets the applicant start over with a blank draft', async () => {
+    apiMocks.read.mockImplementation(async (path: string) => {
+      if (path === `/api/v1/cases/${CASE_ID}/passport`) return passportData;
+      if (path === `/api/v1/cases/${CASE_ID}`) return { rowVersion: 2 };
+      if (path === '/api/v1/programs/current') return { id: 'program-1' };
+      throw new Error(`unexpected read: ${path}`);
+    });
+    apiMocks.mutate.mockImplementation(async (path: string) => {
+      if (path === `/api/v1/cases/${CASE_ID}/confirmations`) return { passportVersionId: 'passport-version-1' };
+      if (path === `/api/v1/cases/${CASE_ID}/ai-drafts`) throw new PublicApiError({ code: 'AI_INPUT_UNSAFE', message: 'unsafe', status: 422 });
+      if (path === '/api/v1/cases') return { case: { id: 'fresh-case' } };
+      throw new Error(`unexpected mutation: ${path}`);
+    });
+    await renderLoadedPanel();
+    await submitFollowUp();
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
+
+    expect(screen.getAllByRole('alert')[0]).toHaveTextContent('包含系統指令或不當要求');
+    expect(screen.queryByRole('button', { name: '儲存答案' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '重新產生護照' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '放棄這筆、重新填寫' }));
+    expect(screen.getByText(/需要重新回答四題/)).toBeVisible();
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '確定放棄並重新填寫' }));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+    expect(apiMocks.mutate).toHaveBeenCalledWith('/api/v1/cases', expect.objectContaining({ method: 'POST', body: { programCycleId: 'program-1', startOver: true } }));
+  });
+
+  it('keeps the invalid-content reason instead of a generic failure when a revision job rejects the answers', async () => {
+    installApi(() => ({ state: 'failed_terminal', errorCode: 'AI_INPUT_INVALID' }));
+    await renderLoadedPanel();
+    await submitFollowUp();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+
+    expect(screen.getByText(/不像實際的資料流程/)).toBeInTheDocument();
+    expect(screen.queryByText('處理失敗，請稍後再試。')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '放棄這筆、重新填寫' })).toBeEnabled();
+  });
 });

@@ -257,4 +257,48 @@ describe('generate passport worker boundary', () => {
     expect(revised?.passport.follow_up_questions).toEqual([]);
     expect(revised?.followUps).toEqual([]);
   });
+
+  function enqueueDraft(crypto: FieldCrypto, key: string, answers: { material: string; aiPurpose: string; sensitiveData: string; destinationAndAudience: string }) {
+    const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
+    const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: `${key}-case` });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { ...answers, applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: `${key}-answers` });
+    const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
+    const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
+    return ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
+  }
+
+  it('stops before drafting when model screening flags the answers as not a real application', async () => {
+    const crypto = cryptoForTests();
+    const queued = enqueueDraft(crypto, 'screen-reject', { material: '今天天氣很好', aiPurpose: '我想去海邊玩', sensitiveData: '沒有', destinationAndAudience: '跟朋友說' });
+    const calls: Array<{ responseSchema?: Record<string, unknown> }> = [];
+    await expect(generatePassport(queued.job, { workerId: 'worker-1' }, {
+      database: db,
+      crypto,
+      classifyInput: true,
+      client: { complete: async (input) => { calls.push(input); return { content: '{"verdict":"off_topic"}', model: 'fixture', inputTokens: 1, outputTokens: 1 }; } },
+      clock: () => new Date(NOW),
+    })).rejects.toMatchObject({ code: 'AI_INPUT_INVALID' });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.responseSchema).toBeDefined();
+    expect((db.prepare('SELECT COUNT(*) AS count FROM passport_versions').get() as { count: number }).count).toBe(0);
+  });
+
+  it.each([
+    ['a genuine verdict', async () => ({ content: '{"verdict":"genuine"}', model: 'fixture', inputTokens: 1, outputTokens: 1 })],
+    ['an unreadable verdict', async () => ({ content: 'not json', model: 'fixture', inputTokens: 1, outputTokens: 1 })],
+    ['a screening failure', async () => { throw new Error('quota'); }],
+  ])('drafts the passport after %s', async (_label, screening) => {
+    const crypto = cryptoForTests();
+    const queued = enqueueDraft(crypto, 'screen-allow', { material: '社團活動照片', aiPurpose: '用 AI 調色', sensitiveData: '人臉', destinationAndAudience: '社團雲端' });
+    let calls = 0;
+    const result = await generatePassport(queued.job, { workerId: 'worker-1' }, {
+      database: db,
+      crypto,
+      classifyInput: true,
+      client: { complete: async (input) => { calls += 1; return input.responseSchema ? screening() : { content: JSON.stringify(FLOWPASS_SAMPLE), model: 'fixture', inputTokens: 1, outputTokens: 1 }; } },
+      clock: () => new Date(NOW),
+    });
+    expect(result.resultCode).toBe('AI_DRAFT_CREATED');
+    expect(calls).toBe(2);
+  });
 });

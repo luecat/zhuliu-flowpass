@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { classifyLineIntent } from './line-intent';
+import { classifyLineIntent, subsidyPolicyReply } from './line-intent';
+
+describe('subsidyPolicyReply', () => {
+  it('states the published rate and cap instead of fixed amounts', () => {
+    const reply = subsidyPolicyReply({ rateBps: 5000, capTwd: 10000 });
+    expect(reply).toContain('50%');
+    expect(reply).toContain('NT$10,000');
+    expect(reply).not.toMatch(/3,000|6,000/);
+    expect(subsidyPolicyReply(null)).toContain('沒有開放中的補助方案');
+  });
+});
 
 describe('classifyLineIntent', () => {
   it('routes FAQ, case status, subsidy, and tool status intents', () => {
@@ -12,6 +22,7 @@ describe('classifyLineIntent', () => {
     expect(classifyLineIntent('我的案子到哪了')).toEqual({ kind: 'case_status' });
     expect(classifyLineIntent('進度查詢')).toEqual({ kind: 'case_status' });
     expect(classifyLineIntent('為什麼是這個金額')).toEqual({ kind: 'subsidy_amount' });
+    expect(classifyLineIntent('補助多少')).toEqual({ kind: 'subsidy_policy' });
     expect(classifyLineIntent('檢測')).toEqual({ kind: 'tool_status', tool: '' });
     expect(classifyLineIntent('ChatGPT 出事了嗎')).toEqual({ kind: 'tool_status', tool: 'ChatGPT' });
     expect(classifyLineIntent('今天天氣如何')).toEqual({ kind: 'fallback' });

@@ -21,7 +21,9 @@ FlowPass 的公開頁面、管理後台、工作程序只綁定本機回環位�
 
 ## 最快試跑
 
-在 `site/` 目錄執行 `npm run dev:public`，瀏覽 `http://127.0.0.1:38100/apply`。需要測試背景工作時，另開終端執行 `FLOWPASS_WORKER_RUN=1 npm run dev:worker`；管理後台則執行 `npm run dev:admin`，再開啟 `http://127.0.0.1:38101/`。第一次使用管理後台前，先以 `npm run admin:bootstrap` 建立本機管理員帳號。
+正式 LaunchAgent 已占用 38100–38102 埠；開發前先確認它們沒有在跑，否則開發伺服器會啟動失敗。LaunchAgent 執行的是 `~/Library/Application Support/FlowPass/releases/current` 裡打包好的 release，改 `site/` 原始碼不會直接影響正式服務。
+
+在 `site/` 目錄執行 `npm run dev:public`，瀏覽 `http://127.0.0.1:38100/app/apply`（未經 LINE 登入時會停在登入提示頁）。需要測試背景工作時，另開終端執行 `FLOWPASS_WORKER_RUN=1 npm run dev:worker`；管理後台則執行 `npm run dev:admin`，再開啟 `http://127.0.0.1:38101/`。第一次使用管理後台前，先以 `npm run admin:bootstrap` 建立本機管理員帳號。
 
 ## 備份與復原
 

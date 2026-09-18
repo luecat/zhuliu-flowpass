@@ -1,6 +1,18 @@
 # 竹流 FlowPass 技術架構說明
 
-> 依據 `site/` 目前原始碼的靜態比對整理（2026-09-16）。不含測試通過數、建置結果或線上服務狀態，這些需另行實際驗證。
+> 依據 `site/` 目前原始碼整理（2026-09-18）。線上服務狀態不在本文範圍，需另行實際驗證。
+
+## 快速驗證
+
+```bash
+npm install
+npm test        # 113 個測試檔、418 個測試
+npm run typecheck
+npm run lint    # 0 error、0 warning
+npm run build:release
+```
+
+操作手冊見 [`docs/runbook.md`](docs/runbook.md)，驗收證據要求見 [`docs/acceptance-evidence.md`](docs/acceptance-evidence.md)。
 
 ---
 
@@ -58,9 +70,7 @@ LINE / LIFF 瀏覽器
 
 ### 3.1 頁面
 
-App Router。申請人頁面位於 `app/app/` 底下：`apply`、`passports`、`tasks`、`tool-check`。另有公開的 `app/tool-status/`。申請人 UI 元件集中在 `app/components/public/`。
-
-`app/studio/` 是舊版相容路徑，不是主要的申請人流程。
+App Router。申請人頁面位於 `app/app/` 底下：`apply`、`passports`、`tasks`、`tool-check`。另有公開的 `app/tool-status/`（導向 `app/tool-check`）。申請人 UI 元件集中在 `app/components/public/`。
 
 前端以 LINE LIFF SDK 取得身分，再呼叫 session 端點交換成伺服器端 session。
 
@@ -260,7 +270,7 @@ LINE 只提供登入、入口、通知、聊天回覆與深層連結。申請表
 
 `shared/` 存放跨邊界共用的型別與 schema：`passport-contract.ts`（含 `PASSPORT_JSON_SCHEMA`、`NODE_KIND_GUIDE`）、`timeline-contract.ts`、`rule-contract.ts`、`security-contract.ts`、`api-contract.ts`、`approved-ai-tools.ts`。
 
-執行期驗證使用 Zod。（`package.json` 宣告了 `ajv`，但原始碼中沒有引用。）
+執行期驗證使用 Zod。
 
 ---
 
@@ -314,7 +324,8 @@ macOS LaunchAgent：
 ## 10. 工程實務
 
 - **TypeScript**：`strict: true`，路徑別名 `@/*`
-- **測試**：Vitest（單元）、Testing Library + jsdom（React 元件）。測試檔與原始碼並置，約 110 個測試檔對應約 179 個原始檔
+- **測試**：Vitest（單元）、Testing Library + jsdom（React 元件）。測試檔與原始碼並置，113 個測試檔、418 個測試對應 201 個原始檔
+- **相依套件**：`npm audit` 無已知漏洞
 - **靜態檢查**：ESLint 9 + `eslint-config-next`
 
 ---
@@ -323,7 +334,6 @@ macOS LaunchAgent：
 
 - **資料庫綁定 SQLite**：同步存取模式，migration 大量使用 SQLite 專屬語法（`GLOB`、`strftime`、`RAISE(ABORT)` 觸發器）。更換資料庫需重寫 migration 與部分 repository。
 - **部署綁定 macOS**：依賴 LaunchAgent 與 Keychain，沒有容器化設定。
-- **端對端測試未建立**：`@playwright/test` 已安裝、`test:e2e` 指令存在，但沒有設定檔與測試檔。
-- **CSP 未設定**：待 LIFF 應用來源確認後補上。
-- **未使用的依賴**：`ajv` 已宣告但無引用；Tailwind 只出現在根目錄 `vite.config.ts` 的 Vinext 預覽設定，正式的 Next.js 建置沒有 PostCSS 設定，樣式為手寫 CSS。
-- **Vinext / Sites 預覽設定**存在，但不是生產部署目標。
+- **端對端測試未建立**：測試涵蓋單元與整合層（含跨邊界的授權測試），沒有瀏覽器端對端套件。
+- **公開頁 CSP 未設定**：`proxy.ts` 已送出 `X-Frame-Options`、`nosniff`、`Referrer-Policy`、`Permissions-Policy` 與 COOP，但 script/frame 來源的 CSP 待 LIFF 應用來源確認後才補；管理後台已有完整 CSP。
+- **回退無舊版可選**：`current` 以原子 symlink 切換，但目前只保留一個前一版 release。

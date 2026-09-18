@@ -13,6 +13,13 @@ const eslintConfig = defineConfig([
     '.flowpass-releases/**',
     '.flowpass-local/**',
   ]),
+  {
+    rules: {
+      // `const { secret: _secret, ...rest }` is how internal-only columns are
+      // stripped before a payload crosses a public boundary.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
+    },
+  },
 ]);
 
 export default eslintConfig;

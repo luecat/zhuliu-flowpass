@@ -280,6 +280,7 @@ export function ChoiceList({
           className="choice-list-trigger"
           id={listId}
           ref={triggerRef}
+          role="combobox"
           aria-haspopup="listbox"
           aria-expanded={open}
           aria-controls={`${listId}-menu`}

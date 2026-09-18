@@ -119,5 +119,6 @@ describe('createAdminApp', () => {
       body: JSON.stringify({ displayName: 'admin', password: 'admin' }),
     });
     expect(oldLogin.status).toBe(401);
-  });
+    // Six scrypt derivations at the production N=131072 cost overrun the 5s default.
+  }, 60_000);
 });

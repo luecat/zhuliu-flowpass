@@ -7,6 +7,13 @@ import { pathToFileURL } from 'node:url';
 function hashFile(path: string): string { return createHash('sha256').update(readFileSync(path)).digest('hex'); }
 function files(root: string): string[] { if (!existsSync(root)) return []; const result: string[] = []; for (const name of readdirSync(root)) { const path = join(root, name); const stat = lstatSync(path); if (stat.isSymbolicLink()) continue; if (stat.isDirectory()) result.push(...files(path)); else result.push(path); } return result; }
 function gitValue(projectRoot: string, args: string[]): string | null { try { return execFileSync('git', ['-C', projectRoot, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null; } catch { return null; } }
+/** Describes the migrations actually packaged into the release, not the source tree. */
+function migrationRange(projectRoot: string): string | null {
+  const directory = join(projectRoot, 'dist', 'server', 'migrations');
+  if (!existsSync(directory)) return null;
+  const names = readdirSync(directory).filter((name) => name.endsWith('.sql')).map((name) => name.slice(0, -4)).sort();
+  return names.length === 0 ? null : `${names[0]}..${names[names.length - 1]}`;
+}
 export function packageRelease(input: { projectRoot: string; releaseRoot: string; releaseId?: string }): { releaseDir: string; manifest: string } {
   const standalone = join(input.projectRoot, '.next', 'standalone'); const staticDir = join(input.projectRoot, '.next', 'static'); const buildIdPath = join(input.projectRoot, '.next', 'BUILD_ID'); const assetsDir = join(input.projectRoot, 'public');
   const adminDist = join(input.projectRoot, 'dist', 'admin'); const serverDist = join(input.projectRoot, 'dist', 'server');
@@ -31,7 +38,7 @@ export function packageRelease(input: { projectRoot: string; releaseRoot: string
   const buildId = readFileSync(buildIdPath, 'utf8').trim();
   const lockHash = existsSync(lockPath) ? hashFile(lockPath) : null;
   const entries = files(releaseDir).map((path) => ({ path: relative(releaseDir, path), sha256: hashFile(path) }));
-  const manifest = JSON.stringify({ format: 'flowpass-release-v1', releaseId, builtAt: new Date().toISOString(), nodeVersion: process.version, buildId, sourceCommit, sourceDirty, dependencyLockSha256: lockHash, migrationRange: '001_core..011_ai_runs_any_adapter', entries }, null, 2);
+  const manifest = JSON.stringify({ format: 'flowpass-release-v1', releaseId, builtAt: new Date().toISOString(), nodeVersion: process.version, buildId, sourceCommit, sourceDirty, dependencyLockSha256: lockHash, migrationRange: migrationRange(input.projectRoot), entries }, null, 2);
   const manifestPath = join(releaseDir, 'manifest.json'); writeFileSync(manifestPath, manifest, { mode: 0o600 });
   const verified = JSON.parse(readFileSync(manifestPath, 'utf8')) as { format?: string; entries?: Array<{ path: string; sha256: string }> };
   if (verified.format !== 'flowpass-release-v1' || !verified.entries?.every((entry) => hashFile(join(releaseDir, entry.path)) === entry.sha256)) throw new Error('release manifest verification failed');

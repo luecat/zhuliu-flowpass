@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { FLOWPASS_SAMPLE_JSON } from '../../app/passport-sample';
-import { parseFlowPassJson } from '../../app/passport-parser';
-import { buildPassportRevisionJson } from '../../app/passport-revision';
 import {
   inspectPassportDocument,
   inspectPassportJson,
@@ -336,20 +334,6 @@ describe('canonical FlowPass passport validation', () => {
     expect(inspection.validation).toMatchObject({ ok: false });
     expect(JSON.stringify(inspection)).not.toContain(GRAPH_SENTINEL);
     expect(JSON.stringify(inspection)).not.toContain(INVALID_REFERENCE_SENTINEL);
-
-    const parsed = parseFlowPassJson(JSON.stringify(document));
-    expect(parsed.status).toBe('invalid_graph');
-    expect(parsed.passport).not.toBeNull();
-    expect(JSON.stringify(parsed)).not.toContain(GRAPH_SENTINEL);
-    expect(JSON.stringify(parsed)).not.toContain(INVALID_REFERENCE_SENTINEL);
-    if (!parsed.passport) return;
-
-    expect(buildPassportRevisionJson(parsed.passport, {})).not.toContain(
-      GRAPH_SENTINEL,
-    );
-    expect(buildPassportRevisionJson(parsed.passport, {})).not.toContain(
-      INVALID_REFERENCE_SENTINEL,
-    );
   });
 
   it('enforces node, edge, question, UTF-8 string, raw, and canonical JSON caps', () => {

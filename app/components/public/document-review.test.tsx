@@ -17,7 +17,8 @@ const details: PurchaseDetails = {
   payerType: 'self_card', originalCurrency: 'TWD', otherCurrency: null,
   originalExpense: '1200', convertedTwd: 1200, specialStatus: false, invoiceNumber: null,
   paymentSourceFingerprint: null, subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31',
-  applicantName: '測試申請人', receiptBuyerName: '測試申請人', birthDate: null, nationalId: null, householdAddress: null,
+  applicantName: '測試申請人', receiptBuyerName: '測試申請人', birthDate: null,
+  nationalId: 'A123456789', householdAddress: '臺北市中正區重慶南路一段122號',
 };
 
 const paidDetails: PurchaseDetails = {
@@ -226,6 +227,8 @@ describe('DocumentReview', () => {
         body: expect.objectContaining({
           cardLastFour: '4242',
           cardholderName: '測試持卡人',
+          nationalId: 'A123456789',
+          householdAddress: '臺北市中正區重慶南路一段122號',
         }),
       }),
     );

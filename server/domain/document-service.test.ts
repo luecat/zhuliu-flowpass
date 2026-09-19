@@ -78,6 +78,19 @@ describe('DocumentService', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM jobs').get()).toEqual({ count: 0 });
   });
 
+  it('supersedes the previous upload for the same requirement and keeps other requirements', async () => {
+    const first = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'vendor_receipt', originalName: 'receipt-1.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'receipt-1' });
+    const identity = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'eligibility_proof', requirementKey: 'identity_front', originalName: 'identity.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'identity-1' });
+    const second = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'vendor_receipt', originalName: 'receipt-2.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'receipt-2' });
+
+    const statusOf = (id: string) =>
+      db.prepare('SELECT status, deleted_at FROM documents WHERE id = ?').get(id) as { status: string; deleted_at: string | null };
+    expect(statusOf(first.document.id)).toMatchObject({ status: 'deleted' });
+    expect(statusOf(first.document.id).deleted_at).not.toBeNull();
+    expect(statusOf(second.document.id)).toMatchObject({ status: 'ready', deleted_at: null });
+    expect(statusOf(identity.document.id)).toMatchObject({ status: 'ready', deleted_at: null });
+  });
+
   describe('optional OCR on vendor receipt / card transaction uploads', () => {
     function fakeEngine(overrides: Partial<{ available: () => Promise<boolean>; recognize: () => Promise<{ lines: never[]; engineId: string; durationMs: number }> }> = {}) {
       return {

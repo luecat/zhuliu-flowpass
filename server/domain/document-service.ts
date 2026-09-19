@@ -183,6 +183,13 @@ export function createDocumentService(options: DocumentServiceOptions): Document
         options.database.transaction(() => {
           const changed = options.database.prepare(`UPDATE documents SET status = 'ready', row_version = row_version + 1 WHERE id = ? AND status = 'pending_vault'`).run(documentId);
           if (changed.changes !== 1) throw new DocumentCommandError('DEPENDENCY_UNAVAILABLE');
+          // One requirement holds one file: the new upload supersedes whatever was there. The
+          // vault blob is deliberately left in place, so a superseded file stays recoverable.
+          const superseded = options.database.prepare(`SELECT id FROM documents WHERE case_id = ? AND requirement_key = ? AND id <> ? AND status <> 'deleted' AND deleted_at IS NULL`).all(input.caseId, input.requirementKey, documentId) as Array<{ id: string }>;
+          for (const previous of superseded) {
+            options.database.prepare(`UPDATE documents SET status = 'deleted', deleted_at = ?, row_version = row_version + 1 WHERE id = ?`).run(readyAt, previous.id);
+            appendEncryptedAuditLog(options.database, options.crypto, { id: idGenerator(), actorType: 'applicant', actorId: input.applicantId, action: 'delete', entityType: 'document', entityId: previous.id, beforeHash: null, afterHash: null, detail: { kind: 'operation', operation: 'delete', outcome: 'ok' }, requestId: input.requestId ?? requestIdGenerator(), createdAt: readyAt });
+          }
           options.database.prepare(`INSERT INTO timeline_events (id, case_id, sequence_no, passport_version_id, event_type, public_summary, public_data_json, actor_type, created_at) VALUES (?, ?, (SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM timeline_events WHERE case_id = ?), NULL, 'document_uploaded', '文件已安全保存', ?, 'applicant', ?)`).run(idGenerator(), input.caseId, input.caseId, JSON.stringify({ kind: input.kind, requirementKey: input.requirementKey, mediaType: validated.mediaType, byteSize: validated.byteSize }), readyAt);
           appendEncryptedAuditLog(options.database, options.crypto, { id: idGenerator(), actorType: 'applicant', actorId: input.applicantId, action: 'create', entityType: 'document', entityId: documentId, beforeHash: null, afterHash: validated.contentSha256, detail: { kind: 'operation', operation: 'create', outcome: 'ok' }, requestId: input.requestId ?? requestIdGenerator(), createdAt: readyAt });
           const document = getDocumentForApplicant(options.database, { applicantId: input.applicantId }, documentId);

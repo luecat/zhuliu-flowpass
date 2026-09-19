@@ -85,6 +85,25 @@ describe('createAdminApp', () => {
     await expect(response.json()).resolves.toMatchObject({ error: { code: 'ACCESS_REQUIRED' } });
   });
 
+  it('logs in remotely without an Access assertion when requireAccess is off, but keeps recovery closed', async () => {
+    const database = openDatabase(':memory:'); databases.push(database); migrateDatabase(database); await bootstrapAdminAccount(database);
+    const app = createAdminApp(database, { requireAccess: false });
+    const login = await app.request('https://admin.luecat.com/admin/v1/sessions', {
+      method: 'POST',
+      headers: { host: 'admin.luecat.com', origin: 'https://admin.luecat.com', 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: 'admin', password: 'admin' }),
+    });
+    expect(login.status).toBe(201);
+    expect(login.headers.get('set-cookie')).toContain('Secure');
+    const recovery = await app.request('https://admin.luecat.com/admin/v1/password-recovery/start', {
+      method: 'POST',
+      headers: { host: 'admin.luecat.com', origin: 'https://admin.luecat.com', 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(recovery.status).toBe(403);
+    await expect(recovery.json()).resolves.toMatchObject({ error: { code: 'ACCESS_REQUIRED' } });
+  });
+
   it('applies the Access boundary to mounted admin routes too', async () => {
     const database = openDatabase(':memory:'); databases.push(database); migrateDatabase(database); await bootstrapAdminAccount(database);
     const response = await createAdminApp(database).request('https://admin.luecat.com/admin/v1/tools', { headers: { host: 'admin.luecat.com' } });

@@ -34,6 +34,10 @@ export interface AdminAppDependencies {
   dataRoot?: string;
   backupRoot?: string;
   verifyAccessToken?: (token: string) => Promise<CloudflareAccessIdentity | null>;
+  // When false the remote host is served without a Cloudflare Access assertion.
+  // Password login becomes the only barrier, and password recovery stays closed
+  // because no verified recovery-email identity is available.
+  requireAccess?: boolean;
 }
 
 const LOCAL_HOST = '127.0.0.1:38101';
@@ -64,7 +68,9 @@ async function requestBoundary(context: Context, dependencies: AdminAppDependenc
   const host = (context.req.header('host') ?? '').toLowerCase();
   const origin = context.req.header('origin');
   if (host === LOCAL_HOST) return mutation && origin !== LOCAL_ORIGIN ? null : { remote: false };
-  if (host !== REMOTE_HOST || (mutation && origin !== REMOTE_ORIGIN) || !dependencies.verifyAccessToken) return null;
+  if (host !== REMOTE_HOST || (mutation && origin !== REMOTE_ORIGIN)) return null;
+  if (dependencies.requireAccess === false) return { remote: true };
+  if (!dependencies.verifyAccessToken) return null;
   const assertion = context.req.header('cf-access-jwt-assertion');
   if (!assertion) return null;
   const identity = await dependencies.verifyAccessToken(assertion).catch(() => null);

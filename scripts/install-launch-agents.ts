@@ -22,6 +22,10 @@ export function buildLaunchAgents(input: { releaseRoot: string; dataRoot?: strin
     FLOWPASS_ADMIN_PORT: '38101',
     FLOWPASS_CF_ACCESS_TEAM_DOMAIN: 'summer-art-4e96.cloudflareaccess.com',
     FLOWPASS_CF_ACCESS_AUD: 'cc23292d2980b221639c6ad43bd5f5bcb6c7d76f8788d12fe4a8e7a3f11f7ad1',
+    // Cloudflare Access is bypassed at the operator's request: admin.luecat.com is
+    // reachable with the admin password alone. Set back to '0' (and restore the
+    // Access application in Cloudflare Zero Trust) to require the Access assertion.
+    FLOWPASS_ADMIN_DISABLE_CF_ACCESS: '1',
     FLOWPASS_WORKER_HOST: '127.0.0.1',
     FLOWPASS_WORKER_PORT: '38102',
     FLOWPASS_LM_STUDIO_BASE_URL: 'http://127.0.0.1:1234',

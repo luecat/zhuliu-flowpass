@@ -25,6 +25,7 @@ void (async () => {
   const teamDomain = process.env.FLOWPASS_CF_ACCESS_TEAM_DOMAIN;
   const audience = process.env.FLOWPASS_CF_ACCESS_AUD;
   if (teamDomain && audience) dependencies.verifyAccessToken = createCloudflareAccessVerifier({ teamDomain, audience });
+  if (process.env.FLOWPASS_ADMIN_DISABLE_CF_ACCESS === '1') dependencies.requireAccess = false;
   serve({ fetch: createAdminApp(database, dependencies).fetch, hostname: runtimeConfig.adminHost, port: runtimeConfig.adminPort });
 })();
 

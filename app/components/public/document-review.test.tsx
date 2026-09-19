@@ -28,16 +28,25 @@ function toPublic(saved: PurchaseDetails | null): PublicDetails | null {
   return { ...rest, paymentSourceRegistered: Boolean(paymentSourceFingerprint) };
 }
 
-function installApi(saved: PurchaseDetails | null = null) {
+function installApi(saved: PurchaseDetails | null = null, options: { ocr?: { lines: Array<{ text: string; confidence: number; box: { x: number; y: number; width: number; height: number } }> } | null } = {}) {
   apiMocks.read.mockImplementation(async (path: string) => {
     if (path.endsWith('/purchase-details')) return { details: toPublic(saved) };
     if (path.endsWith('/documents')) return { documents: [] };
     if (path === `/api/v1/cases/${CASE_ID}`) return { rowVersion: 3, state: 'draft' };
+    if (path.includes('/ocr')) return { ocr: options.ocr === undefined ? null : options.ocr };
     throw new Error(`unexpected read: ${path}`);
   });
   apiMocks.readWithMeta.mockResolvedValue({ data: { rowVersion: 3, state: 'draft' }, etag: '"3"' });
   apiMocks.mutate.mockResolvedValue({ details: toPublic(saved ?? details) });
   apiMocks.upload.mockResolvedValue({ document: { id: 'document-1' } });
+}
+
+function fileInputs(container: HTMLElement): HTMLInputElement[] {
+  return Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
+}
+
+function ocrReads(): string[] {
+  return apiMocks.read.mock.calls.map(([path]) => String(path)).filter((path) => path.includes('/ocr'));
 }
 
 describe('DocumentReview', () => {
@@ -53,6 +62,8 @@ describe('DocumentReview', () => {
     expect(screen.getByText('申請人姓名', { exact: false })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '1. 購買資料' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByText(/信用卡資訊用途/)).toBeInTheDocument();
+    expect(screen.getByText('具低收／中低收入戶資格')).toBeInTheDocument();
+    expect(screen.queryByText('文化語言保存者')).not.toBeInTheDocument();
     expect(screen.queryByText(/OCR/i)).not.toBeInTheDocument();
   });
 
@@ -82,13 +93,48 @@ describe('DocumentReview', () => {
     const { container } = render(<DocumentReview suppliedCaseId={CASE_ID} />);
     await screen.findByRole('heading', { name: '上傳必備文件' });
     expect(screen.getByText(/不支援 HEIC/)).toBeInTheDocument();
-    const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
-    const vendorReceipt = inputs[2];
-    fireEvent.change(vendorReceipt, { target: { files: [new File(['receipt'], 'receipt.png', { type: 'image/png' })] } });
+    fireEvent.change(fileInputs(container)[2], { target: { files: [new File(['receipt'], 'receipt.png', { type: 'image/png' })] } });
     await waitFor(() => expect(apiMocks.upload).toHaveBeenCalled());
     expect(apiMocks.upload).toHaveBeenCalledWith(
       `/api/v1/cases/${CASE_ID}/documents`,
       expect.objectContaining({ kind: 'invoice', requirementKey: 'vendor_receipt' }),
     );
+  });
+
+  it('reads OCR after a vendor receipt upload and shows 套用 when lines match purchase fields', async () => {
+    installApi(details, {
+      ocr: {
+        lines: [
+          { text: 'Invoice number KS98K7HU-0002', confidence: 1, box: { x: 0, y: 0, width: 1, height: 1 } },
+          { text: '2026-06-11', confidence: 1, box: { x: 0, y: 0, width: 1, height: 1 } },
+        ],
+      },
+    });
+    const { container } = render(<DocumentReview suppliedCaseId={CASE_ID} />);
+    await screen.findByRole('heading', { name: '上傳必備文件' });
+    fireEvent.change(fileInputs(container)[2], { target: { files: [new File(['receipt'], 'receipt.png', { type: 'image/png' })] } });
+    await waitFor(() => expect(ocrReads()).toEqual([`/api/v1/documents/document-1/ocr`]));
+    expect(await screen.findByLabelText('官方收據辨識結果')).toBeInTheDocument();
+    expect(screen.getByText('發票號碼：KS98K7HU-0002')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '套用' }).length).toBeGreaterThan(0);
+  });
+
+  it('does not call OCR after an identity upload', async () => {
+    installApi(details);
+    const { container } = render(<DocumentReview suppliedCaseId={CASE_ID} />);
+    await screen.findByRole('heading', { name: '上傳必備文件' });
+    fireEvent.change(fileInputs(container)[0], { target: { files: [new File(['id'], 'id.png', { type: 'image/png' })] } });
+    await waitFor(() => expect(screen.getByText(/身分證正面已上傳/)).toBeInTheDocument());
+    expect(ocrReads()).toEqual([]);
+  });
+
+  it('keeps the upload when OCR returns nothing', async () => {
+    installApi(details, { ocr: null });
+    const { container } = render(<DocumentReview suppliedCaseId={CASE_ID} />);
+    await screen.findByRole('heading', { name: '上傳必備文件' });
+    fireEvent.change(fileInputs(container)[2], { target: { files: [new File(['receipt'], 'receipt.png', { type: 'image/png' })] } });
+    await waitFor(() => expect(ocrReads()).toEqual([`/api/v1/documents/document-1/ocr`]));
+    expect(screen.getByText(/官方收據已上傳/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('官方收據辨識結果')).not.toBeInTheDocument();
   });
 });

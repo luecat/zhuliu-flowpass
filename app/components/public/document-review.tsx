@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   PurchaseDetailsWriteSchema,
   PURCHASE_CURRENCIES,
@@ -22,6 +22,7 @@ import {
   extractVendorReceiptCandidates,
   type OcrLine,
 } from '../../lib/ocr-field-extraction';
+import type { DocumentOcrResponseData } from '../../../shared/ocr-contract';
 
 interface UploadWithOcr {
   document: DocumentRecord;
@@ -163,6 +164,8 @@ const REQUIREMENTS: Record<DocumentRequirementKey, RequirementSpec> = {
   supplement_other: { key: 'supplement_other', kind: 'supplement', label: '其他補充文件', hint: '依審核人員指示上傳補充文件。', required: true },
 };
 
+const OCR_ELIGIBLE_REQUIREMENTS: ReadonlySet<DocumentRequirementKey> = new Set(['vendor_receipt', 'card_transaction']);
+
 function draftFromDetails(details: PublicPurchaseDetails): PurchaseDetailsDraft {
   return {
     billingCycle: details.billingCycle,
@@ -296,6 +299,8 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
   const [step, setStep] = useState<'purchase' | 'attachments'>('purchase');
   const [pendingFilePreview, setPendingFilePreview] = useState<Partial<Record<DocumentRequirementKey, { name: string; size: number }>>>({});
   const [ocrSuggestions, setOcrSuggestions] = useState<Partial<Record<DocumentRequirementKey, FieldSuggestion[]>>>({});
+  const [recognizingRequirements, setRecognizingRequirements] = useState<Set<DocumentRequirementKey>>(new Set());
+  const ocrTokenByKeyRef = useRef<Partial<Record<DocumentRequirementKey, number>>>({});
 
   const parsedDraft = useMemo(() => parseDraft(draft), [draft]);
   const detailsSaved = Boolean(
@@ -448,6 +453,20 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
     });
   }
 
+  function nextOcrToken(key: DocumentRequirementKey): number {
+    const next = (ocrTokenByKeyRef.current[key] ?? 0) + 1;
+    ocrTokenByKeyRef.current[key] = next;
+    return next;
+  }
+
+  function markRecognizing(key: DocumentRequirementKey, active: boolean) {
+    setRecognizingRequirements((previous) => {
+      const next = new Set(previous);
+      if (active) next.add(key); else next.delete(key);
+      return next;
+    });
+  }
+
   async function uploadDocument(spec: RequirementSpec, file: File, etag: string): Promise<UploadWithOcr> {
     return api.upload<UploadWithOcr>(`/api/v1/cases/${encodeURIComponent(caseId!)}/documents`, {
       file, kind: spec.kind, requirementKey: spec.key, ifMatch: etag,
@@ -467,6 +486,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
       }
       return next;
     });
+    setMessage('已填入購買資料，請返回確認並儲存');
   }
 
   function suggestionsFromOcr(requirementKey: DocumentRequirementKey, lines: OcrLine[]): FieldSuggestion[] {
@@ -495,6 +515,9 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
     if (isHeic(file)) { setMessage('不支援 HEIC 格式。請改用 JPG、PNG 或 PDF 上傳。'); return; }
     setPendingFilePreview((previous) => ({ ...previous, [spec.key]: { name: file.name, size: file.size } }));
     setConfirmed(false);
+    const ocrToken = nextOcrToken(spec.key);
+    setOcrSuggestions((previous) => ({ ...previous, [spec.key]: [] }));
+    markRecognizing(spec.key, false);
     markBusy(spec.key, true);
     setProgressByRequirement((previous) => ({ ...previous, [spec.key]: 0 }));
     setMessage('');
@@ -512,9 +535,23 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
         } else { throw error; }
       }
       await loadDocuments();
-      const suggestions = uploaded.ocr?.lines ? suggestionsFromOcr(spec.key, uploaded.ocr.lines) : [];
-      setOcrSuggestions((previous) => ({ ...previous, [spec.key]: suggestions }));
       setMessage(`${spec.label}已上傳（${file.name} · ${formatBytes(file.size)}）。`);
+      markBusy(spec.key, false);
+      setProgressByRequirement((previous) => { const next = { ...previous }; delete next[spec.key]; return next; });
+      if (OCR_ELIGIBLE_REQUIREMENTS.has(spec.key) && uploaded.document.id) {
+        markRecognizing(spec.key, true);
+        try {
+          const recognized = await api.read<DocumentOcrResponseData>(`/api/v1/documents/${encodeURIComponent(uploaded.document.id)}/ocr`);
+          if (ocrTokenByKeyRef.current[spec.key] !== ocrToken) return;
+          const lines = recognized.ocr?.lines ? Array.from(recognized.ocr.lines) : [];
+          setOcrSuggestions((previous) => ({ ...previous, [spec.key]: lines.length > 0 ? suggestionsFromOcr(spec.key, lines) : [] }));
+        } catch {
+          if (ocrTokenByKeyRef.current[spec.key] !== ocrToken) return;
+          setOcrSuggestions((previous) => ({ ...previous, [spec.key]: [] }));
+        } finally {
+          if (ocrTokenByKeyRef.current[spec.key] === ocrToken) markRecognizing(spec.key, false);
+        }
+      }
     } catch (error) {
       const code = error instanceof PublicApiError ? error.code : null;
       setMessage(code && ERROR_MESSAGES[code] ? ERROR_MESSAGES[code] : `${spec.label}上傳失敗，請重新選擇檔案。`);
@@ -527,6 +564,9 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
   async function remove(document: DocumentRecord, label: string) {
     if (!caseId) return;
     const key = document.requirementKey ?? 'supplement_other';
+    nextOcrToken(key);
+    markRecognizing(key, false);
+    setOcrSuggestions((previous) => ({ ...previous, [key]: [] }));
     markBusy(key, true); setConfirmed(false); setMessage('');
     try {
       let etag = await ensureCaseEtag();
@@ -633,7 +673,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
         )}</div>
         <fieldset><legend>訂閱開始日 <span aria-hidden="true">＊</span></legend><input data-field="subscriptionStartDate" type="date" value={draft.subscriptionStartDate} aria-invalid={Boolean(fieldErrors.subscriptionStartDate)} onChange={(event) => updateDraft('subscriptionStartDate', event.target.value)} /><small>請依發票或訂閱憑證標示之啟用日填寫。</small>{fieldErrors.subscriptionStartDate && <p className="field-error" role="alert">{fieldErrors.subscriptionStartDate}</p>}</fieldset>
         <fieldset><legend>訂閱結束日 <span aria-hidden="true">＊</span></legend><input data-field="subscriptionEndDate" type="date" value={draft.subscriptionEndDate} aria-invalid={Boolean(fieldErrors.subscriptionEndDate)} onChange={(event) => updateDraft('subscriptionEndDate', event.target.value)} /><small>請依發票或訂閱憑證標示之到期日填寫。</small>{fieldErrors.subscriptionEndDate && <p className="field-error" role="alert">{fieldErrors.subscriptionEndDate}</p>}</fieldset>
-        <fieldset><legend>資格證明</legend><label className="checkbox-card"><input type="checkbox" checked={draft.specialStatus} onChange={(event) => updateDraft('specialStatus', event.target.checked)} /><span><strong>具備特定對象或文化語言保存者身分</strong><small>若具備相關身分，請勾選並於下一步上傳證明文件。</small></span></label></fieldset>
+        <fieldset><legend>資格證明</legend><label className="checkbox-card"><input type="checkbox" checked={draft.specialStatus} onChange={(event) => updateDraft('specialStatus', event.target.checked)} /><span><strong>具低收／中低收入戶資格</strong><small>符合者補助合格購買金額之 90%（上限 6,000 元）；請勾選並於下一步上傳有效證明。</small></span></label></fieldset>
           <div className="wizard-actions">
             {detailsSaved ? (
               <button
@@ -671,8 +711,9 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
             const preview = pendingFilePreview[spec.key];
             const progress = progressByRequirement[spec.key];
             const suggestions = ocrSuggestions[spec.key];
+            const isRecognizing = recognizingRequirements.has(spec.key);
             return <article className={isReady ? 'attachment-requirement is-complete' : 'attachment-requirement'} key={spec.key}>
-              <div className="attachment-requirement-copy"><span className="attachment-check" aria-hidden="true">{isReady ? '✓' : spec.required ? requiredSpecs.indexOf(spec) + 1 : '－'}</span><div><h4>{spec.label}<em>{spec.required ? '必備' : '選填'}</em></h4><p>{spec.hint}</p>{document && <small>{isReady ? `已上傳 · ${formatBytes(document.byteSize)}` : '檔案處理中'}</small>}{preview && isBusy && <small>已選取：{preview.name} · {formatBytes(preview.size)}</small>}{typeof progress === 'number' && isBusy && <progress max={100} value={progress} aria-label={`${spec.label}上傳進度`}>{progress}%</progress>}</div></div>
+              <div className="attachment-requirement-copy"><span className="attachment-check" aria-hidden="true">{isReady ? '✓' : spec.required ? requiredSpecs.indexOf(spec) + 1 : '－'}</span><div><h4>{spec.label}<em>{spec.required ? '必備' : '選填'}</em></h4><p>{spec.hint}</p>{document && <small>{isReady ? `已上傳 · ${formatBytes(document.byteSize)}` : '檔案處理中'}</small>}{preview && isBusy && <small>已選取：{preview.name} · {formatBytes(preview.size)}</small>}{typeof progress === 'number' && isBusy && <progress max={100} value={progress} aria-label={`${spec.label}上傳進度`}>{progress}%</progress>}{isRecognizing && <small>正在辨識…</small>}</div></div>
               <div className="attachment-requirement-actions"><label className="file-picker-button">{isBusy ? `上傳中 ${progress ?? 0}%` : document ? '重新上傳' : '選擇檔案'}<input type="file" accept={ACCEPTED_FILES} disabled={isBusy || submitting} onChange={(event) => { const selected = event.target.files?.[0] ?? null; event.currentTarget.value = ''; void upload(spec, selected); }} /></label>{document && <button type="button" className="text-action" disabled={isBusy || submitting} onClick={() => void remove(document, spec.label)}>移除</button>}</div>
               {suggestions && suggestions.length > 0 && (
                 <aside className="ocr-suggestion-panel" aria-label={`${spec.label}辨識結果`}>

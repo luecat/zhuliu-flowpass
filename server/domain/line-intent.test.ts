@@ -13,7 +13,14 @@ describe('subsidyPolicyReply', () => {
 
 describe('classifyLineIntent', () => {
   it('routes FAQ, case status, subsidy, and tool status intents', () => {
-    expect(classifyLineIntent('怎麼申請')).toMatchObject({ kind: 'faq' });
+    const howToApply = classifyLineIntent('怎麼申請');
+    expect(howToApply).toMatchObject({ kind: 'faq' });
+    if (howToApply.kind === 'faq') {
+      expect(howToApply.answer).toContain('官方收據');
+      expect(howToApply.answer).toContain('刷卡單筆明細');
+      expect(howToApply.answer).toContain('切結書');
+      expect(howToApply.answer).not.toMatch(/購買發票/);
+    }
     expect(classifyLineIntent('常見問題')).toMatchObject({ kind: 'faq' });
     const faq = classifyLineIntent('FAQ');
     expect(faq).toMatchObject({ kind: 'faq', answer: expect.stringContaining('常見問題') });

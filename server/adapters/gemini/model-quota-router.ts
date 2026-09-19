@@ -15,7 +15,16 @@ export const DEFAULT_GEMINI_QUOTA_MODELS: readonly GeminiQuotaModel[] = [
   { id: 'gemini-3.7-flash', rpm: 5, tpm: 250_000, rpd: 20 },
 ];
 
+/** Default Keychain accounts for complementary Gemini API keys. */
+export const DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS = ['gemini-api-key', 'gemini-api-key-2'] as const;
+
 const SAFETY_MARGIN = 1;
+
+const FAILOVER_CODES = new Set<LmStudioError['code']>([
+  'MODEL_RATE_LIMITED',
+  'MODEL_OFFLINE',
+  'MODEL_AUTH_FAILED',
+]);
 
 function pacificDay(date: Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
@@ -31,6 +40,53 @@ function estimateRequestTokens(input: LmStudioInput): number {
     originalInput: input.inputEnvelope,
     ...(input.repairIssues ? { validationIssues: input.repairIssues, invalidStructure: input.invalidStructure } : {}),
   }));
+}
+
+/**
+ * Resolves Keychain account names for Gemini keys. Override with a comma list
+ * via `FLOWPASS_GEMINI_KEYCHAIN_ACCOUNTS`, otherwise primary + secondary envs.
+ */
+export function geminiKeychainAccounts(): string[] {
+  const listed = process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNTS
+    ?.split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (listed && listed.length > 0) return [...new Set(listed)];
+  const primary = process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT?.trim() || DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS[0];
+  const secondary = process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT_2?.trim() || DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS[1];
+  return [...new Set([primary, secondary])];
+}
+
+/** Quota / client map id: `k1:gemini-3.6-flash`. */
+export function geminiRouteId(keySlot: string, modelId: string): string {
+  return `${keySlot}:${modelId}`;
+}
+
+export function geminiBaseModelId(routeId: string): string {
+  const index = routeId.indexOf(':');
+  return index === -1 ? routeId : routeId.slice(index + 1);
+}
+
+/**
+ * Builds routed quota rows so each key keeps its own RPM/RPD pool.
+ * Order: preferred model on key1, then same model on key2, then next model…
+ * so complementary keys cover each other before falling back to another model.
+ */
+export function buildGeminiKeyRoutedModels(
+  keySlots: readonly string[],
+  models: readonly GeminiQuotaModel[] = DEFAULT_GEMINI_QUOTA_MODELS,
+): GeminiQuotaModel[] {
+  if (keySlots.length === 0) return [];
+  if (keySlots.length === 1) {
+    return models.map((model) => ({ ...model, id: geminiRouteId(keySlots[0]!, model.id) }));
+  }
+  const routed: GeminiQuotaModel[] = [];
+  for (const model of models) {
+    for (const slot of keySlots) {
+      routed.push({ ...model, id: geminiRouteId(slot, model.id) });
+    }
+  }
+  return routed;
 }
 
 export class GeminiQuotaRouter {
@@ -54,7 +110,7 @@ export class GeminiQuotaRouter {
       try {
         return await client.complete(input);
       } catch (error) {
-        if (error instanceof LmStudioError && error.code === 'MODEL_RATE_LIMITED') {
+        if (error instanceof LmStudioError && FAILOVER_CODES.has(error.code)) {
           this.blockedUntil.set(model.id, Date.now() + 60_000);
           continue;
         }

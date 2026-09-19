@@ -292,14 +292,32 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
     const minuteKey = now.toISOString().slice(0, 16);
     const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
     const models = DEFAULT_GEMINI_QUOTA_MODELS.map((model) => {
-      const minute = database.prepare('SELECT request_count, input_tokens FROM ai_model_quota_usage WHERE model_id = ? AND minute_key = ? AND day_key = ?').get(model.id, minuteKey, dayKey) as { request_count: number; input_tokens: number } | undefined;
-      const daily = database.prepare('SELECT COALESCE(SUM(request_count), 0) AS request_count FROM ai_model_quota_usage WHERE model_id = ? AND day_key = ?').get(model.id, dayKey) as { request_count: number };
+      // Dual-key routes store usage as `k1:model` / `k2:model`; also keep legacy bare ids.
+      const minute = database.prepare(
+        `SELECT COALESCE(SUM(request_count), 0) AS request_count, COALESCE(SUM(input_tokens), 0) AS input_tokens
+         FROM ai_model_quota_usage
+         WHERE minute_key = ? AND day_key = ? AND (model_id = ? OR model_id GLOB ?)`,
+      ).get(minuteKey, dayKey, model.id, `*:${model.id}`) as { request_count: number; input_tokens: number };
+      const daily = database.prepare(
+        `SELECT COALESCE(SUM(request_count), 0) AS request_count
+         FROM ai_model_quota_usage
+         WHERE day_key = ? AND (model_id = ? OR model_id GLOB ?)`,
+      ).get(dayKey, model.id, `*:${model.id}`) as { request_count: number };
+      const keySlots = database.prepare(
+        `SELECT COUNT(DISTINCT CASE WHEN instr(model_id, ':') > 0 THEN substr(model_id, 1, instr(model_id, ':') - 1) ELSE 'legacy' END) AS count
+         FROM ai_model_quota_usage
+         WHERE day_key = ? AND (model_id = ? OR model_id GLOB ?)`,
+      ).get(dayKey, model.id, `*:${model.id}`) as { count: number };
+      const multiplier = Math.max(1, keySlots.count);
+      const rpmLimit = model.rpm * multiplier;
+      const tpmLimit = model.tpm * multiplier;
+      const rpdLimit = model.rpd * multiplier;
       const runs = database.prepare('SELECT COUNT(*) AS count FROM ai_runs WHERE model_id = ?').get(model.id) as { count: number };
       return {
         id: model.id,
-        rpm: { used: minute?.request_count ?? 0, limit: model.rpm, remaining: Math.max(0, model.rpm - (minute?.request_count ?? 0)) },
-        tpm: { used: minute?.input_tokens ?? 0, limit: model.tpm, remaining: Math.max(0, model.tpm - (minute?.input_tokens ?? 0)) },
-        rpd: { used: daily.request_count, limit: model.rpd, remaining: Math.max(0, model.rpd - daily.request_count) },
+        rpm: { used: minute.request_count, limit: rpmLimit, remaining: Math.max(0, rpmLimit - minute.request_count) },
+        tpm: { used: minute.input_tokens, limit: tpmLimit, remaining: Math.max(0, tpmLimit - minute.input_tokens) },
+        rpd: { used: daily.request_count, limit: rpdLimit, remaining: Math.max(0, rpdLimit - daily.request_count) },
         recordedRuns: runs.count,
       };
     });

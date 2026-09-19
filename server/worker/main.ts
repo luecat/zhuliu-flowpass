@@ -17,6 +17,7 @@ import { createLineMessagingClient } from '../adapters/line/messaging-client';
 import { openAiApiUrl } from '../config/loopback-openai-url';
 import { isMaintenanceMode } from '../services/maintenance-mode';
 import { expireStaleDrafts } from '../domain/draft-expiry';
+import { lineNotificationUniqueKey, selectBridgeablePendingNotifications } from './notification-bridge';
 
 const database = openMigratedDatabase(flowPassDatabasePath(runtimeConfig.dataRoot));
 
@@ -137,8 +138,9 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       let lastDraftExpiryMs = 0;
       const enqueueLineNotifications = () => {
         if (!lineClient) return;
-        const pending = database.prepare("SELECT id FROM notification_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 20").all() as Array<{ id: string }>;
-        for (const row of pending) jobBridge.enqueue({ systemId: 'line-notification-bridge' }, { jobType: 'line_notification', payload: { notificationJobId: row.id }, uniqueKey: `line-notification:${row.id}`, maxAttempts: 3 });
+        for (const notificationJobId of selectBridgeablePendingNotifications(database)) {
+          jobBridge.enqueue({ systemId: 'line-notification-bridge' }, { jobType: 'line_notification', payload: { notificationJobId }, uniqueKey: lineNotificationUniqueKey(notificationJobId), maxAttempts: 3 });
+        }
       };
       const tick = () => {
         if (isMaintenanceMode(database)) return;

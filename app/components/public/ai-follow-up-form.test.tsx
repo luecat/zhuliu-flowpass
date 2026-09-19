@@ -15,14 +15,14 @@ describe('AiFollowUpForm', () => {
     expect(screen.getByText(/確認資料處理的服務來源。/)).toBeInTheDocument();
     expect(screen.queryByText(/assistant|user|對話/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('使用哪個 AI 工具？'), { target: { value: '本地工具' } });
-    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '繼續' }));
     expect(onSubmit).toHaveBeenCalledWith([{ questionId: 'q-1', answer: '本地工具' }]);
   });
 
   it('requires required cards before submit', () => {
     const onSubmit = vi.fn();
     render(<AiFollowUpForm questions={questions} onSubmit={onSubmit} />);
-    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '繼續' }));
     expect(onSubmit).not.toHaveBeenCalled();
     expect(screen.getByRole('alert')).toHaveTextContent('請完成所有必填問題。');
   });
@@ -45,7 +45,7 @@ describe('AiFollowUpForm', () => {
     const onSubmit = vi.fn();
     render(<AiFollowUpForm questions={[{ ...questions[0], answerSchema: { type: 'multi_choice', choices: ['A', 'B'] } }]} onSubmit={onSubmit} />);
     fireEvent.click(screen.getByLabelText('A'));
-    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '繼續' }));
     expect(onSubmit).toHaveBeenCalledWith([{ questionId: 'q-1', answer: '["A"]' }]);
   });
 
@@ -73,7 +73,7 @@ describe('AiFollowUpForm', () => {
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onRegenerate).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '重新產生護照' }));
+    fireEvent.click(screen.getByRole('button', { name: '繼續' }));
     expect(onRegenerate).toHaveBeenCalledWith([
       { questionId: 'q-1', answer: 'ChatGPT' },
       { questionId: 'q-2', answer: '["完全沒有"]' },
@@ -106,7 +106,7 @@ describe('AiFollowUpForm', () => {
     render(<AiFollowUpForm questions={questions} onSubmit={onSubmit} />);
     fireEvent.change(screen.getByLabelText('使用哪個 AI 工具？'), { target: { value: '本地工具' } });
     fireEvent.change(screen.getByLabelText('完成後檔案存放在哪裡、分享給誰？'), { target: { value: '社團成員' } });
-    fireEvent.click(screen.getByRole('button', { name: '儲存答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '繼續' }));
     expect(onSubmit).toHaveBeenCalledWith([
       { questionId: 'q-1', answer: '本地工具' },
       { questionId: 'q-2', answer: '社團成員' },

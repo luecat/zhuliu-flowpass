@@ -114,9 +114,7 @@ export function AiFollowUpForm({
   const [otherAnswers, setOtherAnswers] = useState<Record<string, string>>({});
   const [choiceSelections, setChoiceSelections] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const busy = submitting || regenerating;
-  const canRegenerate = Boolean(onRegenerate) && !missingRequiredAnswer(questions, answers, choiceSelections, otherAnswers);
 
   async function saveAnswers(mode: 'save' | 'regenerate') {
     if (missingRequiredAnswer(questions, answers, choiceSelections, otherAnswers)) {
@@ -134,12 +132,11 @@ export function AiFollowUpForm({
       return;
     }
     await onSubmit(payload);
-    setSaved(true);
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void saveAnswers('save');
+    void saveAnswers(onRegenerate ? 'regenerate' : 'save');
   }
 
   if (questions.length === 0) return null;
@@ -149,7 +146,7 @@ export function AiFollowUpForm({
       <div className="ai-follow-up-heading">
         <p className="eyebrow">補充資料細節</p>
         <h2>確認護照細節</h2>
-        <p>回答下方問題後點擊「重新產生護照」；亦可先點擊「儲存答案」暫存。</p>
+        <p>回答下方問題後點擊「繼續」，系統會儲存答案並重新產生護照。</p>
       </div>
       {questions.map((question, index) => {
         const copy = followUpApplicantCopy(question.questionKey, question.prompt, question.reason);
@@ -181,7 +178,6 @@ export function AiFollowUpForm({
                   ? '請填寫工具名稱（不適用中港澳工具）'
                   : '請填寫實際情況'}
                 onChange={(value) => {
-                  setSaved(false);
                   setChoiceSelections((current) => ({ ...current, [question.id]: value }));
                   if (value === '__other__') {
                     setAnswers((current) => ({ ...current, [question.id]: otherAnswers[question.id] ?? '' }));
@@ -190,7 +186,6 @@ export function AiFollowUpForm({
                   }
                 }}
                 onOtherChange={(value) => {
-                  setSaved(false);
                   setOtherAnswers((current) => ({ ...current, [question.id]: value }));
                   setAnswers((current) => ({ ...current, [question.id]: value }));
                 }}
@@ -212,7 +207,6 @@ export function AiFollowUpForm({
                         type="checkbox"
                         checked={selected.includes(option.value)}
                         onChange={(event) => {
-                          setSaved(false);
                           setAnswers((current) => {
                             let currentSelected: string[] = [];
                             try {
@@ -241,7 +235,6 @@ export function AiFollowUpForm({
                 value={answers[question.id] ?? ''}
                 required={question.required}
                 onChange={(value) => {
-                  setSaved(false);
                   setAnswers((current) => ({ ...current, [question.id]: value }));
                 }}
               />
@@ -252,7 +245,6 @@ export function AiFollowUpForm({
                 value={answers[question.id] ?? ''}
                 aria-required={question.required}
                 onChange={(event) => {
-                  setSaved(false);
                   setAnswers((current) => ({ ...current, [question.id]: event.target.value }));
                 }}
               />
@@ -264,7 +256,6 @@ export function AiFollowUpForm({
                 maxLength={question.answerSchema.maxLength ?? 4_000}
                 aria-required={question.required}
                 onChange={(event) => {
-                  setSaved(false);
                   setAnswers((current) => ({ ...current, [question.id]: event.target.value }));
                 }}
                 rows={3}
@@ -279,19 +270,8 @@ export function AiFollowUpForm({
         );
       })}
       {error && <p id="ai-follow-up-error" role="alert">{error}</p>}
-      {saved && <p className="pending-note" role="status">答案已儲存。確認無誤後請重新產生護照。</p>}
       <div className="wizard-actions">
-        <button className="secondary-action" type="submit" disabled={busy}>{submitting ? '儲存中…' : '儲存答案'}</button>
-        {onRegenerate && (
-          <button
-            className="primary-action"
-            type="button"
-            disabled={busy || !canRegenerate}
-            onClick={() => void saveAnswers('regenerate')}
-          >
-            {regenerating ? '重新產生中…' : '重新產生護照'}
-          </button>
-        )}
+        <button className="primary-action" type="submit" disabled={busy}>{busy ? '處理中…' : '繼續'}</button>
       </div>
     </form>
   );

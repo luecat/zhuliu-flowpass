@@ -92,13 +92,13 @@ function installApi(jobResponse: (path: string, call: number) => unknown | Promi
 async function renderLoadedPanel() {
   render(<PassportReviewPanel caseId={CASE_ID} />);
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
-  expect(screen.getByRole('button', { name: '儲存答案' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '繼續' })).toBeInTheDocument();
 }
 
-async function submitFollowUp(regenerate = true) {
+async function submitFollowUp() {
   fireEvent.change(screen.getByLabelText('使用哪個 AI 工具？'), { target: { value: 'LM Studio' } });
   await act(async () => {
-    fireEvent.click(screen.getByRole('button', { name: regenerate ? '重新產生護照' : '儲存答案' }));
+    fireEvent.click(screen.getByRole('button', { name: '繼續' }));
     await Promise.resolve();
   });
 }
@@ -134,7 +134,7 @@ describe('PassportReviewPanel', () => {
     await act(async () => { window.dispatchEvent(new CustomEvent('flowpass-passport-ready')); });
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(counters.passportLoads()).toBe(1);
-    expect(screen.getByRole('button', { name: '儲存答案' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '繼續' })).toBeInTheDocument();
   });
 
   it('shows real waiting phases, polls every 5 seconds, and keeps waiting while active', async () => {
@@ -143,7 +143,7 @@ describe('PassportReviewPanel', () => {
     await submitFollowUp();
 
     expect(screen.getByRole('status')).toHaveTextContent(/排隊中|整理中|已送出/);
-    expect(screen.queryByRole('button', { name: '儲存答案' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '繼續' })).not.toBeInTheDocument();
     expect(counters.jobReads()).toBe(0);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
@@ -292,7 +292,7 @@ describe('PassportReviewPanel', () => {
     await act(async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); });
 
     expect(screen.getAllByRole('alert')[0]).toHaveTextContent('包含系統指令或不當要求');
-    expect(screen.queryByRole('button', { name: '儲存答案' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '繼續' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '重新產生護照' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: '放棄這筆、重新填寫' }));

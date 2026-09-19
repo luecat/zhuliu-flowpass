@@ -3102,6 +3102,24 @@ textarea::placeholder {
   font: inherit;
 }
 .purchase-details-form input:focus { outline: 3px solid rgba(38, 118, 83, 0.16); border-color: #267653; }
+/* iOS Safari gives date inputs an intrinsic width that ignores width:100% and centres
+   the value, so the control overflows its fieldset. Force it back into the grid track. */
+.purchase-details-form input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+}
+.purchase-details-form input[type="date"]::-webkit-date-and-time-value {
+  margin: 0;
+  min-width: 0;
+  text-align: left;
+}
+.purchase-details-form input[type="date"]::-webkit-datetime-edit {
+  padding: 0;
+  min-width: 0;
+}
 .inline-number-field { display: flex !important; grid-template-columns: auto 86px auto; align-items: center; justify-content: flex-start; }
 .inline-number-field input { width: 86px !important; }
 

@@ -225,7 +225,7 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
     if (!account || account.must_change_password === 1) return context.json({ error: { code: 'PASSWORD_CHANGE_REQUIRED', message: '請先變更初始密碼。' } }, 403);
     const rows = database.prepare(`
       SELECT cases.id, cases.case_code, cases.state, cases.requested_amount_twd, cases.calculated_amount_twd,
-             cases.approved_amount_twd, cases.disbursed_amount_twd, cases.submitted_at, cases.updated_at, cases.row_version,
+             cases.approved_amount_twd, cases.disbursed_amount_twd, cases.submitted_at, cases.created_at, cases.updated_at, cases.row_version,
              (
                SELECT COUNT(*)
                FROM rule_evaluations
@@ -234,7 +234,7 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
              ) AS needs_review_count
       FROM cases
       WHERE cases.deleted_at IS NULL
-      ORDER BY needs_review_count DESC, cases.updated_at DESC
+      ORDER BY cases.submitted_at DESC, cases.created_at DESC, cases.id DESC
     `).all();
     return context.json({ data: { cases: rows } });
   });

@@ -15,6 +15,8 @@ type PurchaseDetails = {
   invoiceNumber?: string | null;
   receiptBuyerName?: string | null;
   applicantName?: string | null;
+  nationalId?: string | null;
+  householdAddress?: string | null;
 };
 
 function purchaseDetailsOf(value: unknown): PurchaseDetails | null {
@@ -31,6 +33,8 @@ function purchaseDetailsOf(value: unknown): PurchaseDetails | null {
     invoiceNumber: string(v.invoiceNumber) ?? null,
     receiptBuyerName: string(v.receiptBuyerName) ?? null,
     applicantName: string(v.applicantName) ?? null,
+    nationalId: string(v.nationalId) ?? null,
+    householdAddress: string(v.householdAddress) ?? null,
   };
 }
 
@@ -89,9 +93,11 @@ export function PurchaseReview({ caseId }: { caseId: string }) {
         <div><dt>購買日期</dt><dd>{details.purchaseDate ?? '—'}</dd></div>
         <div><dt>發票號碼</dt><dd>{details.invoiceNumber ?? '未填寫'}</dd></div>
         <div><dt>原始金額</dt><dd>{details.originalExpense ?? '—'} {currencyLabel(details)}</dd></div>
-        <div><dt>換算新台幣</dt><dd>{money(details.convertedTwd)}</dd></div>
+        <div><dt>銀行付款實付台幣</dt><dd>{money(details.convertedTwd)}</dd></div>
         <div><dt>收據買受人</dt><dd>{details.receiptBuyerName ?? '尚未辨識'}</dd></div>
         <div><dt>申請人姓名</dt><dd>{details.applicantName ?? '—'}</dd></div>
+        <div><dt>身分證字號</dt><dd>{details.nationalId ?? '—'}</dd></div>
+        <div><dt>戶籍地址</dt><dd>{details.householdAddress ?? '—'}</dd></div>
       </dl>
       <div className="purchase-review-evidence">
         {invoices.length === 0 ? <p className="attachments-empty">尚無發票／購買憑證影像可供核對。</p> : invoices.map((invoice) => <figure className="purchase-review-thumb" key={invoice.id}>

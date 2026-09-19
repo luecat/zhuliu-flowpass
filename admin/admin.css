@@ -238,22 +238,39 @@
 
 /* 田字格全螢幕核對（粗版） */
 .tian-open { margin: 0 0 1rem; width: 100%; }
+.panel-review-hint {
+  margin: 1rem 1.25rem 1.25rem;
+  padding: .75rem .9rem;
+  border: 1px solid #d9e3dc;
+  border-radius: .55rem;
+  background: #f8faf8;
+  color: #4f5f56;
+  font-size: .84rem;
+  line-height: 1.45;
+}
 .tian-screen {
   position: fixed;
   inset: 0;
   z-index: 80;
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
   background: #f3f7f4;
   color: #23352d;
 }
 .tian-topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 1rem;
+  gap: .75rem 1rem;
   padding: .75rem 1.25rem;
   background: #fff;
   border-bottom: 1px solid #e1e8e3;
+}
+.tian-topbar-main {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
 }
 .tian-back {
   border: 0;
@@ -261,35 +278,394 @@
   color: #175138;
   font-weight: 800;
   padding: .3rem 0;
+  white-space: nowrap;
 }
-.tian-topbar-code { flex: 1; font-weight: 800; color: #213c30; }
-.tian-exit {
-  width: 2.2rem;
-  height: 2.2rem;
+.tian-topbar-code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+  color: #213c30;
+}
+.tian-toolbar-form {
+  display: contents;
+}
+.tian-toolbar-form.has-tray {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: .75rem 1rem;
+}
+.tian-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .55rem;
+  grid-column: 2;
+  grid-row: 1;
+}
+.tian-toolbar-form.has-tray .tian-toolbar-row {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+.tian-toolbar-row select {
+  min-width: 12rem;
+  max-width: min(100%, 18rem);
+  padding: .55rem .7rem;
   border: 1px solid #cad8cf;
   border-radius: .55rem;
   background: #fff;
-  color: #284137;
-  font-size: 1.25rem;
+}
+.tian-toolbar-empty {
+  margin: 0;
+  justify-self: end;
+  color: #64736b;
+  font-size: .84rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-align: right;
+}
+.tian-toolbar-hint {
+  margin: 0;
+  color: #4f5f56;
+  font-size: .84rem;
+  line-height: 1.45;
+}
+.tian-review-tray {
+  grid-column: 1 / -1;
+  padding: .85rem 0 0;
+  border-top: 1px solid #e1e8e3;
+  display: grid;
+  gap: .75rem;
+  max-height: min(42vh, 28rem);
+  overflow: auto;
+}
+.tian-review-tray .field,
+.tian-review-tray .review-callout,
+.tian-review-tray .choice,
+.tian-review-tray .review-requirements,
+.tian-review-tray .error,
+.tian-review-tray .review-guidance,
+.tian-review-tray .tian-toolbar-hint {
+  margin-bottom: 0;
+}
+@media (max-width: 900px) {
+  .tian-topbar {
+    grid-template-columns: 1fr;
+  }
+  .tian-toolbar-row,
+  .tian-toolbar-form.has-tray .tian-toolbar-row {
+    grid-column: 1;
+    justify-content: stretch;
+    flex-wrap: wrap;
+  }
+  .tian-toolbar-row select {
+    flex: 1;
+    min-width: 0;
+    max-width: none;
+  }
 }
 .tian-error, .tian-loading { margin: 1rem 1.25rem; }
-.tian {
+.tian-shell {
+  position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-columns: 216px 1fr;
   min-height: 0;
-  height: 100%;
+  flex: 1;
+}
+.tian {
+  position: relative;
+  display: grid;
+  grid-template-columns: 53% 47%;
+  grid-template-rows: 76% 24%;
+  min-width: 0;
+  min-height: 0;
 }
 .tian-cell {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: #fff;
   overflow: hidden;
 }
-.tian-tl, .tian-bl { border-right: 1px solid #e1e8e3; }
-.tian-tl, .tian-tr { border-bottom: 1px solid #e1e8e3; }
+.tian-cell-top { background: #ffffff; }
+.tian-tl { border-right: 1px solid #d5e0d8; }
+.tian-tl, .tian-tr { border-bottom: 1px solid #d5e0d8; }
+.tian-tray {
+  grid-column: 1 / -1;
+  background: #ffffff;
+}
+.tian-tray-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  overflow: auto;
+  padding: .85rem 1.1rem;
+}
+.tian-tray-row .tian-doc {
+  display: block;
+  width: 11.5rem;
+  flex: 0 0 auto;
+}
+.tian-tray-row .tian-doc em { display: block; margin-top: .35rem; }
+
+/* 勾稽側欄：深色導覽面，與白色內容面拉開明度階差 */
+.tian-side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #16281f;
+  color: #cfe0d5;
+}
+.tian-side-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  padding: .85rem .95rem .55rem;
+}
+.tian-side-head h2 {
+  margin: 0;
+  color: #7f9b8b;
+  font-size: .74rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+.tian-side-count {
+  padding: .14rem .45rem;
+  border-radius: 99px;
+  background: #e5484d;
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.tian-side-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 .45rem .8rem;
+}
+.tian-side-empty { color: #8fa89a; padding: .3rem .5rem; }
+.tian-side-group-title {
+  margin: .7rem 0 .28rem;
+  padding: 0 .5rem;
+  color: #6f8a7b;
+  font-size: .68rem;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+.tian-side-group-title b { font-weight: 800; }
+.tian-side-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: .6rem 1fr;
+  gap: .5rem;
+  align-items: start;
+  width: 100%;
+  padding: .42rem .5rem;
+  border: 0;
+  border-radius: .4rem;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+.tian-side-row + .tian-side-row { margin-top: 1px; }
+.tian-side-row:hover { background: #ffffff12; }
+.tian-side-row i {
+  margin-top: .4rem;
+  width: .45rem;
+  height: .45rem;
+  border-radius: 50%;
+  background: #496a58;
+}
+.tian-side-row.is-needs_review i,
+.tian-side-row.is-fail i { background: #ff6b6b; box-shadow: 0 0 0 3px #ff6b6b26; }
+.tian-side-row.is-missing i { background: #e8a33d; box-shadow: 0 0 0 3px #e8a33d26; }
+.tian-side-row b {
+  display: block;
+  overflow: hidden;
+  color: #9fb6a8;
+  font-size: .81rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tian-side-row.is-needs_review b,
+.tian-side-row.is-fail b { color: #ffe3e3; font-weight: 800; }
+.tian-side-row.is-missing b { color: #f7e2c2; font-weight: 800; }
+.tian-side-row small {
+  display: -webkit-box;
+  overflow: hidden;
+  margin-top: .12rem;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #8fa89a;
+  font-size: .71rem;
+  line-height: 1.35;
+}
+.tian-side-row em {
+  display: block;
+  margin-top: .18rem;
+  color: #6f8a7b;
+  font-size: .67rem;
+  font-style: normal;
+  font-weight: 700;
+}
+.tian-side-row.is-current { background: #ffffff1f; }
+.tian-side-row.is-current b { color: #ffffff; }
+.tian-side-row.is-current::before {
+  content: '';
+  position: absolute;
+  left: -.05rem;
+  top: .3rem;
+  bottom: .3rem;
+  width: 3px;
+  border-radius: 2px;
+  background: #7fd3a3;
+}
+.tian-side-row.is-current.is-needs_review::before,
+.tian-side-row.is-current.is-fail::before { background: #ff6b6b; }
+.tian-side-foot {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: .55rem .95rem;
+  border-top: 1px solid #ffffff14;
+  color: #6f8a7b;
+  font-size: .69rem;
+  line-height: 1.45;
+}
+.tian-splitter {
+  position: absolute;
+  z-index: 3;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.tian-splitter-side {
+  top: 0;
+  bottom: 0;
+  width: .6rem;
+  margin-left: -.3rem;
+  cursor: col-resize;
+}
+.tian-splitter-col {
+  top: 0;
+  width: .7rem;
+  margin-left: -.35rem;
+  cursor: col-resize;
+}
+.tian-splitter-row {
+  left: 0;
+  right: 0;
+  height: .7rem;
+  margin-top: -.35rem;
+  cursor: row-resize;
+}
+.tian-splitter-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  margin-top: -.5px;
+  background: #c7d5cb;
+  pointer-events: none;
+}
+.tian-splitter:hover,
+.tian-splitter:focus-visible {
+  background: #21674433;
+}
+.tian-save {
+  align-self: flex-start;
+  padding: .6rem 1rem;
+  border: 0;
+  border-radius: .55rem;
+  background: #216744;
+  color: #fff;
+  font-weight: 800;
+}
+.tian-issue-list {
+  display: grid;
+  gap: .65rem;
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.tian-issue-list li {
+  display: grid;
+  gap: .25rem;
+  padding: .75rem .85rem;
+  border: 1px solid #d9e3dc;
+  border-radius: .55rem;
+  background: #f8faf8;
+}
+.tian-issue-list strong {
+  color: #213c30;
+  font-size: .86rem;
+}
+.tian-issue-list span {
+  color: #4f5f56;
+  font-size: .84rem;
+  line-height: 1.45;
+}
 .tian-pane { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.tian-slot {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border: 2px dashed #b7c7bc;
+  border-radius: .55rem;
+  margin: .45rem;
+  background: #fbfefb;
+  overflow: hidden;
+}
+.tian-slot.is-focus {
+  border-style: solid;
+  border-color: #216744;
+  box-shadow: inset 0 0 0 1px #21674433;
+  background: #fff;
+}
+.tian-slot-select {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: .75rem;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #d9e3dc;
+  background: transparent;
+  text-align: left;
+  padding: .65rem .85rem;
+  cursor: pointer;
+}
+.tian-slot-select span {
+  font-size: .9rem;
+  font-weight: 800;
+  color: #213c30;
+}
+.tian-slot-select em {
+  color: #64736b;
+  font-size: .76rem;
+  font-style: normal;
+}
+.tian-slot-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 .2rem .6rem;
+}
+.tian-doc.is-slot-b {
+  outline: 2px solid #2f5f9e;
+  outline-offset: 2px;
+  background: #eaf1fb;
+}
 .tian-cell-head {
   display: flex;
   align-items: center;
@@ -333,24 +709,89 @@
 .tian-stage {
   flex: 1;
   min-height: 0;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: repeating-conic-gradient(#eef3ef 0% 25%, #f4f8f5 0% 50%) 0 0 / 22px 22px;
-  overflow: auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: #edf1ee;
+  overflow: hidden;
+  position: relative;
 }
-.tian-stage-note { place-items: start; align-content: start; background: #f8faf8; }
+.tian-preview {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: #edf1ee;
+}
+.tian-preview.is-pinch {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.tian-preview.is-pdf {
+  touch-action: auto;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+.tian-preview.is-pinch .tian-img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
+  transform-origin: 0 0;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+  background: #edf1ee;
+}
+.text-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #216744;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.text-action:hover,
+.text-action:focus-visible {
+  color: #175138;
+  outline: none;
+}
+.tian-stage-note {
+  display: grid;
+  place-items: start;
+  align-content: start;
+  padding: .75rem;
+  overflow: auto;
+  background: #f8faf8;
+}
 .tian-stage-note ul { margin: .4rem 0; padding-left: 1.2rem; }
 .tian-img, .tian-frame {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-  border-radius: .4rem;
-  background: #fff;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+  object-position: center;
+  border-radius: 0;
+  background: #edf1ee;
 }
-.tian-frame { width: 100%; height: 100%; min-height: 12rem; border: 0; }
+.tian-frame {
+  border: 0;
+  min-height: 0;
+}
 .tian-fields {
   flex: 1;
   overflow: auto;
@@ -410,15 +851,7 @@
   font-weight: 800;
 }
 .tian-muted { margin: 0; color: #64736b; font-size: .76rem; line-height: 1.4; }
-.tian-rail {
-  flex: 1;
-  overflow: auto;
-  padding: .9rem 1.1rem;
-  display: grid;
-  gap: .6rem;
-  align-content: start;
-}
-.tian-eval, .tian-doc {
+.tian-doc {
   display: block;
   width: 100%;
   text-align: left;
@@ -428,17 +861,6 @@
   background: #f8faf8;
   color: inherit;
 }
-.tian-eval.is-flag { border-color: #f0b4b4; background: #fff5f5; }
-.tian-eval.is-active, .tian-doc.is-active { outline: 2px solid #216744; outline-offset: 2px; }
-.tian-eval-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: .6rem;
-  margin-bottom: .3rem;
-}
-.tian-eval-head strong { font-size: .84rem; color: #213c30; }
-.tian-eval p { margin: 0; color: #4f5f56; font-size: .79rem; line-height: 1.4; }
 .tian-doc {
   display: flex;
   align-items: center;
@@ -451,11 +873,16 @@
 .tian-doc em { flex: 0 0 auto; font-style: normal; font-size: .71rem; font-weight: 800; color: #64736b; }
 
 @media (max-width: 900px) {
-  .tian {
-    grid-template-columns: 1fr;
-    grid-template-rows: repeat(4, minmax(14rem, auto));
+  .tian-shell {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: minmax(12rem, auto) 1fr;
     overflow: auto;
   }
-  .tian-tl, .tian-bl { border-right: 0; }
-  .tian-bl { border-bottom: 1px solid #e1e8e3; }
+  .tian-side { max-height: 16rem; }
+  .tian {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: repeat(3, minmax(14rem, auto)) !important;
+  }
+  .tian-tl { border-right: 0; }
+  .tian-splitter { display: none; }
 }

@@ -106,6 +106,8 @@ describe('admin attachments', () => {
       applicantName: '王小明',
       receiptBuyerName: null,
       birthDate: null,
+      nationalId: null,
+      householdAddress: null,
       paymentSourceFingerprint: null,
     };
     database.prepare('INSERT INTO case_purchase_details (case_id, details_enc, content_sha256, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, ?, ?)').run(

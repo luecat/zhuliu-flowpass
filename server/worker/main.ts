@@ -6,7 +6,7 @@ import { QueueDispatcher } from './queue-dispatcher';
 import { generatePassport } from './handlers/generate-passport';
 import { LmStudioClient } from '../adapters/lm-studio/lm-studio-client';
 import { GeminiClient } from '../adapters/gemini/gemini-client';
-import { DEFAULT_GEMINI_QUOTA_MODELS, GeminiQuotaRouter } from '../adapters/gemini/model-quota-router';
+import { DEFAULT_GEMINI_QUOTA_MODELS, GeminiQuotaRouter, buildGeminiKeyRoutedModels, geminiBaseModelId, geminiKeychainAccounts } from '../adapters/gemini/model-quota-router';
 import { KeychainSecretProvider } from '../config/keychain';
 import { initializeFieldCryptoAtStartup } from '../crypto/keyring';
 import { JobRepository } from '../db/repositories/jobs';
@@ -48,18 +48,33 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       let adapterName: 'gemini' | 'lm_studio' = 'lm_studio';
       const modelId = process.env.FLOWPASS_MODEL_ID?.trim();
       if (modelId && runtimeConfig.modelProvider === 'gemini') {
-        let geminiKey: string | null = null;
-        try {
-          geminiKey = await provider.get({ service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass', account: process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT ?? 'gemini-api-key' });
-        } catch {
-          geminiKey = null;
+        const service = process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass';
+        const accounts = geminiKeychainAccounts();
+        const keys: Array<{ slot: string; apiKey: string }> = [];
+        for (const [index, account] of accounts.entries()) {
+          try {
+            const apiKey = await provider.get({ service, account });
+            if (apiKey?.trim()) keys.push({ slot: `k${index + 1}`, apiKey: apiKey.trim() });
+          } catch {
+            /* optional secondary key may be absent */
+          }
         }
-        if (geminiKey) {
-          const models = DEFAULT_GEMINI_QUOTA_MODELS;
-          const clients = new Map(models.map((model) => [
-            model.id,
-            new GeminiClient({ modelId: model.id, apiKey: geminiKey!, overallTimeoutMs: 120_000 }),
-          ]));
+        if (keys.length > 0) {
+          const baseModels = DEFAULT_GEMINI_QUOTA_MODELS;
+          const models = buildGeminiKeyRoutedModels(keys.map((key) => key.slot), baseModels);
+          const keyBySlot = new Map(keys.map((key) => [key.slot, key.apiKey]));
+          const clients = new Map<string, GeminiClient>();
+          for (const model of models) {
+            const separator = model.id.indexOf(':');
+            const slot = separator === -1 ? 'k1' : model.id.slice(0, separator);
+            const apiKey = keyBySlot.get(slot);
+            if (!apiKey) continue;
+            clients.set(model.id, new GeminiClient({
+              modelId: geminiBaseModelId(model.id),
+              apiKey,
+              overallTimeoutMs: 120_000,
+            }));
+          }
           client = new GeminiQuotaRouter(database, clients, models);
           adapterName = 'gemini';
         }

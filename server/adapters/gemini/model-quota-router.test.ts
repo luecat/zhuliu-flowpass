@@ -4,7 +4,13 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openDatabase } from '../../db/connection';
 import { migrateDatabase } from '../../db/migrate';
-import { GeminiQuotaRouter } from './model-quota-router';
+import { LmStudioError } from '../lm-studio/lm-studio-client';
+import {
+  GeminiQuotaRouter,
+  buildGeminiKeyRoutedModels,
+  geminiBaseModelId,
+  geminiRouteId,
+} from './model-quota-router';
 
 describe('GeminiQuotaRouter', () => {
   it('switches models after the safety-margin RPM is reserved', async () => {
@@ -26,6 +32,88 @@ describe('GeminiQuotaRouter', () => {
       const result = await new GeminiQuotaRouter(db, clients, models, clock).complete({ systemInstruction: 'x', inputEnvelope: { answer: 'y' } });
       expect(result.model).toBe('second');
       expect(calls).toEqual(['second']);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails over from key1 to key2 on the same model when rate limited', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'flowpass-quota-keys-'));
+    const db = openDatabase(join(dir, 'flowpass.sqlite'));
+    migrateDatabase(db);
+    try {
+      const calls: string[] = [];
+      const models = buildGeminiKeyRoutedModels(['k1', 'k2'], [
+        { id: 'gemini-flash', rpm: 5, tpm: 250_000, rpd: 20 },
+      ]);
+      const clients = new Map([
+        [geminiRouteId('k1', 'gemini-flash'), {
+          complete: async () => {
+            calls.push('k1');
+            throw new LmStudioError('MODEL_RATE_LIMITED');
+          },
+        }],
+        [geminiRouteId('k2', 'gemini-flash'), {
+          complete: async () => {
+            calls.push('k2');
+            return { content: '{}', model: 'gemini-flash', inputTokens: 1, outputTokens: 1 };
+          },
+        }],
+      ]);
+      const result = await new GeminiQuotaRouter(db, clients, models).complete({
+        systemInstruction: 'x',
+        inputEnvelope: { answer: 'y' },
+      });
+      expect(result.model).toBe('gemini-flash');
+      expect(calls).toEqual(['k1', 'k2']);
+      expect(geminiBaseModelId(models[0]!.id)).toBe('gemini-flash');
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails over across three keys on the same model', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'flowpass-quota-keys3-'));
+    const db = openDatabase(join(dir, 'flowpass.sqlite'));
+    migrateDatabase(db);
+    try {
+      const calls: string[] = [];
+      const models = buildGeminiKeyRoutedModels(['k1', 'k2', 'k3'], [
+        { id: 'gemini-flash', rpm: 5, tpm: 250_000, rpd: 20 },
+      ]);
+      expect(models.map((model) => model.id)).toEqual([
+        'k1:gemini-flash',
+        'k2:gemini-flash',
+        'k3:gemini-flash',
+      ]);
+      const clients = new Map([
+        [geminiRouteId('k1', 'gemini-flash'), {
+          complete: async () => {
+            calls.push('k1');
+            throw new LmStudioError('MODEL_RATE_LIMITED');
+          },
+        }],
+        [geminiRouteId('k2', 'gemini-flash'), {
+          complete: async () => {
+            calls.push('k2');
+            throw new LmStudioError('MODEL_OFFLINE');
+          },
+        }],
+        [geminiRouteId('k3', 'gemini-flash'), {
+          complete: async () => {
+            calls.push('k3');
+            return { content: '{}', model: 'gemini-flash', inputTokens: 1, outputTokens: 1 };
+          },
+        }],
+      ]);
+      const result = await new GeminiQuotaRouter(db, clients, models).complete({
+        systemInstruction: 'x',
+        inputEnvelope: { answer: 'y' },
+      });
+      expect(result.model).toBe('gemini-flash');
+      expect(calls).toEqual(['k1', 'k2', 'k3']);
     } finally {
       db.close();
       rmSync(dir, { recursive: true, force: true });

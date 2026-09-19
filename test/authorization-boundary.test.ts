@@ -12,6 +12,8 @@ import { FieldCrypto } from '../server/crypto/field-crypto';
 import { encryptDatabaseText } from '../server/db/repositories/encrypted-fields';
 
 const STAMP = '2026-08-30T00:00:00.000Z';
+/** Draft cases are cleared once idle past the TTL, so this fixture keeps CASE-A freshly touched. */
+const FRESH_STAMP = new Date().toISOString();
 const IDS = {
   applicantA: '0198f051-0000-7000-8000-000000000001',
   applicantB: '0198f051-0000-7000-8000-000000000002',
@@ -45,7 +47,7 @@ function seed(database: Database.Database, crypto: FieldCrypto): void {
       id, case_code, applicant_id, program_cycle_id, program_rule_version_id, state,
       created_at, updated_at, row_version
     ) VALUES (?, 'CASE-A', ?, ?, ?, 'draft', ?, ?, 7)`,
-  ).run(IDS.caseA, IDS.applicantA, IDS.programCycle, IDS.ruleVersion, STAMP, STAMP);
+  ).run(IDS.caseA, IDS.applicantA, IDS.programCycle, IDS.ruleVersion, STAMP, FRESH_STAMP);
   const answerVersion = '0198f051-0000-7000-8000-000000000009';
   const answerText = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端', applicantName: '測試申請人' });
   database.prepare(
@@ -125,6 +127,26 @@ describe('public applicant authorization boundary', () => {
     // Word-bounded so the applicant-facing `errorCode` field (e.g. "AI_INPUT_INVALID",
     // read by the wizard to show tailored failure copy) doesn't false-positive on "error".
     expect(JSON.stringify(jobBody)).not.toMatch(/\b(payload|lease|error|unique|prompt|caseId)\b/i);
+  });
+
+  it('answers an idle draft with DRAFT_EXPIRED so the applicant is sent back to re-fill', async () => {
+    const stale = new Date(Date.now() - 31 * 60_000).toISOString();
+    database.prepare('UPDATE cases SET updated_at = ? WHERE id = ?').run(stale, IDS.caseA);
+
+    const response = await handlers.getCase(request('flowpass_session=session-a'), IDS.caseA);
+
+    expect(response.status).toBe(410);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'DRAFT_EXPIRED' } });
+  });
+
+  it('still hides a foreign expired draft behind the generic 404', async () => {
+    const stale = new Date(Date.now() - 31 * 60_000).toISOString();
+    database.prepare('UPDATE cases SET updated_at = ? WHERE id = ?').run(stale, IDS.caseA);
+
+    const response = await handlers.getCase(request('flowpass_session=session-b'), IDS.caseA);
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: 'NOT_FOUND' } });
   });
 
   it('does not expose unsubmitted cases through the applicant record list', async () => {

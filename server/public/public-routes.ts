@@ -7,6 +7,7 @@ import {
 } from '../../shared/api-contract';
 import type { FlowPassDatabase } from '../db/connection';
 import { getCaseForApplicant, getCurrentAnswersForApplicant, listCasesForApplicant } from '../db/repositories/cases';
+import { expireDraftCaseIfStale } from '../domain/draft-expiry';
 import { getApplicantVisibleJob } from '../db/repositories/jobs';
 import type { FieldCrypto } from '../crypto/field-crypto';
 
@@ -87,6 +88,11 @@ export function createPublicRouteHandlers(dependencies: PublicRouteDependencies)
       const record = getCaseForApplicant(dependencies.database, { applicantId: session.applicantId }, caseId);
       if (!record) {
         return toJsonResponse(apiFailure(ApiErrorCode.NOT_FOUND, requestId(dependencies)));
+      }
+      // Expire only after ownership is established, so a foreign probe neither clears someone
+      // else's draft nor learns the case exists. The owner is sent back to re-fill, not to a 404.
+      if (expireDraftCaseIfStale(dependencies.database, caseId)) {
+        return toJsonResponse(apiFailure(ApiErrorCode.DRAFT_EXPIRED, requestId(dependencies)));
       }
       let answers;
       try {

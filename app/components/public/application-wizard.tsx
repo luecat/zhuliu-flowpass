@@ -51,6 +51,8 @@ export function ApplicationWizard() {
   const [caseState, setCaseState] = useState<{ id: string; rowVersion: number } | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [sessionMessage, setSessionMessage] = useState('');
+  /** Non-blocking note: unlike sessionMessage, the form stays on screen. */
+  const [noticeMessage, setNoticeMessage] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'conflict' | 'error'>('idle');
   const [aiState, setAiState] = useState<'idle' | 'queued' | 'completed' | 'failed'>('idle');
   const [aiPhase, setAiPhase] = useState<AiWaitingPhase>('submitted');
@@ -231,8 +233,14 @@ export function ApplicationWizard() {
       const params = new URLSearchParams(window.location.search);
       const requested = params.get('caseId');
       if (requested) {
-        await open(await api.read<ApplicantApplicationCase>(`/api/v1/cases/${encodeURIComponent(requested)}`), { resumed: true });
-        return;
+        try {
+          await open(await api.read<ApplicantApplicationCase>(`/api/v1/cases/${encodeURIComponent(requested)}`), { resumed: true });
+          return;
+        } catch (error) {
+          // An idle draft is cleared by the server; fall through and let them fill it in again.
+          if (!(error instanceof PublicApiError && error.code === 'DRAFT_EXPIRED')) throw error;
+          setNoticeMessage('先前的草稿閒置過久已清除，請重新填寫。');
+        }
       }
       const program = await api.read<{ id: string }>('/api/v1/programs/current');
       const reuseFromCaseId = params.get('reuseFrom');
@@ -293,6 +301,7 @@ export function ApplicationWizard() {
   return <section className="application-wizard" aria-labelledby={review ? 'review-title' : 'question-title'}>
     {sessionMessage && <p className="pending-note" role="status">{sessionMessage}</p>}
     {(sessionReady || liffSession.status !== 'authenticated') && !sessionMessage && <>
+      {noticeMessage && <p className="pending-note" role="status">{noticeMessage}</p>}
       {resumedDraft && <p className="pending-note" role="status">已載入未完成的草稿內容</p>}
       {!review ? <>
         <p className="question-progress" aria-live="polite">第 {step + 1} / {fields.length} 題</p>

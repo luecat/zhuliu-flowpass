@@ -16,6 +16,8 @@ import { clearPublicRuntime, configurePublicRuntime } from '../../../server/publ
 
 const ORIGIN = 'http://127.0.0.1:38100';
 const STAMP = '2026-08-30T00:00:00.000Z';
+/** Draft cases are cleared once idle past the TTL, so this fixture keeps CASE-A freshly touched. */
+const FRESH_STAMP = new Date().toISOString();
 const IDS = {
   applicantA: '0198f051-0000-7000-8000-000000000001',
   applicantB: '0198f051-0000-7000-8000-000000000002',
@@ -66,7 +68,7 @@ function seed(database: Database.Database): void {
       id, case_code, applicant_id, program_cycle_id, program_rule_version_id, state,
       created_at, updated_at, row_version
     ) VALUES (?, 'CASE-A', ?, ?, ?, 'draft', ?, ?, 7)`,
-  ).run(IDS.caseA, IDS.applicantA, IDS.programCycle, IDS.ruleVersion, STAMP, STAMP);
+  ).run(IDS.caseA, IDS.applicantA, IDS.programCycle, IDS.ruleVersion, STAMP, FRESH_STAMP);
   database.prepare(
     `INSERT INTO jobs (
       id, job_type, payload_json, state, unique_key, attempts, max_attempts, available_at,

@@ -8,6 +8,8 @@ import { createSessionRepository } from '../db/repositories/sessions';
 import { createLineSessionService } from '../domain/line-session-service';
 import { SessionService } from '../domain/session-service';
 import { DocumentVault } from '../services/document-vault';
+import { VisionOcrEngine } from '../adapters/ocr/vision-ocr-engine';
+import { ocrHelperBinaryPath } from '../config/ocr-helper-path';
 import { configurePublicRuntime, type PublicRuntime } from './runtime';
 
 const KEYCHAIN_SERVICE = process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass';
@@ -69,6 +71,12 @@ export async function createPublicRuntime(
       clientIpResolver: requestIp,
     });
     const documentVault = new DocumentVault({ rootPath: join(runtimeConfig.dataRoot, 'vault'), crypto });
+    // Dormant until `npm run build:ocr-helper` produces the binary (macOS
+    // Vision only). Used only by documents/[documentId]/ocr — a request
+    // separate from the upload itself; running recognition inside the upload
+    // request previously stalled real phone-photo uploads for many seconds
+    // with no progress feedback.
+    const ocrEngine = new VisionOcrEngine({ binaryPath: ocrHelperBinaryPath(runtimeConfig.dataRoot) });
 
     return {
       database,
@@ -79,6 +87,7 @@ export async function createPublicRuntime(
       clock: options.clock,
       documentVault,
       lineChannelSecret,
+      ocrEngine,
     };
   } catch (error) {
     if (ownsDatabase) database.close();

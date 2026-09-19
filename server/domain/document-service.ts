@@ -17,6 +17,27 @@ import {
   DocumentRequirementKeySchema,
   type DocumentRequirementKey,
 } from '../../shared/purchase-details-contract';
+import { DEFAULT_OCR_LANGUAGES, type OcrEngine, type OcrResult } from '../adapters/ocr/ocr-engine';
+
+/**
+ * Requirement keys whose documents are electronic receipts or app screenshots
+ * rather than photos of physical items — the OCR engine boundary this recognizes
+ * only turns pixels into text lines; it never gets to decide what those lines mean.
+ */
+const OCR_ELIGIBLE_REQUIREMENTS: ReadonlySet<DocumentRequirementKey> = new Set(['vendor_receipt', 'card_transaction']);
+
+async function tryRecognize(engine: OcrEngine | undefined, bytes: Buffer, mediaType: DocumentMediaType, requirementKey: DocumentRequirementKey): Promise<OcrResult | null> {
+  if (!engine || !OCR_ELIGIBLE_REQUIREMENTS.has(requirementKey)) return null;
+  try {
+    if (!(await engine.available())) return null;
+    return await engine.recognize({ bytes, mediaType, languages: DEFAULT_OCR_LANGUAGES });
+  } catch {
+    // OCR is a best-effort convenience layered on top of the upload; a
+    // recognizer failure must fall back to manual entry, never block or fail
+    // the upload itself.
+    return null;
+  }
+}
 
 export type DocumentKind = 'invoice' | 'eligibility_proof' | 'supplement' | 'other';
 
@@ -25,6 +46,8 @@ const REQUIREMENT_KIND: Record<DocumentRequirementKey, DocumentKind> = {
   identity_back: 'eligibility_proof',
   special_status_proof: 'eligibility_proof',
   purchase_proof: 'invoice',
+  vendor_receipt: 'invoice',
+  card_transaction: 'invoice',
   passbook_cover: 'supplement',
   affidavit: 'other',
   representative_affidavit: 'other',
@@ -44,6 +67,13 @@ function fileCommandError(error: FileValidationError): DocumentCommandError {
 
 export interface DocumentUploadResult {
   document: NonNullable<ReturnType<typeof getDocumentForApplicant>>;
+  /**
+   * Best-effort, ephemeral recognition of this upload's text — never persisted,
+   * never interpreted here. Absent when OCR is unavailable, not applicable to
+   * this requirement/media type, or failed; present only on the direct upload
+   * response, never on an idempotent replay.
+   */
+  ocr?: { lines: OcrResult['lines']; engineId: string; durationMs: number } | null;
 }
 
 export interface DocumentServiceOptions {
@@ -53,6 +83,8 @@ export interface DocumentServiceOptions {
   clock?: () => Date;
   idGenerator?: () => string;
   requestIdGenerator?: () => string;
+  /** Optional: when absent, uploads proceed exactly as before OCR existed. */
+  ocrEngine?: OcrEngine;
 }
 
 export interface DocumentService {
@@ -158,6 +190,8 @@ export function createDocumentService(options: DocumentServiceOptions): Document
           output = { document };
           if (!finalizeApplicantMutation({ database: options.database, crypto: options.crypto, reservation: rawReservation, idempotencyKey: input.idempotencyKey, status: 202, publicBody: JSON.stringify(output), now })) throw new DocumentCommandError('DEPENDENCY_UNAVAILABLE');
         })();
+        const recognized = await tryRecognize(options.ocrEngine, bytes, validated.mediaType as DocumentMediaType, input.requirementKey);
+        if (recognized) output.ocr = { lines: recognized.lines, engineId: recognized.engineId, durationMs: recognized.durationMs };
         return output;
       } catch (error) {
         let cleanupFailed = false;

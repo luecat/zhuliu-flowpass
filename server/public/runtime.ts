@@ -2,6 +2,7 @@ import type { FieldCrypto } from '../crypto/field-crypto';
 import type { FlowPassDatabase } from '../db/connection';
 import type { LineSessionService } from '../domain/line-session-service';
 import type { DocumentVault } from '../services/document-vault';
+import type { OcrEngine } from '../adapters/ocr/ocr-engine';
 import { isMaintenanceMode } from '../services/maintenance-mode';
 
 /**
@@ -20,6 +21,8 @@ export interface PublicRuntime {
   clock?: () => Date;
   /** Vault is injected by trusted startup composition; requests never construct keys. */
   documentVault?: DocumentVault;
+  /** Absent until the local OCR helper binary is built and configured; uploads degrade gracefully without it. */
+  ocrEngine?: OcrEngine;
 }
 
 const RUNTIME_GLOBAL_KEY = Symbol.for('flowpass.public.runtime');

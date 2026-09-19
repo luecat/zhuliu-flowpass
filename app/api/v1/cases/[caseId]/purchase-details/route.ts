@@ -18,6 +18,9 @@ import {
   upsertPurchaseDetailsForApplicant,
 } from '../../../../../../server/db/repositories/purchase-details';
 import { materializePurchaseDetails } from '../../../../../../server/domain/purchase-details-materialize';
+import { evaluateApplicantNameConsistency } from '../../../../../../server/domain/name-consistency-rules';
+import { persistRuleEvaluation } from '../../../../../../server/services/rule-evaluation-service';
+import { createHash } from 'node:crypto';
 import {
   deleteApplicantMutationReservation,
   finalizeApplicantMutation,
@@ -140,8 +143,8 @@ export async function PUT(
   try {
     const result = runtime.database.transaction(() => {
       const current = runtime.database.prepare(
-        'SELECT state, row_version FROM cases WHERE id = ? AND applicant_id = ?',
-      ).get(caseId, csrf.applicantId) as { state: string; row_version: number } | undefined;
+        'SELECT state, row_version, program_rule_version_id FROM cases WHERE id = ? AND applicant_id = ?',
+      ).get(caseId, csrf.applicantId) as { state: string; row_version: number; program_rule_version_id: string } | undefined;
       if (!current) throw new Error('NOT_FOUND');
       if (current.row_version !== expected) throw new Error('ETAG_MISMATCH');
       if (current.state !== 'draft') throw new Error('INVALID_STATE');
@@ -162,6 +165,28 @@ export async function PUT(
         runtime.crypto,
         { caseId, details: stored, now: now.toISOString() },
       );
+      // cardholderName plaintext only exists for the duration of this request
+      // (materializePurchaseDetails already reduced it to an HMAC fingerprint
+      // above), so the name-consistency check must run and be persisted here.
+      const nameConsistency = evaluateApplicantNameConsistency({
+        applicantName: stored.applicantName,
+        cardholderName: parsed.data.cardholderName,
+        payerType: stored.payerType,
+        receiptBuyerName: stored.receiptBuyerName,
+        ruleVersionId: current.program_rule_version_id,
+        inputSnapshotHash: createHash('sha256').update(JSON.stringify({ caseId, applicantName: stored.applicantName, payerType: stored.payerType, receiptBuyerName: stored.receiptBuyerName, savedAt: now.toISOString() })).digest('hex'),
+        evaluatedAt: now.toISOString(),
+      });
+      persistRuleEvaluation(runtime.database, {
+        caseId,
+        documentId: null,
+        ruleVersionId: current.program_rule_version_id,
+        evaluationKind: 'invoice',
+        evaluation: nameConsistency,
+        actorType: 'applicant',
+        actorId: csrf.applicantId,
+        createdAt: now.toISOString(),
+      });
       const changed = runtime.database.prepare(`
         UPDATE cases
         SET requested_amount_twd = ?, updated_at = ?, row_version = row_version + 1

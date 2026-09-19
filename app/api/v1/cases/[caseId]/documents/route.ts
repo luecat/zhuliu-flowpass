@@ -78,6 +78,8 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
   if (!isUploadFile(file) || typeof rawKind !== 'string' || !['invoice', 'eligibility_proof', 'supplement', 'other'].includes(rawKind) || !requirementKey.success) return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
   const { caseId } = await context.params;
   try {
+    // ocrEngine is intentionally not passed here: recognition must never run
+    // inside the upload request (see documents/[documentId]/ocr/route.ts).
     const result = await createDocumentService({ database: runtime.database, crypto: runtime.crypto, vault: runtime.documentVault, clock: runtime.clock, requestIdGenerator: runtime.requestIdGenerator }).upload({ applicantId: csrf.applicantId, caseId, kind: rawKind as DocumentKind, requirementKey: requirementKey.data, originalName: file.name || 'upload', ...(typeof file.stream === 'function' ? { stream: file.stream() } : { bytes: new Uint8Array(await file.arrayBuffer()) }), ifMatch, idempotencyKey, requestId });
     const ownedCase = getCaseForApplicant(runtime.database, { applicantId: csrf.applicantId }, caseId);
     const response = apiSuccess(result, requestId, ownedCase?.rowVersion);

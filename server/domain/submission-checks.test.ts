@@ -35,6 +35,8 @@ const PURCHASE: PurchaseDetails = {
   subscriptionStartDate: '2026-08-01',
   subscriptionEndDate: '2027-07-31',
   applicantName: '測試申請人',
+  receiptBuyerName: '測試申請人',
+  birthDate: null,
 };
 
 function passport() {

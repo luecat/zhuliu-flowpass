@@ -1,4 +1,12 @@
-import { describe, expect, it } from 'vitest'; import { evaluateEligibility } from './eligibility-rules';
+import { describe, expect, it } from 'vitest'; import { evaluateEligibility, evaluateAgeEligibility } from './eligibility-rules';
 const base = { submissionAt: '2026-09-30T00:00:00.000Z', applicationStartAt: '2026-09-01T00:00:00.000Z', applicationEndAt: '2026-09-30T00:00:00.000Z', purchaseAt: null, purchaseStartAt: '2026-10-01T00:00:00.000Z', purchaseEndAt: '2026-12-31T00:00:00.000Z', ruleVersionId: 'rule', inputSnapshotHash: 'h', evaluatedAt: '2026-08-30T00:00:00.000Z' };
 describe('eligibility rules', () => { it('includes both boundaries and separates purchase window', () => { expect(evaluateEligibility(base).submission.outcome).toBe('pass'); expect(evaluateEligibility(base).purchase.outcome).toBe('missing'); expect(evaluateEligibility({ ...base, purchaseAt: '2026-10-01T00:00:00.000Z' }).purchase.outcome).toBe('pass'); expect(evaluateEligibility({ ...base, submissionAt: '2026-09-30T00:00:00.001Z' }).submission.outcome).toBe('fail'); }); });
 it('rejects non-canonical or reversed windows for review instead of Date.parse coercion', () => { expect(evaluateEligibility({ ...base, submissionAt: '2026-02-30T00:00:00.000Z' }).submission.reasonCode).toBe('invalid_date_or_window'); expect(evaluateEligibility({ ...base, applicationStartAt: '2026-10-01T00:00:00.000Z' }).submission.reasonCode).toBe('invalid_date_or_window'); });
+
+describe('age eligibility', () => {
+  const ageBase = { birthDate: '2010-09-19', submissionAt: '2026-09-19T00:00:00.000Z', ruleVersionId: 'rule', inputSnapshotHash: 'h', evaluatedAt: '2026-09-19T00:00:00.000Z' };
+  it('passes when the birthday has occurred and age is within range', () => { expect(evaluateAgeEligibility({ ...ageBase, minAge: 12, maxAge: 18 }).outcome).toBe('pass'); });
+  it('fails one day before the birthday that would bring the applicant into range', () => { expect(evaluateAgeEligibility({ ...ageBase, submissionAt: '2026-09-18T00:00:00.000Z', minAge: 16, maxAge: 18 }).outcome).toBe('fail'); expect(evaluateAgeEligibility({ ...ageBase, submissionAt: '2026-09-19T00:00:00.000Z', minAge: 16, maxAge: 18 }).outcome).toBe('pass'); });
+  it('reports missing when no birth date or no configured range is available', () => { expect(evaluateAgeEligibility({ ...ageBase, birthDate: null, minAge: 12, maxAge: 18 }).outcome).toBe('missing'); expect(evaluateAgeEligibility({ ...ageBase }).outcome).toBe('missing'); });
+  it('fails outside an open-ended range', () => { expect(evaluateAgeEligibility({ ...ageBase, minAge: 20 }).outcome).toBe('fail'); expect(evaluateAgeEligibility({ ...ageBase, maxAge: 15 }).outcome).toBe('fail'); });
+});

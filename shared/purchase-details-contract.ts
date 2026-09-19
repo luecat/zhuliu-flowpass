@@ -36,6 +36,15 @@ const purchaseDetailsBase = {
   subscriptionEndDate: subscriptionEndDateSchema.nullish().transform((value) => value ?? null),
   // Collected in stage-2 purchase form; legacy rows may omit.
   applicantName: z.string().trim().max(100).nullish().transform((value) => value?.trim() ? value.trim() : null),
+  /**
+   * Buyer name as printed on the official vendor receipt. Self-filled by the
+   * applicant until OCR is wired into the upload flow; a missing value means
+   * "not read yet", not "absent", so the name-consistency rule treats it as
+   * needs-review rather than a mismatch.
+   */
+  receiptBuyerName: z.string().trim().max(100).nullish().transform((value) => value?.trim() ? value.trim() : null),
+  /** Applicant date of birth, for the age-eligibility rule. Optional: older rows predate this field. */
+  birthDate: createCalendarDate('出生日期').nullish().transform((value) => value ?? null),
 } as const;
 
 function refinePurchaseShape<T extends {
@@ -139,7 +148,12 @@ export const DOCUMENT_REQUIREMENT_KEYS = [
   'identity_front',
   'identity_back',
   'special_status_proof',
+  // Legacy value from before purchase proof split into two documents (see
+  // vendor_receipt/card_transaction below). Kept so old rows still validate;
+  // never required for new submissions and never backfilled.
   'purchase_proof',
+  'vendor_receipt',
+  'card_transaction',
   'passbook_cover',
   'affidavit',
   'representative_affidavit',

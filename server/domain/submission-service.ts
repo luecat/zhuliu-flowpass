@@ -18,6 +18,9 @@ import {
   subsidyDerivationSteps,
 } from './submission-checks';
 import { evaluateExchangeRateReasonableness } from './exchange-rate-rules';
+import { evaluateAgeEligibility } from './eligibility-rules';
+import { evaluateSoftwareBlacklist } from './software-blacklist-rules';
+import { parseProgramRulesConfig } from './program-rules-config';
 import { persistRuleEvaluation, persistSubsidyCalculation } from '../services/rule-evaluation-service';
 import { createHash } from 'node:crypto';
 import type { RuleEvaluation } from '../../shared/rule-contract';
@@ -78,6 +81,7 @@ interface ProgramRuleRow {
   subsidy_rate_bps: number;
   per_case_cap_twd: number;
   rounding_mode: 'floor' | 'half_up';
+  rules_json: string;
 }
 
 interface InvoiceEvidence {
@@ -98,7 +102,8 @@ function requiredDocumentKeys(details: PurchaseDetails): DocumentRequirementKey[
     'identity_front',
     'identity_back',
     ...(details.specialStatus ? ['special_status_proof' as const] : []),
-    'purchase_proof',
+    'vendor_receipt',
+    'card_transaction',
     'passbook_cover',
     'affidavit',
     ...(details.payerType === 'representative' ? ['representative_affidavit' as const] : []),
@@ -110,7 +115,9 @@ function assertDocumentsReady(
   caseId: string,
   details: PurchaseDetails,
 ): string {
-  let purchaseProofDocumentId: string | null = null;
+  // The vendor receipt (not the card-transaction screenshot) carries invoice
+  // number, date and amount, so it is the document invoice evidence is read from.
+  let vendorReceiptDocumentId: string | null = null;
   for (const requirementKey of requiredDocumentKeys(details)) {
     const document = database.prepare(`
       SELECT id
@@ -120,10 +127,10 @@ function assertDocumentsReady(
       LIMIT 1
     `).get(caseId, requirementKey) as { id: string } | undefined;
     if (!document) throw new SubmissionCommandError('DOCUMENT_NOT_READY');
-    if (requirementKey === 'purchase_proof') purchaseProofDocumentId = document.id;
+    if (requirementKey === 'vendor_receipt') vendorReceiptDocumentId = document.id;
   }
-  if (!purchaseProofDocumentId) throw new SubmissionCommandError('DOCUMENT_NOT_READY');
-  return purchaseProofDocumentId;
+  if (!vendorReceiptDocumentId) throw new SubmissionCommandError('DOCUMENT_NOT_READY');
+  return vendorReceiptDocumentId;
 }
 
 function assertPassportReady(database: FlowPassDatabase, crypto: FieldCrypto, row: PassportVersionRow): FlowPassPassport {
@@ -186,9 +193,13 @@ function persistSubmissionRules(input: {
     },
     invoice: input.invoice ? { documentId: input.invoice.documentId, invoiceNumber: input.invoice.invoiceNumber, invoiceAt: input.invoice.invoiceAt, purchaseAt: input.invoice.purchaseAt, amountMinor: input.invoice.amountMinor, currency: input.invoice.currency } : null,
   })).digest('hex');
+  const rulesConfig = parseProgramRulesConfig(input.rule.rules_json);
   const eligibility = evaluateEligibility({ submissionAt: input.submittedAt, applicationStartAt: input.rule.application_start_at, applicationEndAt: input.rule.application_end_at, purchaseAt: input.invoice?.purchaseAt ?? null, purchaseStartAt: input.rule.purchase_start_at, purchaseEndAt: input.rule.purchase_end_at, ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'submission', evaluation: eligibility.submission, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: eligibility.purchase, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+
+  const ageEligibility = evaluateAgeEligibility({ birthDate: input.purchase.birthDate, submissionAt: input.submittedAt, minAge: rulesConfig.ageEligibility?.minAge, maxAge: rulesConfig.ageEligibility?.maxAge, ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt });
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: null, ruleVersionId: input.ruleVersionId, evaluationKind: 'submission', evaluation: ageEligibility, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
 
   // Without OCR, invoice authenticity stays a human decision. Invoice numbers
   // collected from the applicant still feed a deterministic fingerprint check.
@@ -227,8 +238,18 @@ function persistSubmissionRules(input: {
     ruleVersionId: input.ruleVersionId,
     inputSnapshotHash: snapshot,
     evaluatedAt: input.submittedAt,
+    referenceFxRates: rulesConfig.referenceFxRates,
   });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: exchangeRate, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+
+  const softwareBlacklist = evaluateSoftwareBlacklist({
+    purchase: input.purchase,
+    blacklist: rulesConfig.softwareBlacklist ?? [],
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+  });
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: null, ruleVersionId: input.ruleVersionId, evaluationKind: 'contextual_alert', evaluation: softwareBlacklist, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
 
   const toolConsistency = evaluateToolConsistency({
     purchase: input.purchase,
@@ -291,11 +312,11 @@ export function createSubmissionService(options: SubmissionServiceOptions): Subm
           throw new SubmissionCommandError('DOCUMENT_NOT_READY');
         }
         if (!purchaseDetails) throw new SubmissionCommandError('DOCUMENT_NOT_READY');
-        const purchaseProofDocumentId = assertDocumentsReady(options.database, input.caseId, purchaseDetails.details);
-        const rule = options.database.prepare('SELECT application_start_at, application_end_at, purchase_start_at, purchase_end_at, subsidy_rate_bps, per_case_cap_twd, rounding_mode FROM program_rule_versions WHERE id = ?').get(row.program_rule_version_id) as ProgramRuleRow | undefined;
+        const vendorReceiptDocumentId = assertDocumentsReady(options.database, input.caseId, purchaseDetails.details);
+        const rule = options.database.prepare('SELECT application_start_at, application_end_at, purchase_start_at, purchase_end_at, subsidy_rate_bps, per_case_cap_twd, rounding_mode, rules_json FROM program_rule_versions WHERE id = ?').get(row.program_rule_version_id) as ProgramRuleRow | undefined;
         if (!rule) throw new SubmissionCommandError('INVALID_STATE');
         let invoice: InvoiceEvidence;
-        try { invoice = readInvoiceEvidence(purchaseProofDocumentId, purchaseDetails.details); } catch { throw new SubmissionCommandError('DOCUMENT_NOT_READY'); }
+        try { invoice = readInvoiceEvidence(vendorReceiptDocumentId, purchaseDetails.details); } catch { throw new SubmissionCommandError('DOCUMENT_NOT_READY'); }
         const rules = persistSubmissionRules({
           database: options.database,
           crypto: options.crypto,

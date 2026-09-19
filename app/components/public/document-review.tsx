@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   PurchaseDetailsWriteSchema,
+  PURCHASE_CURRENCIES,
   type DocumentRequirementKey,
   type PurchaseDetails,
 } from '../../../shared/purchase-details-contract';
@@ -16,6 +17,25 @@ import {
 } from '../../../shared/approved-ai-tools';
 import { PublicApiClient, PublicApiError } from '../../lib/public-api';
 import { ChoiceList } from './choice-list';
+import {
+  extractCardTransactionCandidates,
+  extractVendorReceiptCandidates,
+  type OcrLine,
+} from '../../lib/ocr-field-extraction';
+
+interface UploadWithOcr {
+  document: DocumentRecord;
+  ocr?: { lines: OcrLine[]; engineId: string; durationMs: number } | null;
+}
+
+/** Only string-valued draft fields the OCR extractors ever populate (see suggestionsFromOcr). */
+type SuggestibleField = 'invoiceNumber' | 'purchaseDate' | 'originalCurrency' | 'originalExpense' | 'receiptBuyerName' | 'convertedTwd';
+
+interface FieldSuggestion {
+  field: SuggestibleField;
+  label: string;
+  value: string;
+}
 
 type DocumentKind = 'invoice' | 'eligibility_proof' | 'supplement' | 'other';
 
@@ -52,6 +72,8 @@ interface PurchaseDetailsDraft {
   subscriptionStartDate: string;
   subscriptionEndDate: string;
   applicantName: string;
+  receiptBuyerName: string;
+  birthDate: string;
 }
 
 type PublicPurchaseDetails = Omit<PurchaseDetails, 'paymentSourceFingerprint'> & {
@@ -85,6 +107,8 @@ const FIELD_LABELS: Record<string, string> = {
   subscriptionStartDate: '訂閱開始日',
   subscriptionEndDate: '訂閱結束日',
   applicantName: '申請人姓名',
+  receiptBuyerName: '收據買受人姓名',
+  birthDate: '出生日期',
 };
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -105,6 +129,8 @@ const EMPTY_DETAILS: PurchaseDetailsDraft = {
   subscriptionStartDate: '',
   subscriptionEndDate: '',
   applicantName: '',
+  receiptBuyerName: '',
+  birthDate: '',
 };
 
 const SOFTWARE_OPTIONS = approvedAiToolChoiceOptions();
@@ -129,6 +155,8 @@ const REQUIREMENTS: Record<DocumentRequirementKey, RequirementSpec> = {
   identity_back: { key: 'identity_back', kind: 'eligibility_proof', label: '身分證反面', hint: '照片需清晰完整，避免反光。', required: true },
   special_status_proof: { key: 'special_status_proof', kind: 'eligibility_proof', label: '資格證明', hint: '請上傳可辨識身分之有效證明。', required: true },
   purchase_proof: { key: 'purchase_proof', kind: 'invoice', label: '購買憑證或發票', hint: '需包含購買人、軟體名稱、日期、期間、金額與付款方式。', required: true },
+  vendor_receipt: { key: 'vendor_receipt', kind: 'invoice', label: '官方收據', hint: '國外電子收據或訂閱確認信截圖，需包含品項、原幣金額、日期與買受人姓名。', required: true },
+  card_transaction: { key: 'card_transaction', kind: 'invoice', label: '刷卡單筆明細', hint: '銀行 App 中該筆交易的明細截圖，需包含實付台幣金額、持卡人與交易日。請只截取這一筆交易，其他消費請遮蔽。', required: true },
   passbook_cover: { key: 'passbook_cover', kind: 'supplement', label: '存摺封面影本', hint: '需包含完整戶名與帳號。', required: true },
   affidavit: { key: 'affidavit', kind: 'other', label: '切結書', hint: '申請人親筆簽名後拍照或掃描上傳（可於官網或 LINE 選單下載範本）。', required: true },
   representative_affidavit: { key: 'representative_affidavit', kind: 'other', label: '代付切結書', hint: '由父母、配偶或法定代理人代付時，需雙方簽名後拍照或掃描上傳。', required: true },
@@ -159,6 +187,8 @@ function draftFromDetails(details: PublicPurchaseDetails): PurchaseDetailsDraft 
     subscriptionStartDate: details.subscriptionStartDate ?? '',
     subscriptionEndDate: details.subscriptionEndDate ?? '',
     applicantName: details.applicantName ?? '',
+    receiptBuyerName: details.receiptBuyerName ?? '',
+    birthDate: details.birthDate ?? '',
   };
 }
 
@@ -187,6 +217,8 @@ function parseDraft(draft: PurchaseDetailsDraft) {
     subscriptionStartDate: draft.subscriptionStartDate.trim() || null,
     subscriptionEndDate: draft.subscriptionEndDate.trim() || null,
     applicantName: draft.applicantName.trim() || null,
+    receiptBuyerName: draft.receiptBuyerName.trim() || null,
+    birthDate: draft.birthDate.trim() || null,
     keepExistingPaymentSource: keepExisting || undefined,
   });
 }
@@ -210,6 +242,8 @@ function publicComparable(details: {
   subscriptionStartDate: string | null;
   subscriptionEndDate: string | null;
   applicantName: string | null;
+  receiptBuyerName: string | null;
+  birthDate: string | null;
 }): string {
   return JSON.stringify({
     billingCycle: details.billingCycle,
@@ -230,6 +264,8 @@ function publicComparable(details: {
     subscriptionStartDate: details.subscriptionStartDate,
     subscriptionEndDate: details.subscriptionEndDate,
     applicantName: details.applicantName,
+    receiptBuyerName: details.receiptBuyerName,
+    birthDate: details.birthDate,
   });
 }
 
@@ -259,6 +295,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [step, setStep] = useState<'purchase' | 'attachments'>('purchase');
   const [pendingFilePreview, setPendingFilePreview] = useState<Partial<Record<DocumentRequirementKey, { name: string; size: number }>>>({});
+  const [ocrSuggestions, setOcrSuggestions] = useState<Partial<Record<DocumentRequirementKey, FieldSuggestion[]>>>({});
 
   const parsedDraft = useMemo(() => parseDraft(draft), [draft]);
   const detailsSaved = Boolean(
@@ -272,7 +309,8 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
     REQUIREMENTS.identity_front,
     REQUIREMENTS.identity_back,
     ...(draft.specialStatus ? [REQUIREMENTS.special_status_proof] : []),
-    REQUIREMENTS.purchase_proof,
+    REQUIREMENTS.vendor_receipt,
+    REQUIREMENTS.card_transaction,
     REQUIREMENTS.passbook_cover,
     REQUIREMENTS.affidavit,
     ...(draft.payerType === 'representative' ? [REQUIREMENTS.representative_affidavit] : []),
@@ -410,11 +448,45 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
     });
   }
 
-  async function uploadDocument(spec: RequirementSpec, file: File, etag: string) {
-    await api.upload(`/api/v1/cases/${encodeURIComponent(caseId!)}/documents`, {
+  async function uploadDocument(spec: RequirementSpec, file: File, etag: string): Promise<UploadWithOcr> {
+    return api.upload<UploadWithOcr>(`/api/v1/cases/${encodeURIComponent(caseId!)}/documents`, {
       file, kind: spec.kind, requirementKey: spec.key, ifMatch: etag,
       onProgress: (percent) => setProgressByRequirement((previous) => ({ ...previous, [spec.key]: percent })),
     });
+  }
+
+  function applySuggestion(suggestion: FieldSuggestion) {
+    // suggestionsFromOcr only ever emits (field, value) pairs it has already
+    // validated against the field's real type (e.g. originalCurrency is
+    // checked against PURCHASE_CURRENCIES there), so this narrow cast is safe.
+    updateDraft(suggestion.field, suggestion.value as never);
+    setOcrSuggestions((previous) => {
+      const next = { ...previous };
+      for (const key of Object.keys(next) as DocumentRequirementKey[]) {
+        next[key] = next[key]?.filter((item) => item.field !== suggestion.field);
+      }
+      return next;
+    });
+  }
+
+  function suggestionsFromOcr(requirementKey: DocumentRequirementKey, lines: OcrLine[]): FieldSuggestion[] {
+    if (requirementKey === 'vendor_receipt') {
+      const candidates = extractVendorReceiptCandidates(lines);
+      const suggestions: FieldSuggestion[] = [];
+      if (candidates.invoiceNumber) suggestions.push({ field: 'invoiceNumber', label: '發票號碼', value: candidates.invoiceNumber });
+      if (candidates.purchaseDate) suggestions.push({ field: 'purchaseDate', label: '購買日期', value: candidates.purchaseDate });
+      if (candidates.originalCurrency && (PURCHASE_CURRENCIES as readonly string[]).includes(candidates.originalCurrency)) {
+        suggestions.push({ field: 'originalCurrency', label: '原始費用幣別', value: candidates.originalCurrency });
+      }
+      if (candidates.originalExpense) suggestions.push({ field: 'originalExpense', label: '原始費用', value: candidates.originalExpense });
+      if (candidates.receiptBuyerName) suggestions.push({ field: 'receiptBuyerName', label: '官方收據上的買受人姓名', value: candidates.receiptBuyerName });
+      return suggestions;
+    }
+    if (requirementKey === 'card_transaction') {
+      const candidates = extractCardTransactionCandidates(lines);
+      return candidates.convertedTwd ? [{ field: 'convertedTwd', label: '換算新臺幣', value: String(candidates.convertedTwd) }] : [];
+    }
+    return [];
   }
 
   async function upload(spec: RequirementSpec, file: File | null) {
@@ -428,17 +500,20 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
     setMessage('');
     try {
       let etag = await ensureCaseEtag();
+      let uploaded: UploadWithOcr;
       try {
-        await uploadDocument(spec, file, etag);
+        uploaded = await uploadDocument(spec, file, etag);
       } catch (error) {
         if (error instanceof PublicApiError && error.code === 'ETAG_MISMATCH') {
           const refreshed = await api.readWithMeta<{ rowVersion: number }>(`/api/v1/cases/${encodeURIComponent(caseId)}`);
           etag = refreshed.etag ?? `"${refreshed.data.rowVersion}"`;
           setCaseEtag(etag);
-          await uploadDocument(spec, file, etag);
+          uploaded = await uploadDocument(spec, file, etag);
         } else { throw error; }
       }
       await loadDocuments();
+      const suggestions = uploaded.ocr?.lines ? suggestionsFromOcr(spec.key, uploaded.ocr.lines) : [];
+      setOcrSuggestions((previous) => ({ ...previous, [spec.key]: suggestions }));
       setMessage(`${spec.label}已上傳（${file.name} · ${formatBytes(file.size)}）。`);
     } catch (error) {
       const code = error instanceof PublicApiError ? error.code : null;
@@ -501,6 +576,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
         <div className="attachment-section-heading"><div><span>1</span><h3 id="purchase-details-title">填寫購買資料</h3></div><strong className={detailsSaved ? 'attachment-status is-complete' : 'attachment-status'}>{detailsSaved ? '已儲存' : '尚未完成'}</strong></div>
         <form className="purchase-details-form" onSubmit={(event) => { event.preventDefault(); void saveDetails(); }} noValidate>
           <label>申請人姓名 <span aria-hidden="true">＊</span><input data-field="applicantName" value={draft.applicantName} maxLength={100} autoComplete="name" aria-invalid={Boolean(fieldErrors.applicantName)} placeholder="例如：陳大文" onChange={(event) => updateDraft('applicantName', event.target.value)} /><small>請填寫與身分證件一致的姓名。</small>{fieldErrors.applicantName && <p className="field-error" role="alert">{fieldErrors.applicantName}</p>}</label>
+          <label>出生日期<input data-field="birthDate" type="date" value={draft.birthDate} aria-invalid={Boolean(fieldErrors.birthDate)} onChange={(event) => updateDraft('birthDate', event.target.value)} /><small>用於確認本方案的年齡資格。</small>{fieldErrors.birthDate && <p className="field-error" role="alert">{fieldErrors.birthDate}</p>}</label>
           <fieldset><legend>繳費制度 <span aria-hidden="true">＊</span></legend><div className="choice-row"><label><input type="radio" name="billing-cycle" checked={draft.billingCycle === 'annual'} onChange={() => updateDraft('billingCycle', 'annual')} />年費制</label><label><input type="radio" name="billing-cycle" checked={draft.billingCycle === 'monthly'} onChange={() => updateDraft('billingCycle', 'monthly')} />月費制</label></div>{draft.billingCycle === 'monthly' && <label className="inline-number-field">共 <input aria-label="月費期數" data-field="billingPeriods" type="number" min="1" max="120" inputMode="numeric" value={draft.billingPeriods} aria-invalid={Boolean(fieldErrors.billingPeriods)} onChange={(event) => updateDraft('billingPeriods', event.target.value)} /> 期</label>}{fieldErrors.billingPeriods && <p className="field-error" role="alert">{fieldErrors.billingPeriods}</p>}</fieldset>
           <fieldset><legend>軟體功能 <span aria-hidden="true">＊</span></legend><div className="choice-grid">{([['general', '通用型'], ['imaging', '影像類'], ['office', '辦公類'], ['learning', '學習類'], ['other', '其他']] as const).map(([value, label]) => <label key={value}><input type="radio" name="software-function" checked={draft.softwareFunction === value} onChange={() => updateDraft('softwareFunction', value)} />{label}</label>)}</div>{draft.softwareFunction === 'other' && <label>其他功能名稱<input data-field="otherFunction" value={draft.otherFunction} maxLength={100} aria-invalid={Boolean(fieldErrors.otherFunction)} onChange={(event) => updateDraft('otherFunction', event.target.value)} /></label>}{fieldErrors.otherFunction && <p className="field-error" role="alert">{fieldErrors.otherFunction}</p>}</fieldset>
           <div className="purchase-field-grid purchase-field-grid--tool">
@@ -547,6 +623,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
           <h4 id="card-privacy-title">信用卡資訊用途與安全說明</h4>
           <p>為核對購買真實性並防範重複請領，系統僅加密比對卡號末四碼與持卡人姓名，絕不留存完整卡號明文或安全碼。</p>
         </aside>
+        <label>官方收據上的買受人姓名 <span aria-hidden="true">＊</span><input data-field="receiptBuyerName" value={draft.receiptBuyerName} maxLength={100} aria-invalid={Boolean(fieldErrors.receiptBuyerName)} placeholder="請照抄收據上顯示的姓名" onChange={(event) => updateDraft('receiptBuyerName', event.target.value)} /><small>請填寫「官方收據」文件上列出的買受人姓名，用於核對是否與申請人或代付人一致。</small>{fieldErrors.receiptBuyerName && <p className="field-error" role="alert">{fieldErrors.receiptBuyerName}</p>}</label>
         <div className="purchase-field-grid"><label>信用卡末四碼 <span aria-hidden="true">＊</span><input data-field="cardLastFour" value={draft.cardLastFour} inputMode="numeric" maxLength={4} autoComplete="off" aria-invalid={Boolean(fieldErrors.cardLastFour)} placeholder={draft.paymentSourceRegistered ? '已登記（可留空）' : '例如 1234'} onChange={(event) => updateDraft('cardLastFour', event.target.value.replace(/\D/g, '').slice(0, 4))} /><small>{draft.paymentSourceRegistered ? '已登記付款卡號資訊，若未變更可留空。' : '僅用於防重複請領檢核。系統不保留明文。'}</small>{fieldErrors.cardLastFour && <p className="field-error" role="alert">{fieldErrors.cardLastFour}</p>}</label><label>持卡人姓名 <span aria-hidden="true">＊</span><input data-field="cardholderName" value={draft.cardholderName} maxLength={100} autoComplete="cc-name" aria-invalid={Boolean(fieldErrors.cardholderName)} placeholder={draft.paymentSourceRegistered ? '已登記（可留空）' : '須與卡片一致'} onChange={(event) => updateDraft('cardholderName', event.target.value)} />{fieldErrors.cardholderName && <p className="field-error" role="alert">{fieldErrors.cardholderName}</p>}</label></div>
         <fieldset><legend>原始費用幣別 <span aria-hidden="true">＊</span></legend><div className="choice-grid currency-choices">{([['TWD', '新臺幣'], ['USD', '美金'], ['JPY', '日圓'], ['EUR', '歐元'], ['AUD', '澳幣'], ['HKD', '港幣'], ['OTHER', '其他']] as const).map(([value, label]) => <label key={value}><input type="radio" name="currency" checked={draft.originalCurrency === value} onChange={() => updateDraft('originalCurrency', value)} />{label}</label>)}</div>{draft.originalCurrency === 'OTHER' && <label>其他幣別<input data-field="otherCurrency" value={draft.otherCurrency} maxLength={24} onChange={(event) => updateDraft('otherCurrency', event.target.value)} /></label>}</fieldset>
         <div className="purchase-field-grid"><label>原始費用 <span aria-hidden="true">＊</span><input data-field="originalExpense" type="text" inputMode="decimal" placeholder="例如 29.99" value={draft.originalExpense} aria-invalid={Boolean(fieldErrors.originalExpense)} onChange={(event) => updateDraft('originalExpense', event.target.value)} />{fieldErrors.originalExpense && <p className="field-error" role="alert">{fieldErrors.originalExpense}</p>}</label>{draft.originalCurrency === 'TWD' ? (
@@ -593,7 +670,24 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
             const document = latestDocument(spec.key); const isBusy = busyRequirements.has(spec.key); const isReady = document?.status === 'ready';
             const preview = pendingFilePreview[spec.key];
             const progress = progressByRequirement[spec.key];
-            return <article className={isReady ? 'attachment-requirement is-complete' : 'attachment-requirement'} key={spec.key}><div className="attachment-requirement-copy"><span className="attachment-check" aria-hidden="true">{isReady ? '✓' : spec.required ? requiredSpecs.indexOf(spec) + 1 : '－'}</span><div><h4>{spec.label}<em>{spec.required ? '必備' : '選填'}</em></h4><p>{spec.hint}</p>{document && <small>{isReady ? `已上傳 · ${formatBytes(document.byteSize)}` : '檔案處理中'}</small>}{preview && isBusy && <small>已選取：{preview.name} · {formatBytes(preview.size)}</small>}{typeof progress === 'number' && isBusy && <progress max={100} value={progress} aria-label={`${spec.label}上傳進度`}>{progress}%</progress>}</div></div><div className="attachment-requirement-actions"><label className="file-picker-button">{isBusy ? `上傳中 ${progress ?? 0}%` : document ? '重新上傳' : '選擇檔案'}<input type="file" accept={ACCEPTED_FILES} disabled={isBusy || submitting} onChange={(event) => { const selected = event.target.files?.[0] ?? null; event.currentTarget.value = ''; void upload(spec, selected); }} /></label>{document && <button type="button" className="text-action" disabled={isBusy || submitting} onClick={() => void remove(document, spec.label)}>移除</button>}</div></article>;
+            const suggestions = ocrSuggestions[spec.key];
+            return <article className={isReady ? 'attachment-requirement is-complete' : 'attachment-requirement'} key={spec.key}>
+              <div className="attachment-requirement-copy"><span className="attachment-check" aria-hidden="true">{isReady ? '✓' : spec.required ? requiredSpecs.indexOf(spec) + 1 : '－'}</span><div><h4>{spec.label}<em>{spec.required ? '必備' : '選填'}</em></h4><p>{spec.hint}</p>{document && <small>{isReady ? `已上傳 · ${formatBytes(document.byteSize)}` : '檔案處理中'}</small>}{preview && isBusy && <small>已選取：{preview.name} · {formatBytes(preview.size)}</small>}{typeof progress === 'number' && isBusy && <progress max={100} value={progress} aria-label={`${spec.label}上傳進度`}>{progress}%</progress>}</div></div>
+              <div className="attachment-requirement-actions"><label className="file-picker-button">{isBusy ? `上傳中 ${progress ?? 0}%` : document ? '重新上傳' : '選擇檔案'}<input type="file" accept={ACCEPTED_FILES} disabled={isBusy || submitting} onChange={(event) => { const selected = event.target.files?.[0] ?? null; event.currentTarget.value = ''; void upload(spec, selected); }} /></label>{document && <button type="button" className="text-action" disabled={isBusy || submitting} onClick={() => void remove(document, spec.label)}>移除</button>}</div>
+              {suggestions && suggestions.length > 0 && (
+                <aside className="ocr-suggestion-panel" aria-label={`${spec.label}辨識結果`}>
+                  <p>系統從{spec.label}偵測到以下資訊，確認無誤後可套用到購買資料：</p>
+                  <ul>
+                    {suggestions.map((suggestion) => (
+                      <li key={suggestion.field}>
+                        <span>{suggestion.label}：{suggestion.value}</span>
+                        <button type="button" className="text-action" onClick={() => applySuggestion(suggestion)}>套用</button>
+                      </li>
+                    ))}
+                  </ul>
+                </aside>
+              )}
+            </article>;
           })}
         </div>
         <button type="button" className="secondary-action" onClick={() => setStep('purchase')}>返回購買資料</button>

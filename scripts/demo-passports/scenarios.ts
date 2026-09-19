@@ -319,6 +319,8 @@ export function buildDemoScenarios(): DemoScenario[] {
         subscriptionStartDate: purchaseDate,
         subscriptionEndDate: endOfSubscription(purchaseDate, periods ?? 12),
         applicantName: name,
+        receiptBuyerName: input.holder ?? name,
+        birthDate: null,
         // 7919 is coprime with 10000, so default last-fours never repeat.
         cardLastFour: input.card ?? pad((n * 7919 + 1234) % 10000, 4),
         cardholderName: input.holder ?? name,

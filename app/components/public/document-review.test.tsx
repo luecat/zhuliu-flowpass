@@ -17,7 +17,7 @@ const details: PurchaseDetails = {
   payerType: 'self_card', originalCurrency: 'TWD', otherCurrency: null,
   originalExpense: '1200', convertedTwd: 1200, specialStatus: false, invoiceNumber: null,
   paymentSourceFingerprint: null, subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31',
-  applicantName: '測試申請人',
+  applicantName: '測試申請人', receiptBuyerName: '測試申請人', birthDate: null,
 };
 
 type PublicDetails = Omit<PurchaseDetails, 'paymentSourceFingerprint'> & { paymentSourceRegistered: boolean };
@@ -73,22 +73,22 @@ describe('DocumentReview', () => {
     render(<DocumentReview suppliedCaseId={CASE_ID} />);
     expect(await screen.findByText('資格證明')).toBeInTheDocument();
     expect(screen.getByText('代付切結書')).toBeInTheDocument();
-    expect(screen.getByText('0 / 7')).toBeInTheDocument();
+    expect(screen.getByText('0 / 8')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '送出申請' })).toBeDisabled();
   });
 
-  it('labels a purchase proof upload with its document requirement', async () => {
+  it('labels a vendor receipt upload with its document requirement', async () => {
     installApi(details);
     const { container } = render(<DocumentReview suppliedCaseId={CASE_ID} />);
     await screen.findByRole('heading', { name: '上傳必備文件' });
     expect(screen.getByText(/不支援 HEIC/)).toBeInTheDocument();
     const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="file"]'));
-    const purchaseProof = inputs[2];
-    fireEvent.change(purchaseProof, { target: { files: [new File(['receipt'], 'receipt.png', { type: 'image/png' })] } });
+    const vendorReceipt = inputs[2];
+    fireEvent.change(vendorReceipt, { target: { files: [new File(['receipt'], 'receipt.png', { type: 'image/png' })] } });
     await waitFor(() => expect(apiMocks.upload).toHaveBeenCalled());
     expect(apiMocks.upload).toHaveBeenCalledWith(
       `/api/v1/cases/${CASE_ID}/documents`,
-      expect.objectContaining({ kind: 'invoice', requirementKey: 'purchase_proof' }),
+      expect.objectContaining({ kind: 'invoice', requirementKey: 'vendor_receipt' }),
     );
   });
 });

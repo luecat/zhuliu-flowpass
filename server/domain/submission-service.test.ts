@@ -37,6 +37,8 @@ const PURCHASE_DETAILS: PurchaseDetails = {
   subscriptionStartDate: '2026-08-01',
   subscriptionEndDate: '2027-07-31',
   applicantName: '測試申請人',
+  receiptBuyerName: '測試申請人',
+  birthDate: null,
 };
 
 function savePurchaseDetails(db: ReturnType<typeof openDatabase>, crypto: FieldCrypto, caseId: string, details: PurchaseDetails = PURCHASE_DETAILS): void {
@@ -44,7 +46,7 @@ function savePurchaseDetails(db: ReturnType<typeof openDatabase>, crypto: FieldC
 }
 
 function insertReadyDocument(db: ReturnType<typeof openDatabase>, caseId: string, id: string, requirementKey: DocumentRequirementKey): void {
-  const kind = requirementKey === 'purchase_proof' ? 'invoice' : requirementKey === 'passbook_cover' ? 'supplement' : requirementKey === 'affidavit' || requirementKey === 'representative_affidavit' ? 'other' : 'eligibility_proof';
+  const kind = requirementKey === 'vendor_receipt' || requirementKey === 'card_transaction' ? 'invoice' : requirementKey === 'passbook_cover' ? 'supplement' : requirementKey === 'affidavit' || requirementKey === 'representative_affidavit' ? 'other' : 'eligibility_proof';
   db.prepare('INSERT INTO documents (id,case_id,kind,requirement_key,storage_id,key_id,content_sha256,media_type,byte_size,original_name_enc,status,uploaded_by_type,uploaded_by_id,created_at,deleted_at,row_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(id, caseId, kind, requirementKey, `storage-${id}`, 'key-v1', `hash-${id}`, 'application/pdf', 10, 'enc', 'ready', 'applicant', IDS.applicant, NOW, null, 1);
 }
 function passport(): FlowPassPassport {
@@ -80,7 +82,8 @@ describe('submission service', () => {
     lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
     const invoiceDocumentId = '0198f050-0000-7000-8000-000000000020';
     savePurchaseDetails(db, crypto, created.case.id);
-    insertReadyDocument(db, created.case.id, invoiceDocumentId, 'purchase_proof');
+    insertReadyDocument(db, created.case.id, invoiceDocumentId, 'vendor_receipt');
+    insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000021', 'card_transaction');
     insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000040', 'identity_front');
     insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000041', 'identity_back');
     insertReadyDocument(db, created.case.id, '0198f050-0000-7000-8000-000000000042', 'passbook_cover');
@@ -95,7 +98,7 @@ describe('submission service', () => {
     expect(result.submittedAt).toBe('2026-08-30T01:02:03.000Z');
     expect((db.prepare('SELECT COUNT(*) AS count FROM case_state_transitions WHERE case_id=? AND to_state=\'submitted\'').get(created.case.id) as { count: number }).count).toBe(1);
     expect((db.prepare('SELECT COUNT(*) AS count FROM notification_jobs WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(1);
-    expect((db.prepare('SELECT COUNT(*) AS count FROM rule_evaluations WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(8);
+    expect((db.prepare('SELECT COUNT(*) AS count FROM rule_evaluations WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(10);
     expect((db.prepare('SELECT outcome FROM rule_evaluations WHERE case_id=? AND evaluation_kind=\'invoice\' ORDER BY created_at DESC, id DESC LIMIT 1').get(created.case.id) as { outcome: string }).outcome).toBe('pass');
     const subsidy = db.prepare(`SELECT result_json FROM rule_evaluations WHERE case_id=? AND evaluation_kind='subsidy' ORDER BY created_at DESC, id DESC LIMIT 1`).get(created.case.id) as { result_json: string };
     expect(JSON.parse(subsidy.result_json).steps.map((step: { label: string }) => step.label)).toEqual([
@@ -136,7 +139,8 @@ describe('submission service', () => {
     const confirmed = lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
     const service = createSubmissionService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'submit-request' });
     savePurchaseDetails(db, crypto, created.case.id);
-    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'purchase_proof');
+    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'vendor_receipt');
+    insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'card_transaction');
     insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'identity_front');
     insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'passbook_cover');
     insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, 'affidavit');

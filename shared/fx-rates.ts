@@ -1,4 +1,4 @@
-/** Demo/reference mid-market rates to TWD. Policy band is ±3%. */
+/** Demo/reference mid-market rates to TWD. An admin can override these per program rule version. */
 export const REFERENCE_FX_RATES_TWD: Record<string, number> = {
   TWD: 1,
   USD: 31.5,
@@ -8,13 +8,21 @@ export const REFERENCE_FX_RATES_TWD: Record<string, number> = {
   HKD: 4.05,
 };
 
-export const FX_TOLERANCE_RATIO = 0.03;
+/**
+ * Declared conversion band. Card fees and rate spread only ever push the
+ * actual TWD charge up, never down, so the band is asymmetric: this ratio
+ * bounds how far BELOW the reference estimate a declared amount may fall
+ * before it looks suspicious. There is no corresponding upper bound here —
+ * see evaluateExchangeRateReasonableness, which is the caller that decides
+ * outcomes from this estimate.
+ */
+export const FX_TOLERANCE_RATIO = 0.05;
 
 export function estimateConvertedTwd(input: {
   originalCurrency: string;
   otherCurrency: string | null;
   originalExpense: string;
-}): { currency: string; referenceRate: number | null; estimatedTwd: number | null } {
+}, referenceRates: Record<string, number> = REFERENCE_FX_RATES_TWD): { currency: string; referenceRate: number | null; estimatedTwd: number | null } {
   const currency =
     input.originalCurrency === 'OTHER'
       ? (input.otherCurrency ?? 'OTHER').trim().toUpperCase()
@@ -26,7 +34,7 @@ export function estimateConvertedTwd(input: {
   if (currency === 'TWD') {
     return { currency, referenceRate: 1, estimatedTwd: Math.round(amount) };
   }
-  const referenceRate = REFERENCE_FX_RATES_TWD[currency] ?? null;
+  const referenceRate = referenceRates[currency] ?? null;
   if (referenceRate == null) return { currency, referenceRate: null, estimatedTwd: null };
   return { currency, referenceRate, estimatedTwd: Math.round(amount * referenceRate) };
 }

@@ -72,6 +72,14 @@ describe('purchase details route', () => {
     expect(database.prepare('SELECT requested_amount_twd,row_version FROM cases WHERE id = ?').get(IDS.case)).toEqual({ requested_amount_twd: 950, row_version: 2 });
   });
 
+  it('evaluates and persists name consistency at save time, while cardholderName plaintext is still available', async () => {
+    const put = (body: unknown) => PUT(new Request(`http://127.0.0.1:38100/api/v1/cases/${IDS.case}/purchase-details`, { method: 'PUT', headers: { origin: 'http://127.0.0.1:38100', cookie: 'flowpass_session=s; flowpass_csrf=c', 'x-flowpass-csrf': 'c', 'idempotency-key': 'name-check', 'if-match': '"1"', 'content-type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ caseId: IDS.case }) });
+    await put({ ...writeDetails, applicantName: '測試申請人', receiptBuyerName: '測試申請人' });
+    const row = database.prepare(`SELECT outcome, result_json FROM rule_evaluations WHERE case_id = ? AND json_extract(result_json, '$.ruleCode') = 'applicant_name_consistency' ORDER BY created_at DESC, id DESC LIMIT 1`).get(IDS.case) as { outcome: string; result_json: string };
+    expect(row.outcome).toBe('pass');
+    expect(JSON.parse(row.result_json).reasonCode).toBe('matches_applicant');
+  });
+
   it('loads a saved form but rejects malformed values and stale writes', async () => {
     const put = (body: unknown, etag: string, key: string) => PUT(new Request(`http://127.0.0.1:38100/api/v1/cases/${IDS.case}/purchase-details`, { method: 'PUT', headers: { origin: 'http://127.0.0.1:38100', cookie: 'flowpass_session=s; flowpass_csrf=c', 'x-flowpass-csrf': 'c', 'idempotency-key': key, 'if-match': etag, 'content-type': 'application/json' }, body: JSON.stringify(body) }), { params: Promise.resolve({ caseId: IDS.case }) });
     expect((await put({ ...writeDetails, convertedTwd: 0 }, '"1"', 'invalid')).status).toBe(400);

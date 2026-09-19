@@ -47,6 +47,8 @@ export function materializePurchaseDetails(input: {
     subscriptionStartDate: write.subscriptionStartDate,
     subscriptionEndDate: write.subscriptionEndDate,
     applicantName: write.applicantName,
+    receiptBuyerName: write.receiptBuyerName,
+    birthDate: write.birthDate,
     paymentSourceFingerprint,
   };
 }

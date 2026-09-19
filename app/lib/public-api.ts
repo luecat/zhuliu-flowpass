@@ -50,7 +50,7 @@ export interface PublicMutationInput {
 export interface PublicUploadInput {
   file: File;
   kind: 'invoice' | 'eligibility_proof' | 'supplement' | 'other';
-  requirementKey: 'identity_front' | 'identity_back' | 'special_status_proof' | 'purchase_proof' | 'passbook_cover' | 'affidavit' | 'representative_affidavit' | 'supplement_other';
+  requirementKey: 'identity_front' | 'identity_back' | 'special_status_proof' | 'purchase_proof' | 'vendor_receipt' | 'card_transaction' | 'passbook_cover' | 'affidavit' | 'representative_affidavit' | 'supplement_other';
   ifMatch: string;
   idempotencyKey?: string;
   onProgress?: (percent: number) => void;

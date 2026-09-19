@@ -77,4 +77,39 @@ describe('DocumentService', () => {
     expect(uploaded.document.requirementKey).toBe('identity_front');
     expect(db.prepare('SELECT COUNT(*) AS count FROM jobs').get()).toEqual({ count: 0 });
   });
+
+  describe('optional OCR on vendor receipt / card transaction uploads', () => {
+    function fakeEngine(overrides: Partial<{ available: () => Promise<boolean>; recognize: () => Promise<{ lines: never[]; engineId: string; durationMs: number }> }> = {}) {
+      return {
+        id: 'fake',
+        available: overrides.available ?? (async () => true),
+        recognize: overrides.recognize ?? (async () => ({ lines: [{ text: 'Claude Pro', confidence: 1, box: { x: 0, y: 0, width: 1, height: 1 } }], engineId: 'fake', durationMs: 1 })),
+      };
+    }
+
+    it('attaches recognized lines only for OCR-eligible requirement keys', async () => {
+      const withEngine = createDocumentService({ database: db, crypto, vault: new DocumentVault({ rootPath: root, crypto }), clock: () => new Date(STAMP), ocrEngine: fakeEngine() });
+      const receipt = await withEngine.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'vendor_receipt', originalName: 'receipt.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'vendor-receipt' });
+      expect(receipt.ocr?.lines).toEqual([expect.objectContaining({ text: 'Claude Pro' })]);
+      const identity = await withEngine.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'eligibility_proof', requirementKey: 'identity_front', originalName: 'id.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'identity-front' });
+      expect(identity.ocr).toBeUndefined();
+    });
+
+    it('degrades to no OCR result, without failing the upload, when the engine is unavailable or throws', async () => {
+      const unavailable = createDocumentService({ database: db, crypto, vault: new DocumentVault({ rootPath: root, crypto }), clock: () => new Date(STAMP), ocrEngine: fakeEngine({ available: async () => false }) });
+      const skipped = await unavailable.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'vendor_receipt', originalName: 'receipt.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'unavailable' });
+      expect(skipped.ocr).toBeFalsy();
+      expect(skipped.document.status).toBe('ready');
+
+      const failing = createDocumentService({ database: db, crypto, vault: new DocumentVault({ rootPath: root, crypto }), clock: () => new Date(STAMP), ocrEngine: fakeEngine({ recognize: async () => { throw new Error('boom'); } }) });
+      const failed = await failing.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'card_transaction', originalName: 'card.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'failing' });
+      expect(failed.ocr).toBeFalsy();
+      expect(failed.document.status).toBe('ready');
+    });
+
+    it('does not run OCR at all when no engine is configured, matching pre-OCR behavior', async () => {
+      const uploaded = await service.upload({ applicantId: ids.applicant, caseId: ids.case, kind: 'invoice', requirementKey: 'vendor_receipt', originalName: 'receipt.png', bytes: png(), ifMatch: '"1"', idempotencyKey: 'no-engine' });
+      expect(uploaded.ocr).toBeUndefined();
+    });
+  });
 });

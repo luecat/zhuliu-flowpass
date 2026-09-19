@@ -727,10 +727,13 @@
 }
 .tian-preview.is-pinch {
   touch-action: none;
-  cursor: grab;
+  cursor: default;
   user-select: none;
   -webkit-user-select: none;
 }
+/* Only a zoomed image can be dragged, so only then does it offer the grab cursor. */
+.tian-preview.is-pinch.is-zoomed { cursor: grab; }
+.tian-preview.is-pinch.is-grabbing { cursor: grabbing; }
 .tian-preview.is-pdf {
   touch-action: auto;
   display: flex;

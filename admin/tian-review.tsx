@@ -225,6 +225,8 @@ function DocPreview({ doc }: { doc: Attachment }) {
     img.style.width = `${dw}px`;
     img.style.height = `${dh}px`;
     img.style.transform = `translate(${x}px, ${y}px)`;
+    // Only a zoomed image has somewhere to be dragged to.
+    stage.classList.toggle('is-zoomed', scale > 1 && (dw > sw || dh > sh));
   };
 
   const resetView = () => {
@@ -366,6 +368,35 @@ function DocPreview({ doc }: { doc: Attachment }) {
       }
     };
 
+    // Touch panning already exists; the same gesture with a mouse needs its own handlers,
+    // and the move/up pair lives on window so a drag that leaves the frame still tracks.
+    const onMouseDown = (event: MouseEvent) => {
+      if (event.button !== 0 || viewRef.current.scale <= 1) return;
+      event.preventDefault();
+      panRef.current = {
+        startX: event.clientX,
+        startY: event.clientY,
+        origX: viewRef.current.x,
+        origY: viewRef.current.y,
+      };
+      stage.classList.add('is-grabbing');
+    };
+
+    const onMouseMove = (event: MouseEvent) => {
+      const pan = panRef.current;
+      if (!pan) return;
+      event.preventDefault();
+      viewRef.current.x = pan.origX + (event.clientX - pan.startX);
+      viewRef.current.y = pan.origY + (event.clientY - pan.startY);
+      layoutImage();
+    };
+
+    const endMousePan = () => {
+      if (!panRef.current) return;
+      panRef.current = null;
+      stage.classList.remove('is-grabbing');
+    };
+
     const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => layoutImage());
     ro?.observe(stage);
 
@@ -374,6 +405,10 @@ function DocPreview({ doc }: { doc: Attachment }) {
     stage.addEventListener('touchend', onTouchEnd);
     stage.addEventListener('touchend', onTouchEndTap);
     stage.addEventListener('touchcancel', onTouchEnd);
+    stage.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', endMousePan);
+    window.addEventListener('blur', endMousePan);
     stage.addEventListener('wheel', onWheel, { passive: false });
     stage.addEventListener('dblclick', onDoubleClick);
     stage.addEventListener('gesturestart', blockBrowserGesture);
@@ -387,6 +422,10 @@ function DocPreview({ doc }: { doc: Attachment }) {
       stage.removeEventListener('touchend', onTouchEnd);
       stage.removeEventListener('touchend', onTouchEndTap);
       stage.removeEventListener('touchcancel', onTouchEnd);
+      stage.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', endMousePan);
+      window.removeEventListener('blur', endMousePan);
       stage.removeEventListener('wheel', onWheel);
       stage.removeEventListener('dblclick', onDoubleClick);
       stage.removeEventListener('gesturestart', blockBrowserGesture);
@@ -405,7 +444,7 @@ function DocPreview({ doc }: { doc: Attachment }) {
     <div
       ref={stageRef}
       className={`tian-preview${isPdf ? ' is-pdf' : ' is-pinch'}`}
-      aria-label={isPdf ? title : `${title}（框內雙指縮放）`}
+      aria-label={isPdf ? title : `${title}（框內雙指或 Ctrl 滾輪縮放，放大後可拖曳）`}
     >
       {isPdf ? (
         <iframe className="tian-frame" src={documentUrl(doc.id)} title={title} />

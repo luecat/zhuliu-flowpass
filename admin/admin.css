@@ -212,3 +212,26 @@
 .review-callout--correction strong { color: #7a5a12; }
 
 .field-hint { margin: 0 0 .45rem; color: #5d6d65; line-height: 1.45; font-size: .9rem; }
+
+.purchase-review { margin: 0 -1.25rem; padding: 1.25rem; border-top: 1px solid #e1e8e3; background: #fff; }
+.purchase-review-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem; margin: .9rem 0 0; }
+.purchase-review-fields dt { margin-bottom: .2rem; color: #6b7972; font-size: .77rem; font-weight: 800; }
+.purchase-review-fields dd { margin: 0; overflow-wrap: anywhere; color: #24362c; }
+.purchase-review-evidence { display: flex; flex-wrap: wrap; gap: .85rem; margin-top: 1rem; }
+.purchase-review-thumb { margin: 0; width: 6.5rem; }
+.purchase-review-thumb-button { display: block; width: 6.5rem; height: 6.5rem; padding: 0; border: 1px solid #d9e3dc; border-radius: .55rem; overflow: hidden; background: #eef3ef; }
+.purchase-review-thumb-button img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.purchase-review-thumb-pdf { display: grid; width: 100%; height: 100%; place-items: center; color: #40574a; font-size: .8rem; font-weight: 800; letter-spacing: .04em; }
+.purchase-review-thumb figcaption { margin-top: .35rem; overflow-wrap: anywhere; color: #6f7c75; font-size: .72rem; line-height: 1.35; }
+
+.purchase-review-lightbox { padding: 0; border: 0; border-radius: .85rem; background: transparent; max-width: min(94vw, 60rem); max-height: 92vh; }
+.purchase-review-lightbox::backdrop { background: #10271ecc; }
+.purchase-review-lightbox-inner { display: grid; gap: .7rem; max-height: 92vh; padding: .9rem; border-radius: .85rem; background: #fff; }
+.purchase-review-lightbox-inner header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.purchase-review-lightbox-inner header span { min-width: 0; overflow-wrap: anywhere; color: #213c30; font-weight: 700; font-size: .9rem; }
+.purchase-review-lightbox-inner img { display: block; max-width: 100%; max-height: 80vh; margin: 0 auto; border-radius: .5rem; object-fit: contain; }
+.purchase-review-lightbox-inner iframe { display: block; width: min(90vw, 56rem); height: 78vh; border: 0; border-radius: .5rem; }
+
+@media (max-width: 430px) {
+  .purchase-review-fields { grid-template-columns: 1fr; }
+}

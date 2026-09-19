@@ -5,8 +5,10 @@ import type { FieldCrypto } from '../../crypto/field-crypto';
 import type { FlowPassDatabase } from '../connection';
 import { decryptDatabaseText, encryptDatabaseText } from './encrypted-fields';
 import {
+  requireAdminScope,
   requireApplicantScope,
   requireSystemScope,
+  type AdminScope,
   type ApplicantScope,
   type SystemScope,
 } from './scopes';
@@ -60,6 +62,19 @@ export function getPurchaseDetailsForApplicant(
     JOIN cases ON cases.id = details.case_id
     WHERE details.case_id = ? AND cases.applicant_id = ? AND cases.deleted_at IS NULL
   `).get(caseId, scope.applicantId) as PurchaseDetailsRow | undefined;
+  return row ? mapRow(crypto, row) : null;
+}
+
+export function getPurchaseDetailsForAdmin(
+  database: FlowPassDatabase,
+  scope: AdminScope,
+  crypto: FieldCrypto,
+  caseId: string,
+): PurchaseDetailsRecord | null {
+  requireAdminScope(scope);
+  const row = database.prepare(
+    'SELECT details.* FROM case_purchase_details details JOIN cases ON cases.id = details.case_id WHERE details.case_id = ? AND cases.deleted_at IS NULL',
+  ).get(caseId) as PurchaseDetailsRow | undefined;
   return row ? mapRow(crypto, row) : null;
 }
 

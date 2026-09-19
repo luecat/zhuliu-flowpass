@@ -9,6 +9,7 @@ import { hashToken } from '../crypto/token-hash';
 import { listAiRunsForAdmin } from '../db/repositories/ai-runs';
 import { decryptDatabaseText } from '../db/repositories/encrypted-fields';
 import { getDocumentForAdmin, listDocumentsForAdmin, type AdminDocumentRecord } from '../db/repositories/documents';
+import { getPurchaseDetailsForAdmin } from '../db/repositories/purchase-details';
 import { listRuleEvaluationsForAdmin } from '../db/repositories/rules';
 import type { DocumentVault } from '../services/document-vault';
 import { localReadiness } from '../services/health-service';
@@ -324,6 +325,18 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
       rowVersion: document.rowVersion,
     }));
     return context.json({ data: { documents } });
+  });
+
+  app.get('/admin/v1/cases/:caseId/purchase-details', (context) => {
+    if (!database) return context.json({ error: { code: 'UNAVAILABLE', message: '服務暫時無法使用。' } }, 503);
+    if (!dependencies.crypto) return context.json({ error: { code: 'UNAVAILABLE', message: '資料解密服務目前無法使用。' } }, 503);
+    const auth = authenticated(database, context);
+    if (!auth) return context.json({ error: { code: 'UNAUTHENTICATED', message: '請重新登入。' } }, 401);
+    const caseId = context.req.param('caseId');
+    const existingCase = database.prepare('SELECT id FROM cases WHERE id = ? AND deleted_at IS NULL').get(caseId);
+    if (!existingCase) return context.json({ error: { code: 'NOT_FOUND', message: '找不到這筆案件。' } }, 404);
+    const record = getPurchaseDetailsForAdmin(database, { adminId: auth.adminId }, dependencies.crypto, caseId);
+    return context.json({ data: { purchaseDetails: record?.details ?? null } });
   });
 
   app.get('/admin/v1/documents/:documentId/content', (context) => {

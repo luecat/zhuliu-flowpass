@@ -86,6 +86,36 @@ describe('admin attachments', () => {
       NOW,
       3,
     );
+    const purchaseDetails = {
+      billingCycle: 'annual',
+      billingPeriods: null,
+      softwareFunction: 'general',
+      otherFunction: null,
+      softwareName: 'Adobe Photoshop',
+      companyName: 'Adobe',
+      purchaseDate: '2026-08-01',
+      payerType: 'self_card',
+      originalCurrency: 'TWD',
+      otherCurrency: null,
+      originalExpense: '3200',
+      convertedTwd: 3200,
+      specialStatus: false,
+      invoiceNumber: 'AB12345678',
+      subscriptionStartDate: null,
+      subscriptionEndDate: null,
+      applicantName: '王小明',
+      receiptBuyerName: null,
+      birthDate: null,
+      paymentSourceFingerprint: null,
+    };
+    database.prepare('INSERT INTO case_purchase_details (case_id, details_enc, content_sha256, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, ?, ?)').run(
+      IDS.case,
+      encryptDatabaseText(crypto, 'case_purchase_details', 'details_enc', IDS.case, JSON.stringify(purchaseDetails)),
+      createHash('sha256').update(JSON.stringify(purchaseDetails)).digest('hex'),
+      NOW,
+      NOW,
+      1,
+    );
     sessionToken = createAdminSession(database, IDS.admin).token;
   });
 
@@ -125,6 +155,42 @@ describe('admin attachments', () => {
       },
     });
     expect(JSON.stringify(payload)).not.toMatch(/storageId|keyId|contentSha256|originalNameEnc/);
+  });
+
+  it('returns decrypted purchase details for admin review', async () => {
+    const response = await request(`/admin/v1/cases/${IDS.case}/purchase-details`);
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.data.purchaseDetails).toMatchObject({
+      softwareName: 'Adobe Photoshop',
+      companyName: 'Adobe',
+      purchaseDate: '2026-08-01',
+      invoiceNumber: 'AB12345678',
+      convertedTwd: 3200,
+    });
+  });
+
+  it('reports no purchase details for a case that has not filled them in yet', async () => {
+    database.prepare('INSERT INTO cases (id, case_code, applicant_id, program_cycle_id, program_rule_version_id, state, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      '0198f0a0-0000-7000-8000-000000000009', 'FP-20260901-0000AAAA', IDS.applicant, IDS.cycle, IDS.rule, 'draft', NOW, NOW, 1,
+    );
+
+    const response = await request('/admin/v1/cases/0198f0a0-0000-7000-8000-000000000009/purchase-details');
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ data: { purchaseDetails: null } });
+  });
+
+  it('does not expose purchase details for an unknown case or without an admin session', async () => {
+    const notFound = await request('/admin/v1/cases/does-not-exist/purchase-details');
+    expect(notFound.status).toBe(404);
+
+    const unauthenticated = await createAdminApp(database, { crypto, documentVault: vault } as Parameters<typeof createAdminApp>[1]).request(
+      `http://127.0.0.1:38101/admin/v1/cases/${IDS.case}/purchase-details`,
+      { headers: { host: '127.0.0.1:38101' } },
+    );
+    expect(unauthenticated.status).toBe(401);
   });
 
   it('streams a ready attachment inline to an authenticated admin', async () => {

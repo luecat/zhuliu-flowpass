@@ -16,7 +16,7 @@ export const DEFAULT_GEMINI_QUOTA_MODELS: readonly GeminiQuotaModel[] = [
 ];
 
 /** Default Keychain accounts for complementary Gemini API keys. */
-export const DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS = ['gemini-api-key', 'gemini-api-key-2'] as const;
+export const DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS = ['gemini-api-key', 'gemini-api-key-2', 'gemini-api-key-3'] as const;
 
 const SAFETY_MARGIN = 1;
 
@@ -44,7 +44,7 @@ function estimateRequestTokens(input: LmStudioInput): number {
 
 /**
  * Resolves Keychain account names for Gemini keys. Override with a comma list
- * via `FLOWPASS_GEMINI_KEYCHAIN_ACCOUNTS`, otherwise primary + secondary envs.
+ * via `FLOWPASS_GEMINI_KEYCHAIN_ACCOUNTS`, otherwise k1/k2/k3 env defaults.
  */
 export function geminiKeychainAccounts(): string[] {
   const listed = process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNTS
@@ -52,9 +52,12 @@ export function geminiKeychainAccounts(): string[] {
     .map((value) => value.trim())
     .filter(Boolean);
   if (listed && listed.length > 0) return [...new Set(listed)];
-  const primary = process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT?.trim() || DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS[0];
-  const secondary = process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT_2?.trim() || DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS[1];
-  return [...new Set([primary, secondary])];
+  const accounts = [
+    process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT?.trim() || DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS[0],
+    process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT_2?.trim() || DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS[1],
+    process.env.FLOWPASS_GEMINI_KEYCHAIN_ACCOUNT_3?.trim() || DEFAULT_GEMINI_KEYCHAIN_ACCOUNTS[2],
+  ];
+  return [...new Set(accounts)];
 }
 
 /** Quota / client map id: `k1:gemini-3.6-flash`. */

@@ -319,7 +319,7 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
       {message && <p className="pending-note" role="status">{message}</p>}
       <section className="application-step-complete" aria-label="申請內容已完成">
         <span aria-hidden="true">✓</span>
-        <div><p className="eyebrow">第 1 部分</p><h2>申請內容已完成</h2><p>接著請填寫購買資料並上傳必備附件。</p></div>
+        <div><p className="eyebrow">第 1 部分</p><h2>申請內容已完成</h2><p>接著請上傳官方收據與刷卡明細，系統會先辨識購買資料；缺漏欄位再手填，然後填寫付款資訊並上傳其餘附件。</p></div>
       </section>
       <DocumentReview suppliedCaseId={caseId} onSubmit={() => void submitApplication()} submitting={busy} prefilledTool={prefilledTool} />
     </section>

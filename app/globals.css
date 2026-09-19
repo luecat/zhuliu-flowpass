@@ -3701,6 +3701,20 @@ textarea::placeholder {
   color: #176546;
   font-weight: 700;
 }
+.attachment-step-tabs button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ocr-fill-status {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #b9ddc8;
+  border-radius: 12px;
+  background: #f5fbf7;
+}
+.ocr-fill-status p { margin: 0; font-size: 14px; font-weight: 700; color: #176546; }
+.ocr-fill-status ul { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; color: #355246; font-size: 13px; }
 .choice-list-menu li.is-active > button {
   outline: 2px solid rgba(38, 118, 83, 0.35);
   outline-offset: -2px;

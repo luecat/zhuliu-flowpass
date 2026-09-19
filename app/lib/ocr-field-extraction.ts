@@ -1,3 +1,4 @@
+import { APPROVED_AI_TOOLS, type ApprovedAiTool } from '../../shared/approved-ai-tools';
 import type { OcrLineContract } from '../../shared/ocr-contract';
 
 export type OcrLine = OcrLineContract;
@@ -94,22 +95,67 @@ export function extractReceiptBuyerName(lines: readonly OcrLine[]): string | nul
   return null;
 }
 
+/**
+ * Conservative billing-cycle read. Returns null when both annual and monthly
+ * cues appear, or when the receipt never names a cadence.
+ */
+export function extractBillingCycle(lines: readonly OcrLine[]): 'annual' | 'monthly' | null {
+  const blob = texts(lines).join(' ');
+  const annual = /年費|年繳|annual(?:ly)?|yearly(?:\s+plan)?|billed yearly/i.test(blob);
+  const monthly = /月費|月繳|monthly|per month|billed monthly/i.test(blob);
+  if (annual === monthly) return null;
+  return annual ? 'annual' : 'monthly';
+}
+
+function normalizeMatch(value: string): string {
+  return value.normalize('NFKC').trim().toLocaleLowerCase();
+}
+
+/**
+ * Match receipt text against the approved-tool list. Short labels (Pi, v0)
+ * only count as an exact line; longer labels may appear inside a line.
+ * Multiple disjoint hits return null rather than guessing.
+ */
+export function extractApprovedAiTool(lines: readonly OcrLine[]): ApprovedAiTool | null {
+  const lineTexts = texts(lines).map(normalizeMatch);
+  const blob = lineTexts.join('\n');
+  const matches = APPROVED_AI_TOOLS.filter((tool) => {
+    const label = normalizeMatch(tool.label);
+    if (!label) return false;
+    if (label.length < 4) return lineTexts.includes(label);
+    return blob.includes(label);
+  });
+  if (matches.length === 0) return null;
+  const ranked = [...matches].sort((left, right) => right.label.length - left.label.length);
+  const best = ranked[0];
+  const bestLabel = normalizeMatch(best.label);
+  const conflicting = ranked.slice(1).filter((tool) => !bestLabel.includes(normalizeMatch(tool.label)));
+  return conflicting.length > 0 ? null : best;
+}
+
 export interface VendorReceiptCandidates {
   invoiceNumber: string | null;
   purchaseDate: string | null;
   originalCurrency: string | null;
   originalExpense: string | null;
   receiptBuyerName: string | null;
+  billingCycle: 'annual' | 'monthly' | null;
+  softwareName: string | null;
+  companyName: string | null;
 }
 
 export function extractVendorReceiptCandidates(lines: readonly OcrLine[]): VendorReceiptCandidates {
   const amount = extractOriginalAmount(lines);
+  const tool = extractApprovedAiTool(lines);
   return {
     invoiceNumber: extractInvoiceNumber(lines),
     purchaseDate: extractDate(lines),
     originalCurrency: amount?.currency ?? null,
     originalExpense: amount?.amount ?? null,
     receiptBuyerName: extractReceiptBuyerName(lines),
+    billingCycle: extractBillingCycle(lines),
+    softwareName: tool?.label ?? null,
+    companyName: tool?.company ?? null,
   };
 }
 

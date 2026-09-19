@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  extractApprovedAiTool,
+  extractBillingCycle,
   extractCardTransactionCandidates,
   extractDate,
   extractInvoiceNumber,
@@ -86,6 +88,33 @@ describe('extractVendorReceiptCandidates', () => {
       originalCurrency: 'USD',
       originalExpense: '20.00',
       receiptBuyerName: 'CHEN PEI-I',
+      billingCycle: null,
+      softwareName: null,
+      companyName: null,
     });
+  });
+});
+
+describe('extractBillingCycle', () => {
+  it('reads an annual plan', () => {
+    expect(extractBillingCycle([line('ChatGPT Plus annual plan')])).toBe('annual');
+  });
+  it('reads a monthly 月費 cue', () => {
+    expect(extractBillingCycle([line('月費制 NT$20.00')])).toBe('monthly');
+  });
+  it('returns null when annual and monthly cues both appear', () => {
+    expect(extractBillingCycle([line('annual or monthly')])).toBeNull();
+  });
+});
+
+describe('extractApprovedAiTool', () => {
+  it('matches a unique approved tool label', () => {
+    expect(extractApprovedAiTool([line('ChatGPT Plus')])).toMatchObject({ id: 'chatgpt', company: 'OpenAI' });
+  });
+  it('prefers the longer label when one contains the other', () => {
+    expect(extractApprovedAiTool([line('Claude Code usage')])).toMatchObject({ id: 'claude-code' });
+  });
+  it('does not guess from a short label hidden inside other words', () => {
+    expect(extractApprovedAiTool([line('Opinion poll')])).toBeNull();
   });
 });

@@ -120,10 +120,25 @@ export const PurchaseDetailsWriteSchema = z.object({
   cardholderName: z.string().trim().min(1).max(100).nullable(),
   /** When true, keep the previously stored payment fingerprint without re-entering card digits. */
   keepExistingPaymentSource: z.boolean().optional(),
+  /**
+   * OCR-page save: persist purchase fields before the applicant types card
+   * last-four / cardholder name. Submission still requires a later full save.
+   */
+  deferPaymentSource: z.boolean().optional(),
 }).strict().superRefine((details, context) => {
   refinePurchaseShape(details, context, { requireSubscriptionDates: true, requireApplicantName: true });
   const hasCard = Boolean(details.cardLastFour);
   const hasName = Boolean(details.cardholderName);
+  if (details.deferPaymentSource) {
+    if (hasCard !== hasName) {
+      context.addIssue({
+        code: 'custom',
+        path: hasCard ? ['cardholderName'] : ['cardLastFour'],
+        message: '信用卡末四碼與持卡人姓名需一併填寫',
+      });
+    }
+    return;
+  }
   if (details.keepExistingPaymentSource) {
     if (hasCard !== hasName) {
       context.addIssue({

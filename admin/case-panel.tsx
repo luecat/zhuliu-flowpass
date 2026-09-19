@@ -5,6 +5,7 @@ import { date, label, money } from './format';
 import { Evaluations } from './evaluations';
 import { Attachments } from './attachments';
 import { PurchaseReview } from './purchase-review';
+import { TianReview } from './tian-review';
 
 export function Panel({ item, busy, error, close, clearError, update }: { item: Case; busy: boolean; error: string; close: () => void; clearError: () => void; update: (review: Review, decision: ReviewDecision) => Promise<void> }) {
   const availableReviews = REVIEWS.filter((value) => value.fromStates.includes(item.state));
@@ -15,6 +16,7 @@ export function Panel({ item, busy, error, close, clearError, update }: { item: 
   const [instructions, setInstructions] = useState('');
   const [reconfirm, setReconfirm] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [tianOpen, setTianOpen] = useState(false);
   const confirmationDialog = useRef<HTMLDialogElement>(null);
   const confirmationTrigger = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLElement>(null);
@@ -30,13 +32,13 @@ export function Panel({ item, busy, error, close, clearError, update }: { item: 
   }, []);
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape' || confirming) return;
+      if (event.key !== 'Escape' || confirming || tianOpen) return;
       event.preventDefault();
       close();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [close, confirming]);
+  }, [close, confirming, tianOpen]);
   useEffect(() => {
     if (!confirming) return;
     const dialog = confirmationDialog.current;
@@ -96,9 +98,13 @@ export function Panel({ item, busy, error, close, clearError, update }: { item: 
     if (review.confirm) setConfirming(true);
     else void update(review, decision);
   };
+  if (tianOpen) {
+    return <TianReview key={`tian-${item.id}`} item={item} busy={busy} close={() => setTianOpen(false)} update={update} />;
+  }
   return <aside ref={panelRef} className="panel" role="dialog" aria-modal="true" aria-labelledby="case-title">
     <header><div><p className="eyebrow">案件詳情</p><h2 id="case-title">{item.caseCode}</h2></div><button ref={closeButtonRef} className="close" onClick={close} aria-label="關閉案件詳情">×</button></header>
     <dl><div><dt>狀態</dt><dd><span className={`status state-${item.state}`}>{label(item.state)}</span></dd></div><div><dt>申請人</dt><dd>{item.applicantName ?? '尚未提供'}</dd></div><div><dt>方案</dt><dd>{item.programName ?? '尚未提供'}</dd></div><div><dt>送出時間</dt><dd>{date(item.submittedAt)}</dd></div><div><dt>申請金額</dt><dd>{money(item.requestedAmountTwd)}</dd></div><div><dt>系統計算</dt><dd>{money(item.calculatedAmountTwd)}</dd></div><div><dt>核准金額</dt><dd>{money(item.approvedAmountTwd)}</dd></div><div><dt>最後更新</dt><dd>{date(item.updatedAt)}</dd></div></dl>
+    <button type="button" className="secondary tian-open" onClick={() => setTianOpen(true)}>開啟田字格核對</button>
     <PurchaseReview key={`purchase-${item.id}`} caseId={item.id} />
     <Evaluations key={`eval-${item.id}`} caseId={item.id} />
     <Attachments key={item.id} caseId={item.id} />

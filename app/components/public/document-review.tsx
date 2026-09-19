@@ -29,7 +29,7 @@ interface UploadWithOcr {
   ocr?: { lines: OcrLine[]; engineId: string; durationMs: number } | null;
 }
 
-type OcrFillableField = 'invoiceNumber' | 'purchaseDate' | 'originalCurrency' | 'originalExpense' | 'receiptBuyerName' | 'convertedTwd' | 'billingCycle' | 'softwareName' | 'companyName';
+type OcrFillableField = 'invoiceNumber' | 'purchaseDate' | 'originalCurrency' | 'originalExpense' | 'receiptBuyerName' | 'convertedTwd' | 'billingCycle' | 'softwareName' | 'companyName' | 'subscriptionStartDate' | 'subscriptionEndDate';
 
 interface FieldSuggestion {
   field: OcrFillableField;
@@ -92,6 +92,8 @@ interface PurchaseDetailsDraft {
   applicantName: string;
   receiptBuyerName: string;
   birthDate: string;
+  nationalId: string;
+  householdAddress: string;
 }
 
 type PublicPurchaseDetails = Omit<PurchaseDetails, 'paymentSourceFingerprint'> & {
@@ -120,7 +122,7 @@ const FIELD_LABELS: Record<string, string> = {
   otherCurrency: '其他幣別',
   originalCurrency: '原始費用幣別',
   originalExpense: '原始費用',
-  convertedTwd: '換算新臺幣',
+  convertedTwd: '銀行付款實付台幣',
   cardLastFour: '信用卡末四碼',
   cardholderName: '持卡人姓名',
   invoiceNumber: '發票號碼',
@@ -129,6 +131,8 @@ const FIELD_LABELS: Record<string, string> = {
   applicantName: '申請人姓名',
   receiptBuyerName: '收據買受人姓名',
   birthDate: '出生日期',
+  nationalId: '身分證字號',
+  householdAddress: '戶籍地址',
 };
 
 const SOFTWARE_FUNCTION_LABELS: Record<Exclude<PurchaseDetailsDraft['softwareFunction'], ''>, string> = {
@@ -168,6 +172,8 @@ const EMPTY_DETAILS: PurchaseDetailsDraft = {
   applicantName: '',
   receiptBuyerName: '',
   birthDate: '',
+  nationalId: '',
+  householdAddress: '',
 };
 
 const SOFTWARE_OPTIONS = approvedAiToolChoiceOptions();
@@ -228,14 +234,14 @@ function draftFromDetails(details: PublicPurchaseDetails): PurchaseDetailsDraft 
     applicantName: details.applicantName ?? '',
     receiptBuyerName: details.receiptBuyerName ?? '',
     birthDate: details.birthDate ?? '',
+    nationalId: details.nationalId ?? '',
+    householdAddress: details.householdAddress ?? '',
   };
 }
 
 function parseDraft(draft: PurchaseDetailsDraft, options: { deferPaymentSource?: boolean } = {}) {
   const keepExisting = draft.paymentSourceRegistered && !draft.cardLastFour && !draft.cardholderName;
-  const convertedTwd = draft.originalCurrency === 'TWD'
-    ? Math.round(Number(draft.originalExpense))
-    : Number(draft.convertedTwd);
+  const convertedTwd = Number(draft.convertedTwd);
   return PurchaseDetailsWriteSchema.safeParse({
     billingCycle: draft.billingCycle,
     billingPeriods: draft.billingCycle === 'annual' ? null : Number(draft.billingPeriods),
@@ -258,6 +264,8 @@ function parseDraft(draft: PurchaseDetailsDraft, options: { deferPaymentSource?:
     applicantName: draft.applicantName.trim() || null,
     receiptBuyerName: draft.receiptBuyerName.trim() || null,
     birthDate: draft.birthDate.trim() || null,
+    nationalId: draft.nationalId.trim() || null,
+    householdAddress: draft.householdAddress.trim() || null,
     keepExistingPaymentSource: options.deferPaymentSource ? undefined : (keepExisting || undefined),
     deferPaymentSource: options.deferPaymentSource || undefined,
   });
@@ -283,6 +291,8 @@ function publicComparable(details: {
   applicantName: string | null;
   receiptBuyerName: string | null;
   birthDate: string | null;
+  nationalId: string | null;
+  householdAddress: string | null;
 }): string {
   return JSON.stringify({
     billingCycle: details.billingCycle,
@@ -304,6 +314,8 @@ function publicComparable(details: {
     applicantName: details.applicantName,
     receiptBuyerName: details.receiptBuyerName,
     birthDate: details.birthDate,
+    nationalId: details.nationalId,
+    householdAddress: details.householdAddress,
   });
 }
 
@@ -326,10 +338,45 @@ function page1MissingFields(draft: PurchaseDetailsDraft): Page1GapField[] {
   if (!draft.originalCurrency) missing.push('originalCurrency');
   if (draft.originalCurrency === 'OTHER' && !draft.otherCurrency.trim()) missing.push('otherCurrency');
   if (!draft.originalExpense.trim()) missing.push('originalExpense');
-  if (draft.originalCurrency && draft.originalCurrency !== 'TWD' && !draft.convertedTwd.trim()) missing.push('convertedTwd');
+  if (!draft.convertedTwd.trim()) missing.push('convertedTwd');
   if (!draft.subscriptionStartDate) missing.push('subscriptionStartDate');
   if (!draft.subscriptionEndDate) missing.push('subscriptionEndDate');
   return missing;
+}
+
+function amountsDisagree(draft: PurchaseDetailsDraft): boolean {
+  const estimate = estimateConvertedTwd({
+    originalCurrency: draft.originalCurrency || 'OTHER',
+    otherCurrency: draft.otherCurrency || null,
+    originalExpense: draft.originalExpense,
+  });
+  if (estimate.estimatedTwd == null || !draft.convertedTwd.trim()) return false;
+  const paid = Number(draft.convertedTwd);
+  if (!Number.isFinite(paid)) return false;
+  if (draft.originalCurrency === 'TWD') return paid !== estimate.estimatedTwd;
+  const lowerBound = estimate.estimatedTwd - Math.max(1, Math.round(estimate.estimatedTwd * 0.05));
+  return paid < lowerBound;
+}
+
+/** Editable page-1 fields stay visible after fill so applicants can review and correct them. */
+function page1EditableFields(draft: PurchaseDetailsDraft): Page1GapField[] {
+  const fields: Page1GapField[] = [
+    'applicantName',
+    'billingCycle',
+  ];
+  if (draft.billingCycle === 'monthly') fields.push('billingPeriods');
+  fields.push('softwareFunction');
+  if (draft.softwareFunction === 'other') fields.push('otherFunction');
+  fields.push(
+    'softwareName',
+    'companyName',
+    'purchaseDate',
+    'receiptBuyerName',
+    'originalCurrency',
+  );
+  if (draft.originalCurrency === 'OTHER') fields.push('otherCurrency');
+  fields.push('originalExpense', 'convertedTwd', 'subscriptionStartDate', 'subscriptionEndDate');
+  return fields;
 }
 
 function displayFilledValue(draft: PurchaseDetailsDraft, field: string): string | null {
@@ -377,6 +424,8 @@ function ocrFieldCurrentValue(draft: PurchaseDetailsDraft, field: OcrFillableFie
     case 'billingCycle': return draft.billingCycle;
     case 'softwareName': return draft.softwareName.trim();
     case 'companyName': return draft.companyName.trim();
+    case 'subscriptionStartDate': return draft.subscriptionStartDate;
+    case 'subscriptionEndDate': return draft.subscriptionEndDate;
     default: {
       const exhaustive: never = field;
       return exhaustive;
@@ -410,6 +459,8 @@ function assignOcrValue(draft: PurchaseDetailsDraft, suggestion: FieldSuggestion
     case 'originalExpense':
     case 'receiptBuyerName':
     case 'convertedTwd':
+    case 'subscriptionStartDate':
+    case 'subscriptionEndDate':
       next[suggestion.field] = suggestion.value;
       break;
     default: {
@@ -417,12 +468,13 @@ function assignOcrValue(draft: PurchaseDetailsDraft, suggestion: FieldSuggestion
       return exhaustive;
     }
   }
-  if (next.originalCurrency === 'TWD' && next.originalExpense) {
+  if (next.originalCurrency === 'TWD' && next.originalExpense && !next.convertedTwd.trim()) {
     const estimate = estimateConvertedTwd({
       originalCurrency: 'TWD',
       otherCurrency: null,
       originalExpense: next.originalExpense,
     });
+    // Only seed an empty bank-payment field; never overwrite a card-screenshot value.
     if (estimate.estimatedTwd != null) next.convertedTwd = String(estimate.estimatedTwd);
   }
   return next;
@@ -442,11 +494,13 @@ function suggestionsFromOcr(requirementKey: DocumentRequirementKey, lines: OcrLi
     if (candidates.billingCycle) suggestions.push({ field: 'billingCycle', label: '繳費制度', value: candidates.billingCycle });
     if (candidates.softwareName) suggestions.push({ field: 'softwareName', label: '軟體名稱', value: candidates.softwareName });
     if (candidates.companyName) suggestions.push({ field: 'companyName', label: '軟體公司名稱', value: candidates.companyName });
+    if (candidates.subscriptionStartDate) suggestions.push({ field: 'subscriptionStartDate', label: '訂閱開始日', value: candidates.subscriptionStartDate });
+    if (candidates.subscriptionEndDate) suggestions.push({ field: 'subscriptionEndDate', label: '訂閱結束日', value: candidates.subscriptionEndDate });
     return suggestions;
   }
   if (requirementKey === 'card_transaction') {
     const candidates = extractCardTransactionCandidates(lines);
-    return candidates.convertedTwd ? [{ field: 'convertedTwd', label: '換算新臺幣', value: String(candidates.convertedTwd) }] : [];
+    return candidates.convertedTwd ? [{ field: 'convertedTwd', label: '銀行付款實付台幣', value: String(candidates.convertedTwd) }] : [];
   }
   return [];
 }
@@ -499,6 +553,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
   const [step, setStep] = useState<ReviewStep>('ocr');
   const [pendingFilePreview, setPendingFilePreview] = useState<Partial<Record<DocumentRequirementKey, { name: string; size: number }>>>({});
   const [ocrAppliedLabels, setOcrAppliedLabels] = useState<string[]>([]);
+  const [ocrFilledSnapshot, setOcrFilledSnapshot] = useState<Array<{ field: string; label: string; value: string }>>([]);
   const [recognizingRequirements, setRecognizingRequirements] = useState<Set<DocumentRequirementKey>>(new Set());
   const ocrTokenByKeyRef = useRef<Partial<Record<DocumentRequirementKey, number>>>({});
 
@@ -537,7 +592,11 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
   const page1Gaps = page1MissingFields(draft);
   const page1Ready = receiptReady && cardReady && !ocrBusy && page1Gaps.length === 0;
   const showGapForm = (receiptReady || cardReady) && recognizingRequirements.size === 0;
-  const filledEntries = page1FilledEntries(draft);
+  const page1Fields = page1EditableFields(draft);
+  // OCR snapshot stays frozen after recognition; before any receipt OCR, show follow-up prefills only.
+  const fillStatusEntries = ocrFilledSnapshot.length > 0
+    ? ocrFilledSnapshot
+    : (!receiptReady && !cardReady ? page1FilledEntries(draft) : []);
   const completedCount = requiredSpecs.filter((spec) => latestDocument(spec.key)?.status === 'ready').length;
   const readyToSubmit = detailsSaved && completedCount === requiredSpecs.length;
   const paymentUnlocked = ocrStageSaved;
@@ -563,7 +622,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
         let nextDraft = detailsResult.details ? draftFromDetails(detailsResult.details) : draftForApprovedTool(prefilledTool);
         const docs = documentResult.documents;
         const hasPayment = Boolean(detailsResult.details?.paymentSourceRegistered);
-        const applied: string[] = [];
+        const applied: FieldSuggestion[] = [];
         if (!hasPayment) {
           for (const spec of OCR_SPECS) {
             const document = docs.find((item) => item.requirementKey === spec.key && item.status === 'ready') ?? null;
@@ -574,7 +633,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
               const lines = recognized.ocr?.lines ? Array.from(recognized.ocr.lines) : [];
               const result = applyOcrHits(nextDraft, spec.key, lines, false);
               nextDraft = result.draft;
-              applied.push(...result.applied.map((item) => item.label));
+              applied.push(...result.applied);
             } catch {
               /* OCR is best-effort; the gap form covers misses. */
             }
@@ -582,7 +641,8 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
         }
         if (!active) return;
         setDraft(nextDraft);
-        setOcrAppliedLabels(uniqueLabels(applied));
+        setOcrAppliedLabels(uniqueLabels(applied.map((item) => item.label)));
+        setOcrFilledSnapshot(applied.map((item) => ({ field: item.field, label: item.label, value: item.value })));
         setDocuments(docs);
         setCaseEtag(caseResult.etag ?? null);
         const receipt = docs.some((item) => item.requirementKey === 'vendor_receipt' && item.status === 'ready');
@@ -605,12 +665,13 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
     setDraft((current) => {
       const next = { ...current, [key]: value };
       if (key === 'originalCurrency' || key === 'originalExpense' || key === 'otherCurrency') {
-        if (next.originalCurrency === 'TWD') {
+        if (next.originalCurrency === 'TWD' && next.originalExpense && !next.convertedTwd.trim()) {
           const estimate = estimateConvertedTwd({
             originalCurrency: next.originalCurrency,
             otherCurrency: next.otherCurrency || null,
             originalExpense: next.originalExpense,
           });
+          // Seed only when the bank-payment field is still empty.
           if (estimate.estimatedTwd != null) next.convertedTwd = String(estimate.estimatedTwd);
         }
       }
@@ -618,6 +679,10 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
     });
     setConfirmed(false);
     setMessage('');
+  }
+
+  function confirmAmountMatch(nextDraft: PurchaseDetailsDraft = draft) {
+    if (amountsDisagree(nextDraft)) window.alert('不符，請多確認');
   }
 
   async function saveDetails(options: { deferPaymentSource?: boolean; nextStep?: ReviewStep; draftOverride?: PurchaseDetailsDraft } = {}) {
@@ -633,7 +698,6 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
       for (const issue of parsed.error.issues) {
         const key = String(issue.path[0] ?? '');
         if (!key || nextErrors[key]) continue;
-        if (key === 'convertedTwd' && currentDraft.originalCurrency === 'TWD') continue;
         if (options.deferPaymentSource && (key === 'cardLastFour' || key === 'cardholderName')) continue;
         const label = FIELD_LABELS[key] ?? key;
         nextErrors[key] = issue.message && /[一-鿿]/.test(issue.message) ? issue.message : `請確認${label}`;
@@ -749,6 +813,16 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
           setDraft((current) => applyOcrHits(current, spec.key, lines, true).draft);
           if (hits.length > 0) {
             setOcrAppliedLabels((previous) => uniqueLabels([...previous, ...hits.map((item) => item.label)]));
+            setOcrFilledSnapshot((previous) => {
+              const next = [...previous];
+              for (const hit of hits) {
+                const index = next.findIndex((entry) => entry.field === hit.field);
+                const entry = { field: hit.field, label: hit.label, value: hit.value };
+                if (index >= 0) next[index] = entry;
+                else next.push(entry);
+              }
+              return next;
+            });
           }
         } catch {
           if (ocrTokenByKeyRef.current[spec.key] !== ocrToken) return;
@@ -917,15 +991,23 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
       case 'otherCurrency':
         return <label key={field}>其他幣別<input data-field="otherCurrency" value={draft.otherCurrency} maxLength={24} onChange={(event) => updateDraft('otherCurrency', event.target.value)} /></label>;
       case 'originalExpense':
-        return <label key={field}>原始費用 <span aria-hidden="true">＊</span><input data-field="originalExpense" type="text" inputMode="decimal" placeholder="例如 29.99" value={draft.originalExpense} aria-invalid={Boolean(fieldErrors.originalExpense)} onChange={(event) => updateDraft('originalExpense', event.target.value)} />{fieldErrors.originalExpense && <p className="field-error" role="alert">{fieldErrors.originalExpense}</p>}</label>;
+        return <label key={field}>原始費用 <span aria-hidden="true">＊</span><input data-field="originalExpense" type="text" inputMode="decimal" placeholder="例如 29.99" value={draft.originalExpense} aria-invalid={Boolean(fieldErrors.originalExpense)} onChange={(event) => updateDraft('originalExpense', event.target.value)} onBlur={() => confirmAmountMatch()} />{fieldErrors.originalExpense && <p className="field-error" role="alert">{fieldErrors.originalExpense}</p>}</label>;
       case 'convertedTwd':
         return (
-          <label key={field}>換算新臺幣 <span aria-hidden="true">＊</span>
-            <input data-field="convertedTwd" type="number" min="1" max="100000000" inputMode="numeric" placeholder="請填寫整數" value={draft.convertedTwd} aria-invalid={Boolean(fieldErrors.convertedTwd)} onChange={(event) => updateDraft('convertedTwd', event.target.value)} />
-            {(() => {
-              const estimate = estimateConvertedTwd({ originalCurrency: draft.originalCurrency || 'OTHER', otherCurrency: draft.otherCurrency || null, originalExpense: draft.originalExpense });
-              return estimate.estimatedTwd != null ? <small>參考試算約 NT${estimate.estimatedTwd.toLocaleString('zh-TW')}（匯率 {estimate.referenceRate}）</small> : null;
-            })()}
+          <label key={field}>銀行付款實付台幣 <span aria-hidden="true">＊</span>
+            <input
+              data-field="convertedTwd"
+              type="number"
+              min="1"
+              max="100000000"
+              inputMode="numeric"
+              placeholder="例如 630"
+              value={draft.convertedTwd}
+              aria-invalid={Boolean(fieldErrors.convertedTwd)}
+              onChange={(event) => updateDraft('convertedTwd', event.target.value)}
+              onBlur={() => confirmAmountMatch()}
+            />
+            <small>請依「刷卡單筆明細」銀行 App 截圖上的實付台幣填寫。</small>
             {fieldErrors.convertedTwd && <p className="field-error" role="alert">{fieldErrors.convertedTwd}</p>}
           </label>
         );
@@ -974,23 +1056,27 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
           <div className="attachment-requirement-list">
             {OCR_SPECS.map((spec) => renderRequirement(spec))}
           </div>
-          {filledEntries.length > 0 && (
+          {fillStatusEntries.length > 0 && (
             <aside className="ocr-fill-status" aria-label="已帶入的購買資料">
               <p>{ocrAppliedLabels.length > 0 ? `已從收據／明細帶入：${ocrAppliedLabels.join('、')}` : '已帶入購買資料：'}</p>
               <ul>
-                {filledEntries.map((entry) => (
+                {fillStatusEntries.map((entry) => (
                   <li key={entry.field}>{entry.label}：{entry.value}</li>
                 ))}
               </ul>
             </aside>
           )}
-          {showGapForm && (page1Gaps.length > 0 || !draft.birthDate) && (
+          {showGapForm && (
             <form className="purchase-details-form" onSubmit={(event) => { event.preventDefault(); }} noValidate>
-              {page1Gaps.length > 0 && <p className="field-hint">請補填辨識不到的資料：{page1Gaps.map((field) => FIELD_LABELS[field]).join('、')}</p>}
-              {page1Gaps.map((field) => renderGapField(field))}
-              {!draft.birthDate && (
-                <label>出生日期<input data-field="birthDate" type="date" value={draft.birthDate} aria-invalid={Boolean(fieldErrors.birthDate)} onChange={(event) => updateDraft('birthDate', event.target.value)} /><small>用於確認本方案的年齡資格。</small></label>
+              {page1Gaps.length > 0 ? (
+                <p className="field-hint">請補填辨識不到的資料：{page1Gaps.map((field) => FIELD_LABELS[field]).join('、')}。已帶入的欄位仍可直接修改。</p>
+              ) : (
+                <p className="field-hint">請確認下列購買資料；若有誤可直接修改。</p>
               )}
+              {page1Fields.map((field) => renderGapField(field))}
+              <label>出生日期<input data-field="birthDate" type="date" value={draft.birthDate} aria-invalid={Boolean(fieldErrors.birthDate)} onChange={(event) => updateDraft('birthDate', event.target.value)} /><small>用於確認本方案的年齡資格。</small>{fieldErrors.birthDate && <p className="field-error" role="alert">{fieldErrors.birthDate}</p>}</label>
+              <label>身分證字號 <span aria-hidden="true">＊</span><input data-field="nationalId" value={draft.nationalId} maxLength={10} autoComplete="off" spellCheck={false} aria-invalid={Boolean(fieldErrors.nationalId)} placeholder="例如：A123456789" onChange={(event) => updateDraft('nationalId', event.target.value.toUpperCase().replace(/[^A-Z0-9]/gi, '').slice(0, 10))} /><small>請填寫與身分證件一致的字號。</small>{fieldErrors.nationalId && <p className="field-error" role="alert">{fieldErrors.nationalId}</p>}</label>
+              <label>戶籍地址 <span aria-hidden="true">＊</span><input data-field="householdAddress" value={draft.householdAddress} maxLength={200} autoComplete="street-address" aria-invalid={Boolean(fieldErrors.householdAddress)} placeholder="請依身分證登記之戶籍地址填寫" onChange={(event) => updateDraft('householdAddress', event.target.value)} /><small>請填寫身分證上的戶籍地址。</small>{fieldErrors.householdAddress && <p className="field-error" role="alert">{fieldErrors.householdAddress}</p>}</label>
             </form>
           )}
           <div className="wizard-actions">

@@ -5,11 +5,13 @@ import { REFERENCE_FX_RATES_TWD, FX_TOLERANCE_RATIO, estimateConvertedTwd } from
 export { REFERENCE_FX_RATES_TWD, FX_TOLERANCE_RATIO, estimateConvertedTwd } from '../../shared/fx-rates';
 
 /**
- * Card fees, currency spread, and rate movement between purchase and billing
- * only ever push the actual TWD charge above a mid-market estimate, never
- * below it. A declared amount that undercuts the estimate by more than the
- * tolerance is therefore the suspicious direction; one that overshoots it is
- * the expected, normal direction and is never flagged on that basis alone.
+ * Cross-check the official receipt amount against the bank / card payment
+ * screenshot amount (`convertedTwd`).
+ *
+ * - TWD receipts: the two figures must match exactly (rounded).
+ * - Foreign currency: card fees only push the TWD charge up, so a payment
+ *   more than FX_TOLERANCE_RATIO below the mid-market estimate is treated as
+ *   inconsistent and fails — not merely needs_review.
  */
 export function evaluateExchangeRateReasonableness(input: {
   purchase: PurchaseDetails;
@@ -20,56 +22,78 @@ export function evaluateExchangeRateReasonableness(input: {
 }): RuleEvaluation {
   const referenceRates = input.referenceFxRates ?? REFERENCE_FX_RATES_TWD;
   const estimate = estimateConvertedTwd(input.purchase, referenceRates);
+  const paid = input.purchase.convertedTwd;
   const steps: RuleStep[] = [
-    { label: '原幣金額', value: `${input.purchase.originalCurrency} ${input.purchase.originalExpense}` },
-    { label: '申報台幣', value: `NT$${input.purchase.convertedTwd.toLocaleString('zh-TW')}` },
+    { label: '官方收據金額', value: `${input.purchase.originalCurrency} ${input.purchase.originalExpense}` },
+    { label: '銀行付款實付台幣', value: `NT$${paid.toLocaleString('zh-TW')}` },
   ];
+
+  const base = {
+    ruleCode: 'exchange_rate_reasonableness' as const,
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: input.inputSnapshotHash,
+    evaluatedAt: input.evaluatedAt,
+  };
 
   if (estimate.estimatedTwd == null || estimate.referenceRate == null) {
     return {
-      ruleCode: 'exchange_rate_reasonableness',
+      ...base,
       outcome: 'missing',
       reasonCode: 'reference_rate_unavailable',
-      explanation: '尚無對應幣別的參考匯率，待人工確認換算。',
-      ruleVersionId: input.ruleVersionId,
-      inputSnapshotHash: input.inputSnapshotHash,
-      evaluatedAt: input.evaluatedAt,
-      steps: [...steps, { label: '參考試算', value: '待確認' }],
+      explanation: '尚無對應幣別的參考匯率，無法交叉比對官方收據與銀行付款金額。',
+      steps: [...steps, { label: '收據試算台幣', value: '待確認' }],
     };
   }
 
   steps.push({ label: '參考匯率', value: String(estimate.referenceRate) });
-  steps.push({ label: '系統試算', value: `NT$${estimate.estimatedTwd.toLocaleString('zh-TW')}` });
+  steps.push({ label: '收據試算台幣', value: `NT$${estimate.estimatedTwd.toLocaleString('zh-TW')}` });
 
-  const declared = input.purchase.convertedTwd;
-  const delta = declared - estimate.estimatedTwd;
+  // Domestic receipts: bank screenshot must match the receipt figure exactly.
+  if (estimate.currency === 'TWD') {
+    steps.push({
+      label: '比對結果',
+      value: paid === estimate.estimatedTwd ? '一致' : '不一致',
+    });
+    if (paid !== estimate.estimatedTwd) {
+      return {
+        ...base,
+        outcome: 'fail',
+        reasonCode: 'receipt_payment_amount_mismatch',
+        explanation: `官方收據金額 NT$${estimate.estimatedTwd.toLocaleString('zh-TW')} 與銀行付款實付台幣 NT$${paid.toLocaleString('zh-TW')} 不一致。`,
+        steps,
+      };
+    }
+    return {
+      ...base,
+      outcome: 'pass',
+      reasonCode: 'receipt_payment_amount_match',
+      explanation: '官方收據金額與銀行付款實付台幣一致。',
+      steps,
+    };
+  }
+
+  const delta = paid - estimate.estimatedTwd;
   const lowerBound = estimate.estimatedTwd - Math.max(1, Math.round(estimate.estimatedTwd * FX_TOLERANCE_RATIO));
   steps.push({
     label: '差異',
-    value: `${delta >= 0 ? '+' : ''}NT$${delta.toLocaleString('zh-TW')}（容許低於試算 ${(FX_TOLERANCE_RATIO * 100).toFixed(0)}%，偏高不設上限）`,
+    value: `${delta >= 0 ? '+' : ''}NT$${delta.toLocaleString('zh-TW')}（容許低於試算 ${(FX_TOLERANCE_RATIO * 100).toFixed(0)}%，偏高視為手續費）`,
   });
 
-  if (declared < lowerBound) {
+  if (paid < lowerBound) {
     return {
-      ruleCode: 'exchange_rate_reasonableness',
-      outcome: 'needs_review',
-      reasonCode: 'exchange_rate_below_band',
-      explanation: `申報 ${declared.toLocaleString('zh-TW')} 低於系統試算 ${estimate.estimatedTwd.toLocaleString('zh-TW')} 超過容許區間，請人工確認。`,
-      ruleVersionId: input.ruleVersionId,
-      inputSnapshotHash: input.inputSnapshotHash,
-      evaluatedAt: input.evaluatedAt,
+      ...base,
+      outcome: 'fail',
+      reasonCode: 'receipt_payment_amount_mismatch',
+      explanation: `銀行付款實付台幣 NT$${paid.toLocaleString('zh-TW')} 明顯低於官方收據試算 NT$${estimate.estimatedTwd.toLocaleString('zh-TW')}，交叉比對失敗。`,
       steps,
     };
   }
 
   return {
-    ruleCode: 'exchange_rate_reasonableness',
+    ...base,
     outcome: 'pass',
-    reasonCode: 'exchange_rate_within_band',
-    explanation: '匯率換算落在合理區間內。',
-    ruleVersionId: input.ruleVersionId,
-    inputSnapshotHash: input.inputSnapshotHash,
-    evaluatedAt: input.evaluatedAt,
+    reasonCode: 'receipt_payment_amount_consistent',
+    explanation: '官方收據金額與銀行付款實付台幣交叉比對一致。',
     steps,
   };
 }

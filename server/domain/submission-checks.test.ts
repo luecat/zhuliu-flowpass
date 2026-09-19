@@ -37,6 +37,8 @@ const PURCHASE: PurchaseDetails = {
   applicantName: '測試申請人',
   receiptBuyerName: '測試申請人',
   birthDate: null,
+  nationalId: null,
+  householdAddress: null,
 };
 
 function passport() {

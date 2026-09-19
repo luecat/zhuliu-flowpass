@@ -81,15 +81,30 @@ export function extractInvoiceNumber(lines: readonly OcrLine[]): string | null {
  * flags near-certain garbage at ~0.3, so lines below that are rejected here.
  */
 const BUYER_NAME_MIN_CONFIDENCE = 0.4;
+const BUYER_LABEL = /^(?:bill(?:ed)?\s+to|sold\s+to|ship(?:ped)?\s+to|customer(?:\s+name)?|買受人|收件人|客戶(?:姓名)?|購買人)[:：]?\s*$/i;
+const BUYER_INLINE = /^(?:bill(?:ed)?\s+to|sold\s+to|ship(?:ped)?\s+to|customer(?:\s+name)?|買受人|收件人|客戶(?:姓名)?|購買人)[:：\s]+(.+)$/i;
+
+function isPlausibleBuyerName(value: string, confidence: number): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || confidence < BUYER_NAME_MIN_CONFIDENCE) return false;
+  if (trimmed.includes('@') || /^\d/.test(trimmed)) return false;
+  // Reject obvious address / city fragments OCR often puts under Bill to.
+  if (/\d{2,}/.test(trimmed) || /street|road|avenue|區|路|街|號/i.test(trimmed)) return false;
+  if (trimmed.length < 2 || trimmed.length > 80) return false;
+  return true;
+}
 
 export function extractReceiptBuyerName(lines: readonly OcrLine[]): string | null {
   for (let i = 0; i < lines.length; i += 1) {
     const label = lines[i].text.trim();
-    if (/^bill to$|^買受人$|^收件人$/i.test(label)) {
+    const inline = label.match(BUYER_INLINE);
+    if (inline && isPlausibleBuyerName(inline[1], lines[i].confidence)) {
+      return inline[1].trim();
+    }
+    if (BUYER_LABEL.test(label)) {
       const next = lines[i + 1];
       const value = next?.text.trim();
-      // A name, not an email or a street address the next lines often carry.
-      if (value && next.confidence >= BUYER_NAME_MIN_CONFIDENCE && !value.includes('@') && !/^\d/.test(value)) return value;
+      if (value && isPlausibleBuyerName(value, next.confidence)) return value;
     }
   }
   return null;
@@ -101,10 +116,64 @@ export function extractReceiptBuyerName(lines: readonly OcrLine[]): string | nul
  */
 export function extractBillingCycle(lines: readonly OcrLine[]): 'annual' | 'monthly' | null {
   const blob = texts(lines).join(' ');
-  const annual = /年費|年繳|annual(?:ly)?|yearly(?:\s+plan)?|billed yearly/i.test(blob);
-  const monthly = /月費|月繳|monthly|per month|billed monthly/i.test(blob);
+  const annual = /年費|年繳|年訂|annual(?:ly)?|yearly(?:\s+plan)?|billed\s+(?:yearly|annually)|per\s+year|\/\s*yr\b|12[\s-]?month/i.test(blob);
+  const monthly = /月費|月繳|月訂|monthly|per\s+month|billed\s+monthly|\/\s*mo\b|every\s+month/i.test(blob);
   if (annual === monthly) return null;
   return annual ? 'annual' : 'monthly';
+}
+
+function parseNamedOrIsoDate(text: string): string | null {
+  const iso = text.match(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+  const named = text.match(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(20\d{2})/);
+  if (named) {
+    const month = MONTHS[named[1].slice(0, 3).toLowerCase()];
+    if (month) return `${named[3]}-${month}-${named[2].padStart(2, '0')}`;
+  }
+  return null;
+}
+
+/**
+ * Subscription start/end when the receipt prints an explicit range
+ * (e.g. "June 11, 2026 – June 11, 2027"). Does not invent an end date from
+ * billing cycle alone.
+ */
+export function extractSubscriptionPeriod(lines: readonly OcrLine[]): { start: string; end: string } | null {
+  const rangeSeparators = /[-–—~～至到]|to|through|thru/i;
+  for (const text of texts(lines)) {
+    if (!rangeSeparators.test(text) && !/訂閱|期間|period|valid|服務期間|subscription/i.test(text)) continue;
+    // Collect date-shaped substrings in order; need exactly two distinct dates.
+    const found: string[] = [];
+    const isoGlobal = text.matchAll(/(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})/g);
+    for (const match of isoGlobal) {
+      found.push(`${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`);
+    }
+    if (found.length < 2) {
+      const namedGlobal = text.matchAll(/([A-Za-z]{3,9})\s+(\d{1,2}),?\s+(20\d{2})/g);
+      for (const match of namedGlobal) {
+        const month = MONTHS[match[1].slice(0, 3).toLowerCase()];
+        if (month) found.push(`${match[3]}-${month}-${match[2].padStart(2, '0')}`);
+      }
+    }
+    if (found.length >= 2 && found[0] !== found[1]) {
+      const start = found[0];
+      const end = found[1];
+      if (end >= start) return { start, end };
+    }
+  }
+  // Label on one line, range spanning the next one or two lines.
+  for (let i = 0; i < lines.length; i += 1) {
+    const label = lines[i].text.trim();
+    if (!/^(?:訂閱期間|服務期間|subscription(?:\s+period)?|valid(?:\s+(?:from|through))?|period)[:：]?\s*$/i.test(label)) continue;
+    const combined = [lines[i + 1], lines[i + 2]].filter(Boolean).map((line) => line.text.trim()).join(' ');
+    if (!combined) continue;
+    const nested = extractSubscriptionPeriod([{ text: combined, confidence: 1, box: { x: 0, y: 0, width: 1, height: 1 } }]);
+    if (nested) return nested;
+    const single = parseNamedOrIsoDate(combined);
+    // A lone start date under a period label is not enough — leave blank.
+    if (single) return null;
+  }
+  return null;
 }
 
 function normalizeMatch(value: string): string {
@@ -142,11 +211,14 @@ export interface VendorReceiptCandidates {
   billingCycle: 'annual' | 'monthly' | null;
   softwareName: string | null;
   companyName: string | null;
+  subscriptionStartDate: string | null;
+  subscriptionEndDate: string | null;
 }
 
 export function extractVendorReceiptCandidates(lines: readonly OcrLine[]): VendorReceiptCandidates {
   const amount = extractOriginalAmount(lines);
   const tool = extractApprovedAiTool(lines);
+  const period = extractSubscriptionPeriod(lines);
   return {
     invoiceNumber: extractInvoiceNumber(lines),
     purchaseDate: extractDate(lines),
@@ -156,6 +228,8 @@ export function extractVendorReceiptCandidates(lines: readonly OcrLine[]): Vendo
     billingCycle: extractBillingCycle(lines),
     softwareName: tool?.label ?? null,
     companyName: tool?.company ?? null,
+    subscriptionStartDate: period?.start ?? null,
+    subscriptionEndDate: period?.end ?? null,
   };
 }
 

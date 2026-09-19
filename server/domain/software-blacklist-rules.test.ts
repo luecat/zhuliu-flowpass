@@ -11,7 +11,7 @@ function purchaseWithSoftware(softwareName: string): PurchaseDetails {
     originalCurrency: 'TWD', otherCurrency: null, originalExpense: '1000', convertedTwd: 1000,
     specialStatus: false, invoiceNumber: null, paymentSourceFingerprint: null,
     subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31',
-    applicantName: '測試申請人', receiptBuyerName: null, birthDate: null,
+    applicantName: '測試申請人', receiptBuyerName: null, birthDate: null, nationalId: null, householdAddress: null,
   };
 }
 

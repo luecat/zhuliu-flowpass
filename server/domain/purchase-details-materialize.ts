@@ -49,6 +49,8 @@ export function materializePurchaseDetails(input: {
     applicantName: write.applicantName,
     receiptBuyerName: write.receiptBuyerName,
     birthDate: write.birthDate,
+    nationalId: write.nationalId,
+    householdAddress: write.householdAddress,
     paymentSourceFingerprint,
   };
 }

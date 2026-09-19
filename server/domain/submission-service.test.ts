@@ -39,6 +39,8 @@ const PURCHASE_DETAILS: PurchaseDetails = {
   applicantName: '測試申請人',
   receiptBuyerName: '測試申請人',
   birthDate: null,
+  nationalId: null,
+  householdAddress: null,
 };
 
 function savePurchaseDetails(db: ReturnType<typeof openDatabase>, crypto: FieldCrypto, caseId: string, details: PurchaseDetails = PURCHASE_DETAILS): void {

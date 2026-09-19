@@ -16,6 +16,34 @@ const subscriptionEndDateSchema = createCalendarDate('訂閱結束日');
 
 const decimalAmount = z.string().regex(/^(?:0|[1-9]\d{0,11})(?:\.\d{1,2})?$/, '請填寫金額（數字，最多兩位小數）');
 
+/** Taiwan National ID letter codes used by the official checksum. */
+const NATIONAL_ID_LETTER_CODES: Record<string, number> = {
+  A: 10, B: 11, C: 12, D: 13, E: 14, F: 15, G: 16, H: 17, I: 34, J: 18, K: 19, L: 20, M: 21,
+  N: 22, O: 35, P: 23, Q: 24, R: 25, S: 26, T: 27, U: 28, V: 29, W: 32, X: 30, Y: 31, Z: 33,
+};
+
+export function isValidTaiwanNationalId(value: string): boolean {
+  const id = value.trim().toUpperCase();
+  if (!/^[A-Z][12]\d{8}$/.test(id)) return false;
+  const code = NATIONAL_ID_LETTER_CODES[id[0]!];
+  if (code === undefined) return false;
+  const digits = [Math.floor(code / 10), code % 10, ...id.slice(1).split('').map(Number)];
+  const weights = [1, 9, 8, 7, 6, 5, 4, 3, 2, 1, 1];
+  const sum = digits.reduce((total, digit, index) => total + digit * weights[index]!, 0);
+  return sum % 10 === 0;
+}
+
+const nationalIdSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.toUpperCase())
+  .pipe(
+    z
+      .string()
+      .regex(/^[A-Z][12]\d{8}$/, '身分證字號格式不正確')
+      .refine(isValidTaiwanNationalId, '身分證字號檢核碼不正確'),
+  );
+
 const purchaseDetailsBase = {
   billingCycle: z.enum(['annual', 'monthly']),
   billingPeriods: z.number({ error: '請填寫月費期數' }).int('月費期數請填寫整數').min(1, '月費期數需介於 1 到 120 期').max(120, '月費期數需介於 1 到 120 期').nullable(),
@@ -28,7 +56,7 @@ const purchaseDetailsBase = {
   originalCurrency: z.enum(PURCHASE_CURRENCIES),
   otherCurrency: z.string().trim().max(24).nullable(),
   originalExpense: decimalAmount,
-  convertedTwd: z.number({ error: '請填寫換算後的新臺幣金額' }).int('換算金額請填寫整數').min(1, '請填寫換算後的新臺幣金額').max(100_000_000, '換算金額超過上限'),
+  convertedTwd: z.number({ error: '請填寫銀行付款實付台幣' }).int('實付台幣請填寫整數').min(1, '請填寫銀行付款實付台幣').max(100_000_000, '實付台幣超過上限'),
   specialStatus: z.boolean(),
   invoiceNumber: z.string().trim().min(1).max(40).nullable(),
   // Legacy rows may omit these; normalize missing to null on read.
@@ -45,6 +73,10 @@ const purchaseDetailsBase = {
   receiptBuyerName: z.string().trim().max(100).nullish().transform((value) => value?.trim() ? value.trim() : null),
   /** Applicant date of birth, for the age-eligibility rule. Optional: older rows predate this field. */
   birthDate: createCalendarDate('出生日期').nullish().transform((value) => value ?? null),
+  /** Taiwan National ID (身分證字號). Legacy rows may omit. */
+  nationalId: nationalIdSchema.nullish().transform((value) => value ?? null),
+  /** Household registration address (戶籍地址). Legacy rows may omit. */
+  householdAddress: z.string().trim().max(200).nullish().transform((value) => value?.trim() ? value.trim() : null),
 } as const;
 
 function refinePurchaseShape<T extends {
@@ -57,7 +89,13 @@ function refinePurchaseShape<T extends {
   subscriptionStartDate: string | null;
   subscriptionEndDate: string | null;
   applicantName: string | null;
-}>(details: T, context: z.RefinementCtx, options: { requireSubscriptionDates: boolean; requireApplicantName: boolean }) {
+  nationalId: string | null;
+  householdAddress: string | null;
+}>(details: T, context: z.RefinementCtx, options: {
+  requireSubscriptionDates: boolean;
+  requireApplicantName: boolean;
+  requireIdentityFields: boolean;
+}) {
   if (details.billingCycle === 'monthly' && details.billingPeriods === null) {
     context.addIssue({ code: 'custom', path: ['billingPeriods'], message: '請填寫月費期數' });
   }
@@ -98,6 +136,14 @@ function refinePurchaseShape<T extends {
   if (options.requireApplicantName && !details.applicantName) {
     context.addIssue({ code: 'custom', path: ['applicantName'], message: '請填寫申請人姓名' });
   }
+  if (options.requireIdentityFields) {
+    if (!details.nationalId) {
+      context.addIssue({ code: 'custom', path: ['nationalId'], message: '請填寫身分證字號' });
+    }
+    if (!details.householdAddress) {
+      context.addIssue({ code: 'custom', path: ['householdAddress'], message: '請填寫戶籍地址' });
+    }
+  }
 }
 
 /** Persisted purchase details: never stores card last-four or cardholder name in plaintext. */
@@ -105,7 +151,11 @@ export const PurchaseDetailsSchema = z.object({
   ...purchaseDetailsBase,
   paymentSourceFingerprint: z.string().min(16).max(128).nullable(),
 }).strict().superRefine((details, context) => {
-  refinePurchaseShape(details, context, { requireSubscriptionDates: false, requireApplicantName: false });
+  refinePurchaseShape(details, context, {
+    requireSubscriptionDates: false,
+    requireApplicantName: false,
+    requireIdentityFields: false,
+  });
 });
 
 export type PurchaseDetails = z.infer<typeof PurchaseDetailsSchema>;
@@ -126,7 +176,11 @@ export const PurchaseDetailsWriteSchema = z.object({
    */
   deferPaymentSource: z.boolean().optional(),
 }).strict().superRefine((details, context) => {
-  refinePurchaseShape(details, context, { requireSubscriptionDates: true, requireApplicantName: true });
+  refinePurchaseShape(details, context, {
+    requireSubscriptionDates: true,
+    requireApplicantName: true,
+    requireIdentityFields: true,
+  });
   const hasCard = Boolean(details.cardLastFour);
   const hasName = Boolean(details.cardholderName);
   if (details.deferPaymentSource) {

@@ -7,6 +7,7 @@ import {
   extractInvoiceNumber,
   extractOriginalAmount,
   extractReceiptBuyerName,
+  extractSubscriptionPeriod,
   extractVendorReceiptCandidates,
   type OcrLine,
 } from './ocr-field-extraction';
@@ -54,6 +55,12 @@ describe('extractReceiptBuyerName', () => {
   it('reads the line after "Bill to" when confidence is high enough', () => {
     expect(extractReceiptBuyerName([line('Bill to'), line('CHEN PEI-I', 0.5)])).toBe('CHEN PEI-I');
   });
+  it('reads an inline "Bill to: Name" on the same line', () => {
+    expect(extractReceiptBuyerName([line('Bill to: CHEN PEI-I', 0.9)])).toBe('CHEN PEI-I');
+  });
+  it('reads a Chinese 買受人 label with a colon', () => {
+    expect(extractReceiptBuyerName([line('買受人：王小明', 0.9)])).toBe('王小明');
+  });
   it('rejects a low-confidence read instead of returning a possibly-garbled name', () => {
     // Regression: real Vision OCR misread "CHEN PEI-I" as "CHEN PEH-" at 0.30
     // confidence — a name-consistency false mismatch is worse than a blank field.
@@ -81,6 +88,8 @@ describe('extractVendorReceiptCandidates', () => {
       line('Bill to'),
       line('CHEN PEI-I', 0.5),
       line('$20.00 paid on June 11, 2026'),
+      line('Subscription period June 11, 2026 – June 11, 2027'),
+      line('ChatGPT Plus annual plan'),
     ]);
     expect(result).toEqual({
       invoiceNumber: 'KS98K7HU-0002',
@@ -88,9 +97,11 @@ describe('extractVendorReceiptCandidates', () => {
       originalCurrency: 'USD',
       originalExpense: '20.00',
       receiptBuyerName: 'CHEN PEI-I',
-      billingCycle: null,
-      softwareName: null,
-      companyName: null,
+      billingCycle: 'annual',
+      softwareName: 'ChatGPT',
+      companyName: 'OpenAI',
+      subscriptionStartDate: '2026-06-11',
+      subscriptionEndDate: '2027-06-11',
     });
   });
 });
@@ -104,6 +115,24 @@ describe('extractBillingCycle', () => {
   });
   it('returns null when annual and monthly cues both appear', () => {
     expect(extractBillingCycle([line('annual or monthly')])).toBeNull();
+  });
+});
+
+describe('extractSubscriptionPeriod', () => {
+  it('reads an English named-month range on one line', () => {
+    expect(extractSubscriptionPeriod([line('Subscription period June 11, 2026 – June 11, 2027')])).toEqual({
+      start: '2026-06-11',
+      end: '2027-06-11',
+    });
+  });
+  it('reads an ISO range with a Chinese separator', () => {
+    expect(extractSubscriptionPeriod([line('服務期間：2026/06/11～2027/06/11')])).toEqual({
+      start: '2026-06-11',
+      end: '2027-06-11',
+    });
+  });
+  it('returns null when only one date is present', () => {
+    expect(extractSubscriptionPeriod([line('Valid from June 11, 2026')])).toBeNull();
   });
 });
 

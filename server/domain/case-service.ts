@@ -11,6 +11,7 @@ import { parseQuotedEtag } from '../../shared/api-contract';
 import { validateCoreAnswers, validateDraftCoreAnswers, serializeCoreAnswers, type CoreAnswers } from '../../shared/case-contract';
 import { inspectPassportDocument } from './passport-validation';
 import type { FlowPassPassport } from '../../shared/passport-contract';
+import { expireStaleDrafts } from './draft-expiry';
 
 export class CaseCommandError extends Error {
   constructor(readonly code: 'NOT_FOUND' | 'ETAG_MISMATCH' | 'INVALID_STATE' | 'INVALID_REQUEST' | 'IDEMPOTENCY_KEY_REUSED', message: string = code) {
@@ -72,6 +73,7 @@ export function createCaseService(options: CaseServiceOptions): CaseService {
 
   return {
     findActiveDraft(applicantId) {
+      expireStaleDrafts(options.database, clock());
       const row = options.database.prepare(`
         SELECT id FROM cases
         WHERE applicant_id = ? AND state = 'draft' AND deleted_at IS NULL

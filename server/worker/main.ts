@@ -16,6 +16,7 @@ import { sendLineNotification } from './handlers/send-line-notification';
 import { createLineMessagingClient } from '../adapters/line/messaging-client';
 import { openAiApiUrl } from '../config/loopback-openai-url';
 import { isMaintenanceMode } from '../services/maintenance-mode';
+import { expireStaleDrafts } from '../domain/draft-expiry';
 
 const database = openMigratedDatabase(flowPassDatabasePath(runtimeConfig.dataRoot));
 
@@ -133,6 +134,7 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
         leaseDurationMs: 960_000,
       });
       const jobBridge = new JobRepository(database);
+      let lastDraftExpiryMs = 0;
       const enqueueLineNotifications = () => {
         if (!lineClient) return;
         const pending = database.prepare("SELECT id FROM notification_jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 20").all() as Array<{ id: string }>;
@@ -140,6 +142,12 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       };
       const tick = () => {
         if (isMaintenanceMode(database)) return;
+        const nowMs = Date.now();
+        // Throttle: worker ticks every 250ms; draft expiry only needs ~once per minute.
+        if (nowMs - lastDraftExpiryMs >= 60_000) {
+          lastDraftExpiryMs = nowMs;
+          expireStaleDrafts(database, new Date(nowMs));
+        }
         enqueueLineNotifications();
         dispatcher.dispatchOnce();
       };

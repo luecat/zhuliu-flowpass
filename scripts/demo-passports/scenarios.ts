@@ -248,8 +248,8 @@ const INPUTS: ScenarioInput[] = [
   aiTools({ title: '封鎖工具：DeepSeek', note: '中國 AI 服務 → 購買明細 API 應直接拒絕，案件停在草稿。', tool: 'DeepSeek', company: 'DeepSeek', category: 'chat_search', name: '侯立群', flow: 'blocked' }),
   aiTools({ title: '封鎖工具：Kimi', note: '應被拒絕，停在草稿。', tool: 'Kimi', company: 'Moonshot AI', category: 'chat_search', name: '伍佳怡', flow: 'blocked' }),
   aiTools({ title: '封鎖工具：豆包', note: '應被拒絕，停在草稿。', tool: '豆包', company: '字節跳動', category: 'chat_search', name: '辛柏言', flow: 'blocked' }),
-  aiTools({ title: '無參考匯率的幣別（GBP）', note: '匯率合理性應為「待補」，人工確認換算。', tool: 'leonardo-ai', currency: 'OTHER', otherCurrency: 'GBP', expense: '20', converted: 850, name: '鄒佳臻', flags: { exchange_rate_reasonableness: 'missing' }, reasons: { exchange_rate_reasonableness: 'reference_rate_unavailable' } }),
-  aiTools({ title: '匯率換算灌水', note: 'USD 20 申報 NT$900（試算 NT$630）→ 匯率合理性紅燈。', tool: 'pika', currency: 'USD', expense: '20', converted: 900, name: '祝冠廷', flags: { exchange_rate_reasonableness: 'needs_review' }, reasons: { exchange_rate_reasonableness: 'exchange_rate_out_of_band' } }),
+  aiTools({ title: '無參考匯率的幣別（GBP）', note: '收據與付款金額應為「待補」，人工確認換算。', tool: 'leonardo-ai', currency: 'OTHER', otherCurrency: 'GBP', expense: '20', converted: 850, name: '鄒佳臻', flags: { exchange_rate_reasonableness: 'missing' }, reasons: { exchange_rate_reasonableness: 'reference_rate_unavailable' } }),
+  aiTools({ title: '銀行付款低於收據試算', note: 'USD 20 實付 NT$500（試算 NT$630）→ 收據與付款金額勾稽失敗。', tool: 'pika', currency: 'USD', expense: '20', converted: 500, name: '祝冠廷', flags: { exchange_rate_reasonableness: 'fail' }, reasons: { exchange_rate_reasonableness: 'receipt_payment_amount_mismatch' } }),
   aiTools({ title: '工具名小寫＋日圓', note: '申報「notebooklm」、JPY 3000 → 大小寫不影響比對，通過。', tool: 'notebooklm', company: 'Google', category: 'chat_search', currency: 'JPY', expense: '3000', passportTools: ['NotebookLM'], name: '俞心瑜' }),
 
   // ── 其他邊界 P095–P100 ──
@@ -321,6 +321,8 @@ export function buildDemoScenarios(): DemoScenario[] {
         applicantName: name,
         receiptBuyerName: input.holder ?? name,
         birthDate: null,
+        nationalId: 'A123456789',
+        householdAddress: '臺北市中正區測試路 1 號',
         // 7919 is coprime with 10000, so default last-fours never repeat.
         cardLastFour: input.card ?? pad((n * 7919 + 1234) % 10000, 4),
         cardholderName: input.holder ?? name,

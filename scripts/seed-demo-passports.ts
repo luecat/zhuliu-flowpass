@@ -42,7 +42,7 @@ const RULE_LABELS: Record<RuleCode, string> = {
   invoice_fingerprint: '發票指紋',
   transaction_fingerprint: '交易指紋',
   payment_source_fingerprint: '付款來源指紋',
-  exchange_rate_reasonableness: '匯率合理性',
+  exchange_rate_reasonableness: '收據與付款金額',
   tool_consistency: '工具一致性',
   subsidy_estimate: '補助試算',
 };

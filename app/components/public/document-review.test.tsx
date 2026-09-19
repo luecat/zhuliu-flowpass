@@ -17,7 +17,7 @@ const details: PurchaseDetails = {
   payerType: 'self_card', originalCurrency: 'TWD', otherCurrency: null,
   originalExpense: '1200', convertedTwd: 1200, specialStatus: false, invoiceNumber: null,
   paymentSourceFingerprint: null, subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31',
-  applicantName: '測試申請人', receiptBuyerName: '測試申請人', birthDate: null,
+  applicantName: '測試申請人', receiptBuyerName: '測試申請人', birthDate: null, nationalId: null, householdAddress: null,
 };
 
 const paidDetails: PurchaseDetails = {
@@ -120,9 +120,9 @@ describe('DocumentReview', () => {
       { documents: [readyDocument('receipt-1', 'vendor_receipt'), readyDocument('card-1', 'card_transaction')] },
     );
     render(<DocumentReview suppliedCaseId={CASE_ID} />);
-    expect(await screen.findByText('資格證明')).toBeInTheDocument();
-    expect(screen.getByText('代付切結書')).toBeInTheDocument();
+    expect(await screen.findByText('代付切結書')).toBeInTheDocument();
     expect(screen.getByText('具低收／中低收入戶資格')).toBeInTheDocument();
+    expect(screen.getAllByText('資格證明').length).toBeGreaterThan(0);
     expect(screen.getByText('0 / 6')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '送出申請' })).toBeDisabled();
     expect(screen.queryByRole('heading', { name: /官方收據/ })).not.toBeInTheDocument();
@@ -182,6 +182,18 @@ describe('DocumentReview', () => {
     expect(await screen.findByText(/請補填辨識不到的資料/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '套用' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('官方收據辨識結果')).not.toBeInTheDocument();
+  });
+
+  it('keeps filled purchase fields editable instead of removing them', async () => {
+    installApi(null, { ocr: null });
+    const { container } = render(<DocumentReview suppliedCaseId={CASE_ID} />);
+    await screen.findByRole('heading', { name: '辨識購買資料' });
+    fireEvent.change(fileInputs(container)[0], { target: { files: [new File(['receipt'], 'receipt.png', { type: 'image/png' })] } });
+    const nameInput = await screen.findByLabelText(/申請人姓名/);
+    fireEvent.change(nameInput, { target: { value: '陳大文' } });
+    expect(screen.getByLabelText(/申請人姓名/)).toHaveValue('陳大文');
+    expect(screen.getByLabelText(/官方收據上的買受人姓名/)).toBeInTheDocument();
+    expect(screen.getByText(/已帶入的欄位仍可直接修改/)).toBeInTheDocument();
   });
 
   it('shows payment fields only on the second step', async () => {

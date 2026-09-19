@@ -22,6 +22,10 @@ const writeDetails = {
   cardLastFour: '4242', cardholderName: '測試持卡人',
   subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31',
   applicantName: '測試申請人',
+  receiptBuyerName: '測試申請人',
+  birthDate: null,
+  nationalId: 'A123456789',
+  householdAddress: '臺北市中正區測試路 1 號',
 };
 
 describe('purchase details route', () => {

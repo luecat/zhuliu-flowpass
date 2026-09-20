@@ -35,7 +35,16 @@ describe('findBlockedReceiptTerm', () => {
     expect(findBlockedReceiptTerm(receipt, ['alibaba cloud'])).toMatchObject({ term: 'alibaba cloud' });
   });
 
-  it('does not fire a short latin term inside an ordinary word', () => {
-    expect(findBlockedReceiptTerm([line('Individual plan')], ['vidu'])).toBeNull();
+  it('blocks a vendor receipt that names credit, including a one-time credit purchase', () => {
+    expect(findBlockedReceiptTerm([line('API Credit Pack'), line('USD 10.00')], DEFAULT_BLOCKED_VENDORS))
+      .toMatchObject({ term: 'credit' });
+    expect(findBlockedReceiptTerm([line('Prepaid Credits'), line('GPT Credits 100')], DEFAULT_BLOCKED_VENDORS))
+      .toMatchObject({ term: 'credits' });
+    expect(findBlockedReceiptTerm([
+      line('Anthropic, PBC'),
+      line('One-time credit purchase'),
+      line('$5.00'),
+    ], DEFAULT_BLOCKED_VENDORS)).toMatchObject({ term: 'credit' });
+    expect(findBlockedReceiptTerm([line('accreditation certificate')], DEFAULT_BLOCKED_VENDORS)).toBeNull();
   });
 });

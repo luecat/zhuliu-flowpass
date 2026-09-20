@@ -11,13 +11,14 @@ import { foldChineseVariants } from './chinese-variants';
  */
 
 /**
- * A short latin term ("wps", "vidu", "360") has to match as a whole word.
+ * A short latin term ("wps", "vidu", "credit") has to match as a whole word.
  * Left as a substring it fires inside ordinary words — "vidu" is in
- * "individual", which is exactly the kind of false rejection that would make
- * an eligible applicant unable to proceed. CJK terms are not word-delimited
- * and are matched as substrings regardless of length.
+ * "individual", and "credit" is in "accreditation", which is exactly the kind
+ * of false rejection that would make an eligible applicant unable to proceed.
+ * CJK terms are not word-delimited and are matched as substrings regardless
+ * of length.
  */
-const SHORT_LATIN_LENGTH = 6;
+const SHORT_LATIN_LENGTH = 8;
 const LATIN_TERM = /^[\p{ASCII}]+$/u;
 
 function normalize(value: string): string {

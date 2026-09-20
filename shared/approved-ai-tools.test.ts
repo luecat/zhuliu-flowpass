@@ -54,7 +54,7 @@ describe('approved AI tools', () => {
   });
 
   it('blocks relay shops, shared-quota resale and token packages', () => {
-    for (const label of ['Token Plan Individual', 'OpenAI API 中轉站', 'ChatGPT 拼車', '代充 Claude Pro', 'api2d']) {
+    for (const label of ['Token Plan Individual', 'OpenAI API 中轉站', 'ChatGPT 拼車', '代充 Claude Pro', 'api2d', 'API Credit Pack', 'Prepaid Credits', 'One-time credit purchase']) {
       expect(isBlockedAiToolLabel(label)).toBe(true);
     }
   });

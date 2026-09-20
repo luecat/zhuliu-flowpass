@@ -76,6 +76,25 @@ export const DEFAULT_BLOCKED_RESELLER_TERMS: readonly string[] = [
   'api中转', 'api代理', 'api池',
   'api2d', 'openai-sb', 'openai-hk', 'chatanywhere', 'aiproxy', 'one-api', 'new-api',
   'gptgod', 'closeai', 'oaipro', 'burn.hair',
+  // Any standalone "credit"/"credits" on a vendor receipt is a top-up, not a
+  // funded tool subscription. Word-boundary matching keeps "accreditation"
+  // through. Card statements are a different upload slot and are not screened.
+  'credit', 'credits',
+  'api credit', 'api credits',
+  'token credit', 'token credits',
+  'prepaid credit', 'prepaid credits',
+  'credit pack', 'credits pack',
+  'credit plan', 'credits plan',
+  'credit bundle',
+  'credit套餐', 'credit方案', 'credit额度', 'credit点数', 'credit储值',
+  'gpt credit', 'gpt credits',
+  'llm credit', 'model credit',
+  'buy credits', 'buy credit',
+  'top-up credit', 'top up credit',
+  'recharge credit',
+  'credit purchase', 'credits purchase',
+  'one-time credit', 'one time credit', 'onetime credit',
+  '积分套餐', '积分包', '算力包', '额度包', '预充值', '储值套餐',
 ];
 
 /** The shipped seed for a program cycle's softwareBlacklist. */

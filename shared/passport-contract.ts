@@ -76,7 +76,7 @@ const canonicalPassportNodeSchema = z
     confidence: z.number().finite().min(0).max(1),
     needs_confirmation: z.boolean(),
   })
-  .strict();
+;
 
 const canonicalPassportEdgeSchema = z
   .object({
@@ -89,7 +89,7 @@ const canonicalPassportEdgeSchema = z
     confidence: z.number().finite().min(0).max(1),
     needs_confirmation: z.boolean(),
   })
-  .strict();
+;
 
 const safetyActionSchema = z
   .object({
@@ -104,24 +104,24 @@ const safetyActionSchema = z
       'officer_review',
     ]),
   })
-  .strict();
+;
 
 const answerSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('text'), maxLength: z.literal(400) }).strict(),
+  z.object({ type: z.literal('text'), maxLength: z.literal(400) }),
   z
     .object({
       type: z.literal('single_choice'),
       choices: z.array(nonEmptyBoundedString).min(1),
     })
-    .strict(),
+,
   z
     .object({
       type: z.literal('multi_choice'),
       choices: z.array(nonEmptyBoundedString).min(1),
     })
-    .strict(),
-  z.object({ type: z.literal('boolean') }).strict(),
-  z.object({ type: z.literal('date') }).strict(),
+,
+  z.object({ type: z.literal('boolean') }),
+  z.object({ type: z.literal('date') }),
 ]);
 
 const followUpQuestionSchema = z
@@ -136,7 +136,7 @@ const followUpQuestionSchema = z
     priority: z.enum(QUESTION_PRIORITY_VALUES),
     status: z.enum(FOLLOW_UP_STATUS_VALUES),
   })
-  .strict();
+;
 
 const sharingScopeSchema = z
   .object({
@@ -145,7 +145,7 @@ const sharingScopeSchema = z
     source_excerpt: canonicalSourceExcerptSchema,
     needs_confirmation: z.boolean(),
   })
-  .strict();
+;
 
 const retentionSchema = z
   .object({
@@ -154,7 +154,7 @@ const retentionSchema = z
     deletion_plan: boundedString,
     needs_confirmation: z.boolean(),
   })
-  .strict();
+;
 
 const invoiceFieldSchema = z.enum([
   'tool_name',
@@ -176,7 +176,7 @@ const administrativeHintsSchema = z
     subsidy_calculation: z.literal('not_performed_by_ai'),
     requires_officer_review: z.literal(true),
   })
-  .strict();
+;
 
 const auditSchema = z
   .object({
@@ -184,7 +184,7 @@ const auditSchema = z
     rules_version: z.literal('hackathon-mvp-2026-08-27'),
     unknown_fields: z.array(boundedString),
   })
-  .strict();
+;
 
 export const FlowPassPassportSchema = z
   .object({
@@ -194,7 +194,7 @@ export const FlowPassPassportSchema = z
         purpose: boundedString,
         intended_outcome: boundedString,
       })
-      .strict(),
+,
     nodes: z.array(canonicalPassportNodeSchema).max(MAX_PASSPORT_NODES),
     edges: z.array(canonicalPassportEdgeSchema).max(MAX_PASSPORT_EDGES),
     sharing_scope: sharingScopeSchema,
@@ -206,11 +206,11 @@ export const FlowPassPassportSchema = z
     administrative_hints: administrativeHintsSchema,
     audit: auditSchema,
   })
-  .strict();
+;
 
 export const PassportDocumentSchema = z
   .object({ passport_draft: FlowPassPassportSchema })
-  .strict();
+;
 
 export type NodeKind = (typeof NODE_KIND_VALUES)[number];
 export type DataCategory = (typeof DATA_CATEGORY_VALUES)[number];

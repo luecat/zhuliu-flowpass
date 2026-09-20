@@ -40,7 +40,8 @@ describe('ai draft admission boundary', () => {
   });
 
   it('requires natural Traditional Chinese without exposing structural JSON names in visible copy', () => {
-    expect(AI_PROMPT_VERSION).toBe('flowpass-ai-v10');
+    expect(AI_PROMPT_VERSION).toBe('flowpass-ai-v11');
+    expect(FIXED_AI_INSTRUCTION).toContain('No schema is attached');
     expect(FIXED_AI_INSTRUCTION).toContain('Traditional Chinese (zh-Hant)');
     expect(FIXED_AI_INSTRUCTION).toContain('Never expose or quote JSON property names');
     expect(FIXED_AI_INSTRUCTION).toContain('structural JSON property names and enum values exactly');
@@ -88,5 +89,19 @@ describe('ai draft admission boundary', () => {
     db.prepare("UPDATE jobs SET state='failed_terminal' WHERE id=?").run(first.job.id);
     const retry = service.enqueue({ applicantId: IDS.applicant, caseId: created.case.id, retryNonce: 'retry-key' });
     expect(retry.job.id).not.toBe(first.job.id);
+  });
+
+  it('starts a new job when the original unique key already failed', () => {
+    const crypto = testCrypto();
+    const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: uuidv7, requestIdGenerator: () => 'request' });
+    const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case-reuse' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers-reuse' });
+    const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
+    const service = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
+    const first = service.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
+    db.prepare("UPDATE jobs SET state='failed_terminal' WHERE id=?").run(first.job.id);
+    const again = service.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
+    expect(again.job.id).not.toBe(first.job.id);
+    expect(again.job.state).toBe('queued');
   });
 });

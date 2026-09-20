@@ -98,10 +98,13 @@ describe('screenVendorReceipt', () => {
       .run(configuredRule, IDS.cycle, 2, 'published', NOW, '2026-12-31T00:00:00.000Z', NOW, '2026-12-31T00:00:00.000Z', 5000, 10000, 'floor', '[]', JSON.stringify({ softwareBlacklist: ['Example Blocked Vendor'] }), NOW, NOW);
     db.prepare('UPDATE cases SET program_rule_version_id = ? WHERE id = ?').run(configuredRule, IDS.case);
 
-    expect(blockedTermsForCase(db, IDS.case)).toEqual(['Example Blocked Vendor']);
-    // The stored list now decides: what it omits is allowed, what it names is not.
+    expect(blockedTermsForCase(db, IDS.case)).toEqual(expect.arrayContaining(['Example Blocked Vendor', 'token plan', 'api credit']));
+    // Region vendors stay on the stored list; omitting them still allows Alibaba.
+    // Reseller terms remain a floor so token/credit packs stay blocked.
     await expect(screen(engineReading(['Alibaba Cloud']))).resolves.toBeNull();
     await expect(screen(engineReading(['Example Blocked Vendor Ltd.'])))
       .resolves.toMatchObject({ term: 'Example Blocked Vendor' });
+    await expect(screen(engineReading(['API Credit Pack'])))
+      .resolves.toMatchObject({ term: 'credit' });
   });
 });

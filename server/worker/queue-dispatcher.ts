@@ -7,7 +7,7 @@ export type QueueHandler = (job: DurableJob) => Promise<void>;
  * Failures that the same input will reproduce on every attempt. Retrying them
  * only spends model quota and keeps the applicant waiting through the backoff.
  */
-const TERMINAL_ERROR_CODES = new Set(['AI_INPUT_INVALID', 'AI_OUTPUT_UNSAFE']);
+const TERMINAL_ERROR_CODES = new Set(['AI_INPUT_INVALID', 'AI_OUTPUT_UNSAFE', 'AI_OUTPUT_INVALID']);
 
 export interface QueueDispatcherOptions {
   database: ConstructorParameters<typeof DurableJobRunner>[0];

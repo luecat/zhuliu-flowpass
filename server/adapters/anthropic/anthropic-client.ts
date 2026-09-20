@@ -1,5 +1,5 @@
+import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema';
 import Anthropic from '@anthropic-ai/sdk';
-import { PASSPORT_GENERATION_JSON_SCHEMA } from '../../../shared/passport-contract';
 import { LmStudioError, type LmStudioInput, type LmStudioResult } from '../lm-studio/lm-studio-client';
 
 export const ANTHROPIC_DEFAULT_MODEL_ID = 'claude-sonnet-5';
@@ -8,12 +8,7 @@ export type AnthropicEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 const EFFORT_LEVELS: readonly AnthropicEffort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-/**
- * Passport drafting is a bounded structured-output task, so the default sits
- * below the API default of `high`: it keeps the reasoning that the sensitive
- * data inference needs without paying for the depth a long agentic task wants.
- * Override per environment with `FLOWPASS_ANTHROPIC_EFFORT`.
- */
+/** Kept for LaunchAgent env parsing; thinking is disabled so effort is not sent. */
 export const ANTHROPIC_DEFAULT_EFFORT: AnthropicEffort = 'medium';
 
 export function anthropicEffort(value: string | undefined): AnthropicEffort {
@@ -36,6 +31,49 @@ function isRefusal(stopReason: string | null): boolean {
   return stopReason === 'refusal';
 }
 
+function lastTextBlock(content: Anthropic.Message['content']): string {
+  const texts = content
+    .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+    .map((block) => block.text)
+    .filter((text) => text.trim());
+  return texts.at(-1) ?? '';
+}
+
+function inferEnumType(values: readonly unknown[]): 'string' | 'number' | 'boolean' {
+  const kinds = new Set(values.filter((value) => value !== null).map((value) => typeof value));
+  if (kinds.size === 1 && kinds.has('boolean')) return 'boolean';
+  if (kinds.size === 1 && kinds.has('number')) return 'number';
+  return 'string';
+}
+
+/**
+ * Anthropic structured outputs require every node to have `type` (or anyOf).
+ * FlowPass's passport JSON Schema uses typeless `enum`/`const` and `enum`+null,
+ * which the API rejects with 400 — the worker then records AI_OUTPUT_INVALID.
+ */
+export function jsonSchemaForAnthropic(schema: Record<string, unknown>): Record<string, unknown> {
+  const walk = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (!value || typeof value !== 'object') return value;
+    const record = { ...(value as Record<string, unknown>) };
+    if (Object.hasOwn(record, 'const') && record.enum === undefined) record.enum = [record.const];
+    delete record.const;
+    if (Array.isArray(record.enum)) {
+      const values = record.enum as unknown[];
+      if (values.includes(null)) {
+        const nonNull = values.filter((item) => item !== null);
+        const rest = { ...record };
+        delete rest.enum;
+        delete rest.type;
+        return walk({ ...rest, anyOf: [{ type: inferEnumType(nonNull), enum: nonNull }, { type: 'null' }] });
+      }
+      if (record.type === undefined) record.type = inferEnumType(values);
+    }
+    return Object.fromEntries(Object.entries(record).map(([key, nested]) => [key, walk(nested)]));
+  };
+  return jsonSchemaOutputFormat(walk(schema) as { type: 'object' }).schema as Record<string, unknown>;
+}
+
 function mapApiError(error: unknown): LmStudioError {
   if (error instanceof Anthropic.AuthenticationError || error instanceof Anthropic.PermissionDeniedError) {
     return new LmStudioError('MODEL_AUTH_FAILED');
@@ -45,9 +83,11 @@ function mapApiError(error: unknown): LmStudioError {
   if (error instanceof Anthropic.APIConnectionTimeoutError) return new LmStudioError('MODEL_TIMEOUT');
   if (error instanceof Anthropic.APIConnectionError) return new LmStudioError('MODEL_OFFLINE');
   if (error instanceof Anthropic.BadRequestError) {
-    // The only request this adapter builds is the passport envelope, so a 400
-    // means the envelope itself was rejected rather than the model misbehaving.
-    return new LmStudioError(/too long|too large|exceed/i.test(error.message) ? 'AI_INPUT_TOO_LARGE' : 'AI_INPUT_INVALID');
+    const detail = error.message.replace(/\s+/g, ' ').slice(0, 240);
+    console.error(JSON.stringify({ source: 'anthropic', status: 400, detail }));
+    // Only applicant-envelope size is "input too large". Schema/grammar 400s
+    // contain "too"/"exceed" as well and must not look like the applicant's text.
+    return new LmStudioError(/prompt is too long|input is too long|request too large/i.test(error.message) ? 'AI_INPUT_TOO_LARGE' : 'AI_OUTPUT_INVALID');
   }
   if (error instanceof Anthropic.APIError) return new LmStudioError('MODEL_OFFLINE', `Anthropic API error ${error.status ?? 'unknown'}`);
   return new LmStudioError('MODEL_OFFLINE');
@@ -62,13 +102,10 @@ export class AnthropicClient {
 
   private readonly modelId: string;
 
-  private readonly effort: AnthropicEffort;
-
   public constructor(options: AnthropicClientOptions) {
     const apiKey = options.apiKey?.trim() ?? '';
     if (!apiKey) throw new Error('Anthropic API key is required');
     this.modelId = options.modelId?.trim() || ANTHROPIC_DEFAULT_MODEL_ID;
-    this.effort = options.effort ?? ANTHROPIC_DEFAULT_EFFORT;
     this.client = new Anthropic({
       apiKey,
       timeout: options.overallTimeoutMs ?? 120_000,
@@ -90,18 +127,18 @@ export class AnthropicClient {
       throw new LmStudioError('AI_INPUT_TOO_LARGE');
     }
 
+    const screeningSchema = input.responseSchema;
     let response;
     try {
       response = await this.client.messages.create({
         model: this.modelId,
-        max_tokens: 16_000,
+        max_tokens: screeningSchema ? 1_024 : 8_192,
         system: input.systemInstruction,
         messages: [{ role: 'user', content: userContent }],
-        thinking: { type: 'adaptive' },
-        output_config: {
-          effort: this.effort,
-          format: { type: 'json_schema', schema: input.responseSchema ?? PASSPORT_GENERATION_JSON_SCHEMA },
-        },
+        thinking: { type: 'disabled' },
+        ...(screeningSchema
+          ? { output_config: { format: { type: 'json_schema', schema: jsonSchemaForAnthropic(screeningSchema) } } }
+          : {}),
       });
     } catch (error) {
       throw mapApiError(error);
@@ -112,10 +149,7 @@ export class AnthropicClient {
     // spends a repair round trip on half an object.
     if (response.stop_reason === 'max_tokens') throw new LmStudioError('AI_OUTPUT_INVALID');
 
-    const content = response.content
-      .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
-      .map((block) => block.text)
-      .join('');
+    const content = lastTextBlock(response.content);
     if (!content.trim()) throw new LmStudioError('AI_OUTPUT_INVALID');
 
     return {

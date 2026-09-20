@@ -1,1 +1,1 @@
-{"fixture":"external-recipient","expectedSchemaValid":true,"requiredFollowUpTopics":["destination"],"answers":{"material":"客戶服務紀錄","aiPurpose":"產生回覆建議","sensitiveData":"姓名與案件內容","destinationAndAudience":"外部客服平台"}}
+{"fixture":"external-recipient","expectedSchemaValid":true,"requiredFollowUpTopics":["destination"],"answers":{"material":"客戶服務紀錄","aiPurpose":"產生回覆建議","sensitiveData":"姓名與案件內容","destinationAndAudience":"外部客服平台","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

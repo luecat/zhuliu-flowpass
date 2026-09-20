@@ -1,1 +1,1 @@
-{"fixture":"malformed-output","expectedSchemaValid":false,"requiredFollowUpTopics":["schema"],"answers":{"material":"合成資料","aiPurpose":"建立資料流程草稿","sensitiveData":"無","destinationAndAudience":"團隊內部"},"modelOutput":"{broken-json"}
+{"fixture":"malformed-output","expectedSchemaValid":false,"requiredFollowUpTopics":["schema"],"answers":{"material":"合成資料","aiPurpose":"建立資料流程草稿","sensitiveData":"無","destinationAndAudience":"團隊內部","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"},"modelOutput":"{broken-json"}

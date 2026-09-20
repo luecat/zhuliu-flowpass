@@ -1,1 +1,1 @@
-{"fixture":"plugin-use","expectedSchemaValid":true,"requiredFollowUpTopics":["destination"],"answers":{"material":"文字草稿與圖片素材","aiPurpose":"透過翻譯外掛整理內容","sensitiveData":"客戶聯絡資料","destinationAndAudience":"第三方外掛與團隊"}}
+{"fixture":"plugin-use","expectedSchemaValid":true,"requiredFollowUpTopics":["destination"],"answers":{"material":"文字草稿與圖片素材","aiPurpose":"透過翻譯外掛整理內容","sensitiveData":"客戶聯絡資料","destinationAndAudience":"第三方外掛與團隊","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

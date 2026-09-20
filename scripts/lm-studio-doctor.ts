@@ -18,7 +18,7 @@ export function loadAiFixtures(directory = join(process.cwd(), 'test', 'fixtures
 
 export async function runFixtureBenchmark(client: Pick<LmStudioClient, 'complete'>, fixtures = loadAiFixtures()): Promise<BenchmarkResult[]> {
   const results: BenchmarkResult[] = [];
-  const maxFixture: Fixture = { fixture: 'maximum-legal-input', expectedSchemaValid: true, requiredFollowUpTopics: [], answers: { material: '中'.repeat(500), aiPurpose: '中'.repeat(500), sensitiveData: '中'.repeat(600), destinationAndAudience: '中'.repeat(500) } };
+  const maxFixture: Fixture = { fixture: 'maximum-legal-input', expectedSchemaValid: true, requiredFollowUpTopics: [], answers: { material: '中'.repeat(500), aiPurpose: '中'.repeat(500), sensitiveData: '中'.repeat(600), destinationAndAudience: '中'.repeat(500), requestedTool: '中'.repeat(100), retentionDuration: '中'.repeat(100) } };
   for (const fixture of [...fixtures, maxFixture]) {
     const started = performance.now();
     try {

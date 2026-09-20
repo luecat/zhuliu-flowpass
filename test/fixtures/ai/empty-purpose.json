@@ -1,1 +1,1 @@
-{"fixture":"empty-purpose","expectedSchemaValid":false,"requiredFollowUpTopics":["purpose"],"answers":{"material":"合成資料","aiPurpose":"","sensitiveData":"無","destinationAndAudience":"團隊內部"}}
+{"fixture":"empty-purpose","expectedSchemaValid":false,"requiredFollowUpTopics":["purpose"],"answers":{"material":"合成資料","aiPurpose":"","sensitiveData":"無","destinationAndAudience":"團隊內部","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

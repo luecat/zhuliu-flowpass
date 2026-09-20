@@ -1,1 +1,1 @@
-{"fixture":"ambiguous-destination","expectedSchemaValid":true,"requiredFollowUpTopics":["destination","retention"],"answers":{"material":"客戶簡報與名單","aiPurpose":"產生行銷草稿","sensitiveData":"姓名與公司","destinationAndAudience":"可能分享給合作夥伴"}}
+{"fixture":"ambiguous-destination","expectedSchemaValid":true,"requiredFollowUpTopics":["destination","retention"],"answers":{"material":"客戶簡報與名單","aiPurpose":"產生行銷草稿","sensitiveData":"姓名與公司","destinationAndAudience":"可能分享給合作夥伴","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

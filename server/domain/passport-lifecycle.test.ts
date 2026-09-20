@@ -17,7 +17,7 @@ const IDS = {
   rule: '0198f050-0000-7000-8000-000000000003',
 };
 const NOW = '2026-08-30T00:00:00.000Z';
-const answers = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', applicantName: '測試申請人' };
+const answers = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' };
 
 function cryptoForTests(): FieldCrypto {
   const keyring: Keyring = { activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x44) : undefined };

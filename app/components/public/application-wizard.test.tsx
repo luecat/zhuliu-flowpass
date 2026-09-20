@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PublicApiError } from '../../lib/public-api';
 import { ApplicationWizard } from './application-wizard';
@@ -22,7 +22,15 @@ interface ListedCase {
   updatedAt: string;
 }
 
-const COMPLETE_ANSWERS = { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端', applicantName: '' };
+const COMPLETE_ANSWERS = {
+  material: '照片',
+  aiPurpose: '整理',
+  sensitiveData: '姓名',
+  destinationAndAudience: '團隊雲端',
+  requestedTool: 'ChatGPT',
+  retentionDuration: '保留 30 天',
+  applicantName: '',
+};
 
 function useAuthenticatedApi(cases: ListedCase[], options: { answers?: typeof COMPLETE_ANSWERS | null; jobStates?: Array<string | Error>; draftErrors?: Error[] } = {}) {
   const jobStates = [...(options.jobStates ?? [])];
@@ -68,6 +76,40 @@ function useAuthenticatedApi(cases: ListedCase[], options: { answers?: typeof CO
   return { read, mutate };
 }
 
+function selectChoice(label: string, optionLabel: string) {
+  fireEvent.click(screen.getByRole('combobox', { name: label }));
+  const listbox = screen.getByRole('listbox');
+  fireEvent.click(within(listbox).getByRole('button', { name: new RegExp(optionLabel) }));
+}
+
+function selectTool(optionLabel: string) {
+  const input = screen.getByRole('combobox', { name: '使用的模型／工具？' });
+  fireEvent.focus(input);
+  fireEvent.change(input, { target: { value: optionLabel } });
+  fireEvent.click(screen.getByRole('button', { name: new RegExp(optionLabel) }));
+}
+
+function fillWizard(answers: typeof COMPLETE_ANSWERS = COMPLETE_ANSWERS) {
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: answers.material } });
+  fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: answers.aiPurpose } });
+  fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+
+  selectChoice('是否包含個資或敏感資料？', answers.sensitiveData === '無' || answers.sensitiveData === '不確定' ? answers.sensitiveData : '有');
+  if (answers.sensitiveData !== '無' && answers.sensitiveData !== '不確定') {
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: answers.sensitiveData } });
+  }
+  fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: answers.destinationAndAudience } });
+  fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+
+  selectTool(answers.requestedTool);
+  fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+
+  selectChoice('資料保存期限？', answers.retentionDuration);
+}
+
 async function startAiDraft() {
   await act(async () => {
     await Promise.resolve();
@@ -77,10 +119,7 @@ async function startAiDraft() {
   while (screen.queryByRole('button', { name: '上一題' }) && !(screen.getByRole('button', { name: '上一題' }) as HTMLButtonElement).disabled) {
     fireEvent.click(screen.getByRole('button', { name: '上一題' }));
   }
-  for (const [index, value] of [COMPLETE_ANSWERS.material, COMPLETE_ANSWERS.aiPurpose, COMPLETE_ANSWERS.sensitiveData, COMPLETE_ANSWERS.destinationAndAudience].entries()) {
-    fireEvent.change(screen.getByRole('textbox'), { target: { value } });
-    if (index < 3) fireEvent.click(screen.getByRole('button', { name: '下一題' }));
-  }
+  fillWizard();
   await act(async () => { await vi.advanceTimersByTimeAsync(500); });
   fireEvent.click(screen.getByRole('button', { name: '檢查答案' }));
   fireEvent.click(screen.getByRole('button', { name: '產生資料流向草稿' }));
@@ -96,33 +135,38 @@ describe('ApplicationWizard boundaries', () => {
   });
   afterEach(() => vi.useRealTimers());
 
-  it('guides four fields and presents a review before draft generation', () => {
+  it('guides six fields and presents a review before draft generation', () => {
     render(<ApplicationWizard />);
-    for (const [index, value] of ['照片', '整理', '姓名', '團隊雲端'].entries()) {
-      fireEvent.change(screen.getByRole('textbox'), { target: { value } });
-      if (index < 3) fireEvent.click(screen.getByRole('button', { name: '下一題' }));
-    }
+    fillWizard();
     fireEvent.click(screen.getByRole('button', { name: '檢查答案' }));
     expect(screen.getByRole('heading', { name: '送出前確認' })).toBeInTheDocument();
-    expect(screen.getByText('確認後會產生資料流向草稿，之後還需回答追問並上傳附件。')).toBeInTheDocument();
+    expect(screen.getByText('確認後會產生資料流向草稿，之後可能還需回答追問並上傳附件。')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '產生資料流向草稿' })).toBeDisabled();
     expect(screen.queryByText(/Unicode|四題合計|自述/)).not.toBeInTheDocument();
   });
 
-  it('keeps question 3 guidance outside the textarea instead of a long placeholder prompt', () => {
+  it('asks for a detail box when sensitive data is present, and skips follow-up copy when absent', () => {
     render(<ApplicationWizard />);
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '照片' } });
     fireEvent.click(screen.getByRole('button', { name: '下一題' }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '整理' } });
     fireEvent.click(screen.getByRole('button', { name: '下一題' }));
-    expect(screen.getByRole('heading', { name: '可能包含哪些個資或敏感資料？' })).toBeInTheDocument();
-    const input = screen.getByRole('textbox');
-    expect(input).toHaveAttribute('placeholder', '例如：人臉、姓名、金鑰；不確定可填「不確定」');
-    expect(input.getAttribute('placeholder')).not.toMatch(/簡述可能包含/);
-    expect(screen.getByText(/簡述可能包含的敏感個資/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '是否包含個資或敏感資料？' })).toBeInTheDocument();
+    selectChoice('是否包含個資或敏感資料？', '有');
+    expect(screen.getByRole('textbox')).toHaveAttribute('placeholder', '例如：人臉、姓名、金鑰');
+    expect(screen.getByText(/選「有」時請簡述類型/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '姓名' } });
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '團隊雲端' } });
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+    selectTool('ChatGPT');
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+    selectChoice('資料保存期限？', '保留 30 天');
+    fireEvent.click(screen.getByRole('button', { name: '檢查答案' }));
+    expect(screen.getByText(/可能還需回答追問/)).toBeInTheDocument();
   });
 
-  it('marks every field required and rejects Unicode scalar overflow without UTF-16 maxLength', () => {
+  it('marks text fields required and rejects Unicode scalar overflow without UTF-16 maxLength', () => {
     render(<ApplicationWizard />);
     const input = screen.getByRole('textbox');
     expect(input).toBeRequired();
@@ -255,8 +299,16 @@ describe('ApplicationWizard boundaries', () => {
     expect(mutate.mock.calls.filter(([path]) => String(path).endsWith('/ai-drafts'))).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: '返回修改' }));
+    while (screen.queryByRole('button', { name: '上一題' }) && !(screen.getByRole('button', { name: '上一題' }) as HTMLButtonElement).disabled) {
+      fireEvent.click(screen.getByRole('button', { name: '上一題' }));
+    }
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
     fireEvent.change(screen.getByRole('textbox'), { target: { value: '團隊雲端，只給社團幹部' } });
     await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
+    fireEvent.click(screen.getByRole('button', { name: '下一題' }));
     fireEvent.click(screen.getByRole('button', { name: '檢查答案' }));
 
     expect(screen.queryByText(/內容包含系統指令/)).not.toBeInTheDocument();

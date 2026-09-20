@@ -45,7 +45,7 @@ describe('admin passport data snapshot', () => {
       const passportId = uuidv7();
       const versionId = uuidv7();
       database.prepare(`INSERT INTO cases (id, case_code, applicant_id, program_cycle_id, program_rule_version_id, state, current_answer_version_id, current_passport_version_id, requested_amount_twd, created_at, updated_at, row_version) VALUES (?, ?, ?, ?, ?, 'under_review', ?, ?, 200, ?, ?, 3)`).run(caseId, code, applicantId, cycleId, ruleId, answerId, versionId, NOW, NOW);
-      const answers = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '沒有', destinationAndAudience: '自己', applicantName: '測試申請人' });
+      const answers = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '沒有', destinationAndAudience: '自己', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' });
       database.prepare('INSERT INTO answer_versions (id, case_id, version_no, answers_enc, content_sha256, created_by_applicant_id, created_at) VALUES (?, ?, 1, ?, ?, ?, ?)').run(
         answerId, caseId, encryptDatabaseText(crypto, 'answer_versions', 'answers_enc', answerId, answers), 'a'.repeat(64), applicantId, NOW,
       );

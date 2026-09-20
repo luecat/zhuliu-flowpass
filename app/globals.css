@@ -2488,6 +2488,41 @@ textarea::placeholder {
   line-height: 1.7;
 }
 
+.applicant-home-lead {
+  margin: 0 0 8px;
+  color: #2c463c;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.applicant-intro {
+  display: grid;
+  gap: 10px;
+  margin: 20px 0 4px;
+  padding: 16px 18px;
+  border: 1px solid rgba(38, 118, 83, 0.12);
+  border-radius: 14px;
+  background: #f7fbf8;
+}
+
+.applicant-intro h2 {
+  margin: 0;
+  color: #1d3a30;
+  font-size: 16px;
+}
+
+.applicant-intro p {
+  margin: 0;
+  color: #3f534a;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.applicant-intro--limits {
+  background: #f4f7f6;
+  border-color: rgba(29, 58, 48, 0.1);
+}
+
 .eyebrow {
   margin: 0;
   color: var(--blue-dark);

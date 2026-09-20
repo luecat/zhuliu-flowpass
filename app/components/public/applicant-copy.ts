@@ -5,6 +5,8 @@ const INTERNAL_APPLICANT_TOKENS = [
   'intended_use',
   'personal_or_sensitive_data',
   'destination_and_audience',
+  'requested_tool',
+  'retention_duration',
   'use_case',
   'passport_draft',
   'sharing_scope',

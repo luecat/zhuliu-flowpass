@@ -36,7 +36,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: undefined, requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'worker secret sentinel', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'worker secret sentinel', aiPurpose: '整理', sensitiveData: '不確定', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -52,7 +52,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'quality-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'asdf', aiPurpose: '12345', sensitiveData: '哈哈哈', destinationAndAudience: '???', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'quality-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'asdf', aiPurpose: '12345', sensitiveData: '哈哈哈', destinationAndAudience: '???', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'quality-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -77,7 +77,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'rewrite-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'rewrite source sentinel', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'rewrite-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: 'rewrite source sentinel', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'rewrite-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -103,7 +103,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'wrapped-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'wrapped-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'wrapped-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -122,7 +122,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'invoice-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'invoice-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'invoice-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -139,7 +139,7 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'grounded-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'grounded-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'grounded-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -149,19 +149,20 @@ describe('generate passport worker boundary', () => {
     modelOutput.passport_draft.audit.unknown_fields = ['material', 'aiPurpose', 'sensitiveData', 'destinationAndAudience'];
     let inputEnvelope: unknown;
     const result = await generatePassport(queued.job, { workerId: 'worker-1' }, { database: db, crypto, client: { complete: async (input) => { inputEnvelope = input.inputEnvelope; return { content: JSON.stringify(modelOutput), model: 'fixture', inputTokens: 1, outputTokens: 1 }; } }, clock: () => new Date(NOW) });
-    expect(inputEnvelope).toMatchObject({ answers: { materials: '社團照片', intended_use: '使用 AI 修圖', personal_or_sensitive_data: '可能有人像', destination_and_audience: '公開於 IG' } });
+    expect(inputEnvelope).toMatchObject({ answers: { materials: '社團照片', intended_use: '使用 AI 修圖', personal_or_sensitive_data: '可能有人像', destination_and_audience: '公開於 IG', requested_tool: 'ChatGPT', retention_duration: '保留 30 天' } });
     const encrypted = db.prepare('SELECT id, payload_enc FROM passport_versions WHERE id = ?').get(result.passportVersionId) as { id: string; payload_enc: string };
     const passport = JSON.parse(decryptDatabaseText(crypto, 'passport_versions', 'payload_enc', encrypted.id, encrypted.payload_enc)) as FlowPassPassport;
-    expect(passport.retention).toMatchObject({ storage_location: 'unknown', duration: 'unknown', deletion_plan: 'unknown', needs_confirmation: true });
-    expect(passport.administrative_hints.requested_tool).toBe('unknown');
+    expect(passport.retention).toMatchObject({ storage_location: 'unknown', duration: '保留 30 天', deletion_plan: 'unknown', needs_confirmation: true });
+    expect(passport.administrative_hints.requested_tool).toBe('ChatGPT');
     expect(passport.audit.unknown_fields).not.toEqual(expect.arrayContaining(['material', 'aiPurpose', 'sensitiveData', 'destinationAndAudience']));
+    expect(passport.audit.unknown_fields).toEqual(expect.arrayContaining(['retention.storage_location', 'retention.deletion_plan']));
   });
 
-  it('keeps only one concrete follow-up per topic', async () => {
+  it('drops tool and retention follow-ups when those answers were already collected up front', async () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'dedupe-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '修圖', sensitiveData: '不確定', destinationAndAudience: '公開於 IG', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'dedupe-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '修圖', sensitiveData: '不確定', destinationAndAudience: '公開於 IG', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'dedupe-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const passport = inspectPassportJson(JSON.stringify(FLOWPASS_SAMPLE)).canonical!;
@@ -170,20 +171,22 @@ describe('generate passport worker boundary', () => {
       { ...baseQuestion, id: 'tool-1', prompt: '請問會使用哪個 AI 工具？例如 Canva。', reason: '確認工具。' },
       { ...baseQuestion, id: 'tool-2', prompt: '請再提供修圖工具名稱，例如 Firefly。', reason: '確認服務。' },
       { ...baseQuestion, id: 'retention-1', prompt: '檔案會保留多久？例如 30 天。', reason: '確認刪除時間。' },
+      { ...baseQuestion, id: 'sensitive-1', prompt: '資料可能包含哪些敏感內容？例如人臉或姓名。', reason: '確認風險。' },
+      { ...baseQuestion, id: 'sensitive-2', prompt: '是否還有其他個資？例如聯絡方式。', reason: '再確認一次敏感資料。' },
     ];
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
     const result = await generatePassport(queued.job, { workerId: 'worker-1' }, { database: db, crypto, client: { complete: async () => ({ content: JSON.stringify({ passport_draft: passport }), model: 'fixture', inputTokens: 1, outputTokens: 1 }) }, clock: () => new Date(NOW) });
     const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW) });
     const stored = lifecycle.getForApplicant({ applicantId: IDS.applicant, caseId: created.case.id, versionId: result.passportVersionId });
-    expect(stored?.followUps.map((question) => question.questionKey)).toEqual(expect.arrayContaining(['tool-1', 'retention-1']));
-    expect(stored?.followUps).toHaveLength(2);
+    expect(stored?.followUps.map((question) => question.questionKey)).toEqual(['sensitive-1']);
+    expect(stored?.followUps).toHaveLength(1);
   });
 
   it('rewrites a public or sensitive draft until it has a connected destination and safety action', async () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'semantic-case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'semantic-answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'semantic-answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -204,15 +207,15 @@ describe('generate passport worker boundary', () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '不確定', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const initialPassport = inspectPassportJson(JSON.stringify(FLOWPASS_SAMPLE)).canonical!;
     initialPassport.follow_up_questions = [{
-      id: 'tool-name',
+      id: 'sensitive-data',
       version: 1,
-      prompt: '你會使用哪個 AI 工具？例如 Adobe Firefly 或 Canva。',
-      reason: '確認資料會交給哪個服務處理。',
+      prompt: '資料可能包含哪些敏感內容？例如人臉、姓名或金鑰。',
+      reason: '確認風險類別後才能完成安全措施。',
       answerSchema: { type: 'text', maxLength: 400 },
       required: true,
       relatedNodeIds: [],
@@ -235,7 +238,7 @@ describe('generate passport worker boundary', () => {
       caseId: created.case.id,
       passportVersionId: source!.version.id,
       ifMatch: source!.etag,
-      answers: requiredQuestions.map((question) => ({ questionId: question.id, answer: 'LM Studio' })),
+      answers: requiredQuestions.map((question) => ({ questionId: question.id, answer: '人臉與姓名' })),
       declarations: [],
     });
     const revision = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id, operation: 'revise' });
@@ -247,7 +250,7 @@ describe('generate passport worker boundary', () => {
       clock: () => new Date(NOW),
     });
     expect(result.resultCode).toBe('AI_DRAFT_CREATED');
-    expect(revisionInput).toMatchObject({ answeredFollowUps: expect.arrayContaining([{ question: expect.any(String), answer: 'LM Studio' }]) });
+    expect(revisionInput).toMatchObject({ answeredFollowUps: expect.arrayContaining([{ question: expect.any(String), answer: '人臉與姓名' }]) });
     expect(revisionInput).not.toHaveProperty('newAnswers');
     expect(revisionInput).not.toHaveProperty('currentQuestionIds');
     expect((db.prepare('SELECT COUNT(*) AS count FROM passport_versions').get() as { count: number }).count).toBe(2);
@@ -258,7 +261,14 @@ describe('generate passport worker boundary', () => {
     expect(revised?.followUps).toEqual([]);
   });
 
-  function enqueueDraft(crypto: FieldCrypto, key: string, answers: { material: string; aiPurpose: string; sensitiveData: string; destinationAndAudience: string }) {
+  function enqueueDraft(crypto: FieldCrypto, key: string, answers: {
+    material: string;
+    aiPurpose: string;
+    sensitiveData: string;
+    destinationAndAudience: string;
+    requestedTool: string;
+    retentionDuration: string;
+  }) {
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: `${key}-case` });
     cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { ...answers, applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: `${key}-answers` });
@@ -269,7 +279,7 @@ describe('generate passport worker boundary', () => {
 
   it('stops before drafting when model screening flags the answers as not a real application', async () => {
     const crypto = cryptoForTests();
-    const queued = enqueueDraft(crypto, 'screen-reject', { material: '今天天氣很好', aiPurpose: '我想去海邊玩', sensitiveData: '沒有', destinationAndAudience: '跟朋友說' });
+    const queued = enqueueDraft(crypto, 'screen-reject', { material: '今天天氣很好', aiPurpose: '我想去海邊玩', sensitiveData: '沒有', destinationAndAudience: '跟朋友說', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天' });
     const calls: Array<{ responseSchema?: Record<string, unknown> }> = [];
     await expect(generatePassport(queued.job, { workerId: 'worker-1' }, {
       database: db,
@@ -289,7 +299,7 @@ describe('generate passport worker boundary', () => {
     ['a screening failure', async () => { throw new Error('quota'); }],
   ])('drafts the passport after %s', async (_label, screening) => {
     const crypto = cryptoForTests();
-    const queued = enqueueDraft(crypto, 'screen-allow', { material: '社團活動照片', aiPurpose: '用 AI 調色', sensitiveData: '人臉', destinationAndAudience: '社團雲端' });
+    const queued = enqueueDraft(crypto, 'screen-allow', { material: '社團活動照片', aiPurpose: '用 AI 調色', sensitiveData: '人臉', destinationAndAudience: '社團雲端', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天' });
     let calls = 0;
     const result = await generatePassport(queued.job, { workerId: 'worker-1' }, {
       database: db,

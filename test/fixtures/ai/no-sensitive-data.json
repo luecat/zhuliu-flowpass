@@ -1,1 +1,1 @@
-{"fixture":"no-sensitive-data","expectedSchemaValid":true,"requiredFollowUpTopics":[],"answers":{"material":"去識別化測試資料","aiPurpose":"建立資料流程草稿","sensitiveData":"無","destinationAndAudience":"團隊內部"}}
+{"fixture":"no-sensitive-data","expectedSchemaValid":true,"requiredFollowUpTopics":[],"answers":{"material":"去識別化測試資料","aiPurpose":"建立資料流程草稿","sensitiveData":"無","destinationAndAudience":"團隊內部","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

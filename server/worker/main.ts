@@ -120,6 +120,7 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
             database,
             crypto,
             lineClient,
+            liffId: runtimeConfig.liffId,
             now: new Date().toISOString(),
           });
         },

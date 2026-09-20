@@ -1,1 +1,1 @@
-{"fixture":"cloud-storage","expectedSchemaValid":true,"requiredFollowUpTopics":["retention","destination"],"answers":{"material":"專案文件與備份","aiPurpose":"整理雲端協作資料","sensitiveData":"專案成員姓名","destinationAndAudience":"雲端硬碟與協作者"}}
+{"fixture":"cloud-storage","expectedSchemaValid":true,"requiredFollowUpTopics":["retention","destination"],"answers":{"material":"專案文件與備份","aiPurpose":"整理雲端協作資料","sensitiveData":"專案成員姓名","destinationAndAudience":"雲端硬碟與協作者","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

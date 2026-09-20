@@ -48,7 +48,7 @@ const FIELD_LABELS: Record<string, string> = {
 };
 
 const PATH_LABELS: Record<string, string> = {
-  material: '會使用的資料', aiPurpose: '使用 AI 的目的', sensitiveData: '是否包含敏感資料', destinationAndAudience: '資料去向與使用對象', applicantName: '申請人姓名',
+  'material': '會使用的資料', 'aiPurpose': '使用 AI 的目的', 'sensitiveData': '是否包含敏感資料', 'destinationAndAudience': '資料去向與使用對象', 'requestedTool': '使用的模型／工具', 'retentionDuration': '資料保存期限', 'applicantName': '申請人姓名',
   billingCycle: '計費方式', billingPeriods: '購買期數', softwareFunction: '軟體用途', otherFunction: '其他用途', softwareName: '軟體名稱', companyName: '供應商名稱',
   purchaseDate: '購買日期', payerType: '付款人類型', originalCurrency: '原始幣別', otherCurrency: '其他幣別', originalExpense: '原始金額', convertedTwd: '銀行付款實付台幣', specialStatus: '是否具特殊身分',
   invoiceNumber: '發票號碼', paymentSourceFingerprint: '付款來源指紋', subscriptionStartDate: '訂閱開始日', subscriptionEndDate: '訂閱結束日',

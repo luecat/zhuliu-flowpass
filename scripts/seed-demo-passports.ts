@@ -237,7 +237,7 @@ async function main(): Promise<void> {
       const answer = cases.saveAnswers({
         applicantId,
         caseId,
-        answers: { material: context.material, aiPurpose: context.purpose, sensitiveData: context.sensitive, destinationAndAudience: context.destination, applicantName: write.applicantName ?? '' },
+        answers: { material: context.material, aiPurpose: context.purpose, sensitiveData: context.sensitive, destinationAndAudience: context.destination, requestedTool: scenario.passportTools[0] ?? 'ChatGPT', retentionDuration: '保留 30 天', applicantName: write.applicantName ?? '' },
         ifMatch: etag(caseId),
         idempotencyKey: `${scenario.code}-answers`,
       });

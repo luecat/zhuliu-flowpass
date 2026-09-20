@@ -40,7 +40,7 @@ describe('ai draft admission boundary', () => {
   });
 
   it('requires natural Traditional Chinese without exposing structural JSON names in visible copy', () => {
-    expect(AI_PROMPT_VERSION).toBe('flowpass-ai-v9');
+    expect(AI_PROMPT_VERSION).toBe('flowpass-ai-v10');
     expect(FIXED_AI_INSTRUCTION).toContain('Traditional Chinese (zh-Hant)');
     expect(FIXED_AI_INSTRUCTION).toContain('Never expose or quote JSON property names');
     expect(FIXED_AI_INSTRUCTION).toContain('structural JSON property names and enum values exactly');
@@ -49,6 +49,7 @@ describe('ai draft admission boundary', () => {
     expect(FIXED_AI_INSTRUCTION).toContain('at most four required follow-up questions');
     expect(FIXED_AI_INSTRUCTION).toContain('Prefer checklist-style follow-up questions');
     expect(FIXED_AI_INSTRUCTION).toContain('single_choice or multi_choice');
+    expect(FIXED_AI_INSTRUCTION).toContain('Never ask follow-up questions about the AI tool or retention duration');
     expect(FIXED_AI_INSTRUCTION).toContain('Infer which sensitive categories are plausible');
     expect(FIXED_AI_INSTRUCTION).toContain('not a generic face-only question');
     expect(FIXED_AI_INSTRUCTION).toContain('API keys/passwords');
@@ -64,7 +65,7 @@ describe('ai draft admission boundary', () => {
     const crypto = testCrypto();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: uuidv7, requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '機密答案 sentinel', aiPurpose: '整理', sensitiveData: '健康', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '機密答案 sentinel', aiPurpose: '整理', sensitiveData: '健康', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const service = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const result = service.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
@@ -80,7 +81,7 @@ describe('ai draft admission boundary', () => {
     const crypto = testCrypto();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: uuidv7, requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'case' });
-    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '無', destinationAndAudience: '團隊', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
     const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
     const service = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const first = service.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });

@@ -1,1 +1,1 @@
-{"fixture":"missing-retention","expectedSchemaValid":true,"requiredFollowUpTopics":["retention"],"answers":{"material":"發票與採購紀錄","aiPurpose":"整理採購報表","sensitiveData":"統一編號與金額","destinationAndAudience":"財務團隊"}}
+{"fixture":"missing-retention","expectedSchemaValid":true,"requiredFollowUpTopics":["retention"],"answers":{"material":"發票與採購紀錄","aiPurpose":"整理採購報表","sensitiveData":"統一編號與金額","destinationAndAudience":"財務團隊","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

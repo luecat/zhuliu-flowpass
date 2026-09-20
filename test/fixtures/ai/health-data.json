@@ -1,1 +1,1 @@
-{"fixture":"health-data","expectedSchemaValid":true,"requiredFollowUpTopics":["retention","destination"],"answers":{"material":"就診紀錄與檢驗報告","aiPurpose":"整理健康研究摘要","sensitiveData":"健康資料","destinationAndAudience":"研究團隊與醫療合作方"}}
+{"fixture":"health-data","expectedSchemaValid":true,"requiredFollowUpTopics":["retention","destination"],"answers":{"material":"就診紀錄與檢驗報告","aiPurpose":"整理健康研究摘要","sensitiveData":"健康資料","destinationAndAudience":"研究團隊與醫療合作方","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

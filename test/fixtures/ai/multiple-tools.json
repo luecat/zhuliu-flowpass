@@ -1,1 +1,1 @@
-{"fixture":"multiple-tools","expectedSchemaValid":true,"requiredFollowUpTopics":[],"answers":{"material":"文字、圖片與程式碼","aiPurpose":"以多個工具產生測試報告","sensitiveData":"合成資料","destinationAndAudience":"團隊內部"}}
+{"fixture":"multiple-tools","expectedSchemaValid":true,"requiredFollowUpTopics":[],"answers":{"material":"文字、圖片與程式碼","aiPurpose":"以多個工具產生測試報告","sensitiveData":"合成資料","destinationAndAudience":"團隊內部","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

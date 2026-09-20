@@ -49,7 +49,7 @@ function seed(database: Database.Database, crypto: FieldCrypto): void {
     ) VALUES (?, 'CASE-A', ?, ?, ?, 'draft', ?, ?, 7)`,
   ).run(IDS.caseA, IDS.applicantA, IDS.programCycle, IDS.ruleVersion, STAMP, FRESH_STAMP);
   const answerVersion = '0198f051-0000-7000-8000-000000000009';
-  const answerText = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端', applicantName: '測試申請人' });
+  const answerText = JSON.stringify({ material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊雲端', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' });
   database.prepare(
     `INSERT INTO answer_versions (
       id, case_id, version_no, answers_enc, content_sha256, created_by_applicant_id, created_at

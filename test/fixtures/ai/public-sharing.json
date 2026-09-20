@@ -1,1 +1,1 @@
-{"fixture":"public-sharing","expectedSchemaValid":true,"requiredFollowUpTopics":["destination"],"answers":{"material":"活動照片與成果影片","aiPurpose":"製作公開成果頁","sensitiveData":"可能包含路人影像","destinationAndAudience":"公開網站與社群"}}
+{"fixture":"public-sharing","expectedSchemaValid":true,"requiredFollowUpTopics":["destination"],"answers":{"material":"活動照片與成果影片","aiPurpose":"製作公開成果頁","sensitiveData":"可能包含路人影像","destinationAndAudience":"公開網站與社群","requestedTool":"ChatGPT","retentionDuration":"保留 30 天"}}

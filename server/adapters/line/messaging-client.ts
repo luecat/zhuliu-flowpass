@@ -18,9 +18,24 @@ export interface LineNotificationPush {
   uri: string;
 }
 
+export interface LineReplyButton {
+  label: string;
+  uri: string;
+}
+
+export interface LineTextReply {
+  replyToken: string;
+  text: string;
+}
+
+export interface LineHelpReply extends LineTextReply {
+  title: string;
+  buttons: LineReplyButton[];
+}
+
 export interface LineMessagingClient {
   push(input: LineNotificationPush): Promise<void>;
-  reply(input: { replyToken: string; text: string }): Promise<void>;
+  reply(input: LineTextReply | LineHelpReply): Promise<void>;
 }
 
 function flexMessage(input: LineNotificationPush) {
@@ -90,6 +105,53 @@ function flexMessage(input: LineNotificationPush) {
   };
 }
 
+function helpFlexMessage(input: LineHelpReply) {
+  return {
+    type: 'flex',
+    altText: input.text.slice(0, 400),
+    contents: {
+      type: 'bubble',
+      size: 'kilo',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#236B4B',
+        paddingAll: '20px',
+        contents: [
+          { type: 'text', text: 'FlowPass 竹流', color: '#DDF0E7', size: 'sm', weight: 'bold' },
+          { type: 'text', text: input.title, color: '#FFFFFF', size: 'xl', weight: 'bold', margin: 'md', wrap: true },
+        ],
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        paddingAll: '20px',
+        contents: [
+          { type: 'text', text: input.text.slice(0, 2_000), color: '#24332C', size: 'md', wrap: true },
+        ],
+      },
+      footer: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'sm',
+        paddingAll: '20px',
+        paddingTop: '0px',
+        contents: input.buttons.map((button, index) => ({
+          type: 'button',
+          style: index === 0 ? 'primary' : 'secondary',
+          color: index === 0 ? '#236B4B' : undefined,
+          height: 'sm',
+          action: { type: 'uri' as const, label: button.label, uri: button.uri },
+        })),
+      },
+    },
+  };
+}
+
+function isHelpReply(input: LineTextReply | LineHelpReply): input is LineHelpReply {
+  return 'buttons' in input && Array.isArray(input.buttons) && input.buttons.length > 0 && typeof input.title === 'string';
+}
+
 export function createLineMessagingClient(options: {
   channelAccessToken: string;
   fetcher?: typeof fetch;
@@ -114,6 +176,9 @@ export function createLineMessagingClient(options: {
       if (!response.ok) throw new LineMessagingError(response.status);
     },
     async reply(input) {
+      const messages = isHelpReply(input)
+        ? [helpFlexMessage(input)]
+        : [{ type: 'text', text: input.text.slice(0, 4_000) }];
       const response = await fetcher(replyEndpoint, {
         method: 'POST',
         headers: {
@@ -122,7 +187,7 @@ export function createLineMessagingClient(options: {
         },
         body: JSON.stringify({
           replyToken: input.replyToken,
-          messages: [{ type: 'text', text: input.text.slice(0, 4_000) }],
+          messages,
         }),
       });
       if (!response.ok) throw new LineMessagingError(response.status);

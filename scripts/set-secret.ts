@@ -5,7 +5,7 @@ import * as readline from 'node:readline';
 import { pathToFileURL } from 'node:url';
 const execFile = promisify(execFileCallback);
 
-export const SECRET_NAMES = ['line-channel-access-token', 'line-channel-secret', 'line-login-channel-secret', 'lm-studio-api-token', 'gemini-api-key', 'gemini-api-key-2', 'gemini-api-key-3', 'vault-master-key-v1', 'session-hmac-key-v1', 'backup-master-key-v1'] as const;
+export const SECRET_NAMES = ['line-channel-access-token', 'line-channel-secret', 'line-login-channel-secret', 'lm-studio-api-token', 'anthropic-api-key', 'vault-master-key-v1', 'session-hmac-key-v1', 'backup-master-key-v1'] as const;
 type SecretName = typeof SECRET_NAMES[number];
 const service = process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass';
 

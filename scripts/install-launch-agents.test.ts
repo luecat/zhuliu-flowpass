@@ -7,8 +7,8 @@ describe('launch agent generation', () => {
     const agents = buildLaunchAgents({ releaseRoot: '/tmp/flowpass/releases', nodePath: '/usr/local/bin/node', lmsPath: '/usr/local/bin/lms', cloudflaredPath: '/usr/local/bin/cloudflared' });
     expect(agents).toHaveLength(6);
     expect(agents[1].programArguments.at(-1)).toBe('/tmp/flowpass/releases/current/public/server.js');
-    expect(agents[1].environmentVariables).toMatchObject({ FLOWPASS_MODEL_PROVIDER: 'gemini', FLOWPASS_MODEL_ID: 'gemini-3.6-flash' });
-    expect(agents[3].environmentVariables).toMatchObject({ FLOWPASS_WORKER_RUN: '1', FLOWPASS_MODEL_PROVIDER: 'gemini', FLOWPASS_MODEL_ID: 'gemini-3.6-flash' });
+    expect(agents[1].environmentVariables).toMatchObject({ FLOWPASS_MODEL_PROVIDER: 'anthropic', FLOWPASS_MODEL_ID: 'claude-sonnet-5' });
+    expect(agents[3].environmentVariables).toMatchObject({ FLOWPASS_WORKER_RUN: '1', FLOWPASS_MODEL_PROVIDER: 'anthropic', FLOWPASS_MODEL_ID: 'claude-sonnet-5' });
     expect(agents[2].environmentVariables).toMatchObject({
       FLOWPASS_CF_ACCESS_TEAM_DOMAIN: 'summer-art-4e96.cloudflareaccess.com',
       FLOWPASS_CF_ACCESS_AUD: 'cc23292d2980b221639c6ad43bd5f5bcb6c7d76f8788d12fe4a8e7a3f11f7ad1',

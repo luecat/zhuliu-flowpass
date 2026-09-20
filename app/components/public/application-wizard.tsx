@@ -11,7 +11,6 @@ import {
   type SensitiveDataChoice,
 } from '../../../shared/intake-choices';
 import {
-  APPROVED_AI_TOOL_OTHER_LABEL,
   approvedAiToolChoiceOptions,
   findApprovedAiTool,
   isOtherChoiceLabel,
@@ -313,7 +312,7 @@ export function ApplicationWizard() {
       const queued = await api.mutate<{ jobId: string; state: string }>(`/api/v1/cases/${encodeURIComponent(matched.id)}/ai-drafts`, {
         method: 'POST',
         ifMatch: `"${matched.rowVersion}"`,
-        body: { operation: 'draft', ...(aiState === 'failed' ? { retry: true } : {}) },
+        body: { operation: 'draft', retry: true },
       });
       setFailedAnswers(null);
       if (typeof window !== 'undefined') {
@@ -333,11 +332,12 @@ export function ApplicationWizard() {
       setFailedAnswers({ answers: answersRef.current, unsafe });
       setAiState('failed');
     }
-  }, [aiState, blockedByUnsafeInput, complete, openPassportReview, pollAiJob, saveStatus]);
+  }, [blockedByUnsafeInput, complete, openPassportReview, pollAiJob, saveStatus]);
 
   useEffect(() => {
     let cancelled = false;
     if (liffSession.status !== 'authenticated' || !liffSession.api) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronises derived readiness with the LIFF session before the fetch below runs.
       setSessionReady(false);
       return;
     }

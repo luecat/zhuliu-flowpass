@@ -3,11 +3,13 @@ import type { FlowPassDatabase } from '../db/connection';
 import type { FlowPassPassport } from '../../shared/passport-contract';
 import type { PurchaseDetails } from '../../shared/purchase-details-contract';
 import type { RuleEvaluation, RuleStep, SubsidyCalculation } from '../../shared/rule-contract';
+import { foldChineseVariants } from '../../shared/chinese-variants';
 
 const FINGERPRINT_STEP_LABEL = '交易指紋';
 
+/** Script-insensitive: an admin writing 騰訊 or 腾讯 on the denylist means the same vendor. */
 export function normalizeToolLabel(value: string): string {
-  return value
+  return foldChineseVariants(value)
     .normalize('NFKC')
     .toLowerCase()
     .replace(/[\s\-_/·・.，,（）()【】［］[\]]+/g, '')

@@ -111,6 +111,54 @@ export function extractReceiptBuyerName(lines: readonly OcrLine[]): string | nul
 }
 
 /**
+ * The seller printed on the receipt — the 廠商 an eligibility denylist is
+ * applied to, and the only vendor signal that does not pass through a field
+ * the applicant can retype. Read from an explicit seller label, from the
+ * Taiwan e-invoice header that prints the seller's 8-digit 統一編號 straight
+ * before its company name ("42527414 Example Cloud Private Limited"), or from
+ * a line that names a legal entity. Never read out of the buyer block: a
+ * wrong vendor here would reject an eligible application, so anything
+ * ambiguous comes back as null.
+ */
+const VENDOR_NAME_MIN_CONFIDENCE = 0.4;
+const VENDOR_LABELS = '賣方(?:名稱)?|開立人|銷售人|營業人(?:名稱)?|商店名稱|店名|seller|sold\\s+by|issued\\s+by|merchant';
+const VENDOR_LABEL = new RegExp(`^(?:${VENDOR_LABELS})[:：]?\\s*$`, 'i');
+const VENDOR_INLINE = new RegExp(`^(?:${VENDOR_LABELS})[:：\\s]+(.+)$`, 'i');
+const TAIWAN_INVOICE_SELLER = /^(\d{8})[\s:：-]+(.+)$/;
+const LEGAL_ENTITY = /\b(?:inc|incorporated|ltd|limited|llc|corp|corporation|gmbh|pte|pty|plc|s\.a\.|b\.v\.)\b\.?|股份有限公司|有限公司|企業社|商行|工作室/i;
+const BUYER_BLOCK = /買受人|收件人|購買人|bill(?:ed)?\s+to|sold\s+to|ship(?:ped)?\s+to|customer/i;
+
+function isPlausibleVendorName(value: string, confidence: number): boolean {
+  const trimmed = value.trim();
+  if (!trimmed || confidence < VENDOR_NAME_MIN_CONFIDENCE) return false;
+  if (trimmed.length < 2 || trimmed.length > 120) return false;
+  if (trimmed.includes('@') || BUYER_BLOCK.test(trimmed)) return false;
+  return /[A-Za-z\u4e00-\u9fff]/.test(trimmed);
+}
+
+export function extractReceiptVendorName(lines: readonly OcrLine[]): string | null {
+  for (let i = 0; i < lines.length; i += 1) {
+    const text = lines[i].text.trim();
+    const inline = text.match(VENDOR_INLINE);
+    if (inline && isPlausibleVendorName(inline[1], lines[i].confidence)) return inline[1].trim();
+    if (VENDOR_LABEL.test(text)) {
+      const next = lines[i + 1];
+      const value = next?.text.trim();
+      if (value && isPlausibleVendorName(value, next.confidence)) return value;
+    }
+  }
+  for (const line of lines) {
+    const match = line.text.trim().match(TAIWAN_INVOICE_SELLER);
+    if (match && isPlausibleVendorName(match[2], line.confidence)) return match[2].trim();
+  }
+  for (const line of lines) {
+    const text = line.text.trim();
+    if (LEGAL_ENTITY.test(text) && isPlausibleVendorName(text, line.confidence)) return text;
+  }
+  return null;
+}
+
+/**
  * Conservative billing-cycle read. Returns null when both annual and monthly
  * cues appear, or when the receipt never names a cadence.
  */
@@ -208,6 +256,7 @@ export interface VendorReceiptCandidates {
   originalCurrency: string | null;
   originalExpense: string | null;
   receiptBuyerName: string | null;
+  receiptVendorName: string | null;
   billingCycle: 'annual' | 'monthly' | null;
   softwareName: string | null;
   companyName: string | null;
@@ -225,6 +274,7 @@ export function extractVendorReceiptCandidates(lines: readonly OcrLine[]): Vendo
     originalCurrency: amount?.currency ?? null,
     originalExpense: amount?.amount ?? null,
     receiptBuyerName: extractReceiptBuyerName(lines),
+    receiptVendorName: extractReceiptVendorName(lines),
     billingCycle: extractBillingCycle(lines),
     softwareName: tool?.label ?? null,
     companyName: tool?.company ?? null,

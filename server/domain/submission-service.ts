@@ -28,7 +28,7 @@ import type { DocumentRequirementKey, PurchaseDetails } from '../../shared/purch
 import type { FlowPassPassport } from '../../shared/passport-contract';
 
 export class SubmissionCommandError extends Error {
-  constructor(readonly code: 'NOT_FOUND' | 'ETAG_MISMATCH' | 'INVALID_STATE' | 'PASSPORT_NOT_READY' | 'DOCUMENT_NOT_READY' | 'INVALID_REQUEST', message = code) {
+  constructor(readonly code: 'NOT_FOUND' | 'ETAG_MISMATCH' | 'INVALID_STATE' | 'PASSPORT_NOT_READY' | 'DOCUMENT_NOT_READY' | 'SOFTWARE_BLACKLISTED' | 'INVALID_REQUEST', message = code) {
     super(message);
     this.name = 'SubmissionCommandError';
   }
@@ -194,11 +194,25 @@ function persistSubmissionRules(input: {
     invoice: input.invoice ? { documentId: input.invoice.documentId, invoiceNumber: input.invoice.invoiceNumber, invoiceAt: input.invoice.invoiceAt, purchaseAt: input.invoice.purchaseAt, amountMinor: input.invoice.amountMinor, currency: input.invoice.currency } : null,
   })).digest('hex');
   const rulesConfig = parseProgramRulesConfig(input.rule.rules_json);
+
+  // Checked before anything is written: a denylisted software or vendor ends
+  // the submission instead of reaching a reviewer, so this attempt must leave
+  // no rule rows behind. Throwing here rolls back the enclosing transaction.
+  const softwareBlacklist = evaluateSoftwareBlacklist({
+    purchase: input.purchase,
+    blacklist: rulesConfig.softwareBlacklist ?? [],
+    ruleVersionId: input.ruleVersionId,
+    inputSnapshotHash: snapshot,
+    evaluatedAt: input.submittedAt,
+  });
+  if (softwareBlacklist.outcome === 'fail') throw new SubmissionCommandError('SOFTWARE_BLACKLISTED');
+  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: null, ruleVersionId: input.ruleVersionId, evaluationKind: 'contextual_alert', evaluation: softwareBlacklist, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
+
   const eligibility = evaluateEligibility({ submissionAt: input.submittedAt, applicationStartAt: input.rule.application_start_at, applicationEndAt: input.rule.application_end_at, purchaseAt: input.invoice?.purchaseAt ?? null, purchaseStartAt: input.rule.purchase_start_at, purchaseEndAt: input.rule.purchase_end_at, ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'submission', evaluation: eligibility.submission, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: eligibility.purchase, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
 
-  const ageEligibility = evaluateAgeEligibility({ birthDate: input.purchase.birthDate, submissionAt: input.submittedAt, minAge: rulesConfig.ageEligibility?.minAge, maxAge: rulesConfig.ageEligibility?.maxAge, ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt });
+  const ageEligibility = evaluateAgeEligibility({ birthDate: input.purchase.birthDate, submissionAt: input.submittedAt, minAge: rulesConfig.ageEligibility?.minAge, maxAge: rulesConfig.ageEligibility?.maxAge, birthDateFrom: rulesConfig.ageEligibility?.birthDateFrom, birthDateTo: rulesConfig.ageEligibility?.birthDateTo, ruleVersionId: input.ruleVersionId, inputSnapshotHash: snapshot, evaluatedAt: input.submittedAt });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: null, ruleVersionId: input.ruleVersionId, evaluationKind: 'submission', evaluation: ageEligibility, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
 
   // Without OCR, invoice authenticity stays a human decision. Invoice numbers
@@ -241,15 +255,6 @@ function persistSubmissionRules(input: {
     referenceFxRates: rulesConfig.referenceFxRates,
   });
   persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: input.invoice?.documentId ?? null, ruleVersionId: input.ruleVersionId, evaluationKind: 'invoice', evaluation: exchangeRate, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
-
-  const softwareBlacklist = evaluateSoftwareBlacklist({
-    purchase: input.purchase,
-    blacklist: rulesConfig.softwareBlacklist ?? [],
-    ruleVersionId: input.ruleVersionId,
-    inputSnapshotHash: snapshot,
-    evaluatedAt: input.submittedAt,
-  });
-  persistRuleEvaluation(input.database, { caseId: input.caseId, passportVersionId: input.passportVersionId, documentId: null, ruleVersionId: input.ruleVersionId, evaluationKind: 'contextual_alert', evaluation: softwareBlacklist, actorType: 'system', actorId: 'submission-service', createdAt: input.submittedAt, idGenerator: input.idGenerator });
 
   const toolConsistency = evaluateToolConsistency({
     purchase: input.purchase,

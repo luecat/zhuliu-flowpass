@@ -28,7 +28,6 @@
     "launch-agents": "tsx scripts/install-launch-agents.ts",
     "line:rich-menu": "tsx scripts/provision-line-rich-menu.ts",
     "seed:demo": "tsx scripts/seed-demo.ts",
-    "seed:demo-passports": "tsx scripts/seed-demo-passports.ts",
     "ops:doctor": "tsx scripts/ops-doctor.ts",
     "build:ocr-helper": "tsx scripts/build-ocr-helper.ts",
     "typecheck": "tsc --noEmit",
@@ -37,6 +36,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
     "@hono/node-server": "^2.1.1",
     "@line/liff": "^2.30.0",
     "better-sqlite3": "^13.0.3",

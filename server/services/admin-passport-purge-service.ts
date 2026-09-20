@@ -118,7 +118,7 @@ const DELETE_ORDER = [
   'admin_purge_authorizations', 'cases',
 ] as const;
 
-function grantDeletes(database: FlowPassDatabase, graph: PassportRelationGraph, operationId: string, expiresAt: string, idGenerator: () => string): void {
+export function grantDeletes(database: FlowPassDatabase, graph: PassportRelationGraph, operationId: string, expiresAt: string, idGenerator: () => string): void {
   const insert = database.prepare(`INSERT INTO admin_data_mutation_guards (id, operation_id, table_name, record_id, action, expires_at) VALUES (?, ?, ?, ?, 'delete', ?)`);
   for (const [table, ids] of Object.entries(graph.tableIds)) {
     if (!IMMUTABLE_DELETE_TABLES.has(table)) continue;
@@ -126,7 +126,7 @@ function grantDeletes(database: FlowPassDatabase, graph: PassportRelationGraph, 
   }
 }
 
-function deleteGraph(database: FlowPassDatabase, graph: PassportRelationGraph, operationId: string): number {
+export function deleteGraph(database: FlowPassDatabase, graph: PassportRelationGraph, operationId: string): number {
   let removed = 0;
   for (const table of DELETE_ORDER) {
     let ids = graph.tableIds[table] ?? [];

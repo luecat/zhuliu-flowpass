@@ -4,6 +4,8 @@ import { getPublicRuntime } from '../../../../../../server/public/runtime';
 import { DEFAULT_OCR_LANGUAGES, type OcrMediaType } from '../../../../../../server/adapters/ocr/ocr-engine';
 import type { DocumentRequirementKey } from '../../../../../../shared/purchase-details-contract';
 import type { DocumentOcrResponseData } from '../../../../../../shared/ocr-contract';
+import { findBlockedReceiptTerm } from '../../../../../../shared/receipt-screening';
+import { blockedTermsForCase } from '../../../../../../server/domain/blocked-vendor-list';
 
 function cookie(request: Request, name: string): string | null {
   for (const part of (request.headers.get('cookie') ?? '').split(';')) {
@@ -39,15 +41,20 @@ export async function GET(request: Request, context: { params: Promise<{ documen
   const document = getDocumentStorageForApplicant(runtime.database, { applicantId: session.applicantId }, documentId);
   if (!document || document.status !== 'ready') return toJsonResponse(apiFailure(ApiErrorCode.NOT_FOUND, requestId));
   if (!OCR_ELIGIBLE_REQUIREMENTS.has(document.requirementKey as DocumentRequirementKey) || !OCR_MEDIA_TYPES.has(document.mediaType)) {
-    return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: null }, requestId));
+    return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: null, blocked: null }, requestId));
   }
   try {
-    if (!(await runtime.ocrEngine.available())) return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: null }, requestId));
+    if (!(await runtime.ocrEngine.available())) return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: null, blocked: null }, requestId));
     const bytes = runtime.documentVault.read({ id: document.id, storageId: document.storageId, keyId: document.keyId });
     const result = await runtime.ocrEngine.recognize({ bytes, mediaType: document.mediaType as OcrMediaType, languages: DEFAULT_OCR_LANGUAGES });
-    return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: { lines: result.lines, engineId: result.engineId, durationMs: result.durationMs } }, requestId));
+    // The verdict is decided here, against this case's stored denylist, so the
+    // confirmation screen and the submission check cannot disagree.
+    const blocked = document.requirementKey === 'vendor_receipt'
+      ? findBlockedReceiptTerm(result.lines, blockedTermsForCase(runtime.database, document.caseId))
+      : null;
+    return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: { lines: result.lines, engineId: result.engineId, durationMs: result.durationMs }, blocked }, requestId));
   } catch {
     // Best-effort: the confirmation screen falls back to manual entry.
-    return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: null }, requestId));
+    return toJsonResponse(apiSuccess<DocumentOcrResponseData>({ ocr: null, blocked: null }, requestId));
   }
 }

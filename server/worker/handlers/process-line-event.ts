@@ -2,7 +2,7 @@ import type { DurableJob } from '../../db/repositories/jobs';
 import type { FlowPassDatabase } from '../../db/connection';
 import type { FieldCrypto } from '../../crypto/field-crypto';
 import type { LineHelpReply, LineMessagingClient, LineTextReply } from '../../adapters/line/messaging-client';
-import { classifyLineIntent, isLineHelpKind, lineHelpPresentation, subsidyPolicyReply } from '../../domain/line-intent';
+import { classifyLineIntent, lineHelpPresentation, subsidyPolicyReply } from '../../domain/line-intent';
 import { reviewStatusLabel } from '../../domain/notification-template';
 import { queryPassportToolStatus, queryPublicToolIncidents } from '../../domain/public-tool-status';
 
@@ -55,11 +55,16 @@ function buildLineReply(input: {
   crypto?: FieldCrypto;
 }): LineTextReply | LineHelpReply {
   const intent = classifyLineIntent(input.text);
-  if (isLineHelpKind(intent.kind)) {
-    return { replyToken: input.replyToken, ...lineHelpPresentation(intent.kind, input.liffId) };
-  }
 
   switch (intent.kind) {
+    // Narrowing `intent.kind` through a type guard does not narrow `intent`
+    // itself, so the help kinds are matched here to keep the exhaustiveness
+    // check below meaningful.
+    case 'fallback':
+    case 'eligibility':
+    case 'contact_city':
+    case 'disbursement_timing':
+      return { replyToken: input.replyToken, ...lineHelpPresentation(intent.kind, input.liffId) };
     case 'faq':
       return { replyToken: input.replyToken, text: intent.answer };
     case 'subsidy_policy':

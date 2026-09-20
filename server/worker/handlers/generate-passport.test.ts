@@ -73,7 +73,7 @@ describe('generate passport worker boundary', () => {
     expect((db.prepare('SELECT COUNT(*) AS count FROM passport_versions').get() as { count: number }).count).toBe(0);
   });
 
-  it('rewrites invalid model output with the original answers until the passport is valid', async () => {
+  it('rejects model output that is not a passport instead of spending a rewrite round trip', async () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'rewrite-case' });
@@ -82,21 +82,18 @@ describe('generate passport worker boundary', () => {
     const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
     const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
     const calls: Array<{ inputEnvelope: unknown; repairIssues?: readonly unknown[] }> = [];
-    const result = await generatePassport(queued.job, { workerId: 'worker-1' }, {
+    await expect(generatePassport(queued.job, { workerId: 'worker-1' }, {
       database: db,
       crypto,
       client: {
         complete: async (input) => {
           calls.push(input);
-          return { content: calls.length < 2 ? '{"passport_draft":{}}' : JSON.stringify(FLOWPASS_SAMPLE), model: 'fixture', inputTokens: 1, outputTokens: 1 };
+          return { content: '{"not":"a passport"}', model: 'fixture', inputTokens: 1, outputTokens: 1 };
         },
       },
       clock: () => new Date(NOW),
-    });
-    expect(result.repairCount).toBeGreaterThanOrEqual(1);
-    expect(calls).toHaveLength(2);
-    expect(JSON.stringify(calls[1]?.inputEnvelope)).toContain('rewrite source sentinel');
-    expect(calls[1]?.repairIssues?.length).toBeGreaterThan(0);
+    })).rejects.toMatchObject({ code: 'AI_OUTPUT_INVALID' });
+    expect(calls).toHaveLength(1);
   });
 
   it('validates the JSON object when the model surrounds it with thinking text and a code fence', async () => {
@@ -182,7 +179,7 @@ describe('generate passport worker boundary', () => {
     expect(stored?.followUps).toHaveLength(1);
   });
 
-  it('rewrites a public or sensitive draft until it has a connected destination and safety action', async () => {
+  it('keeps a public draft without a destination and fills a local safety confirmation', async () => {
     const crypto = cryptoForTests();
     const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
     const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'semantic-case' });
@@ -197,10 +194,80 @@ describe('generate passport worker boundary', () => {
     invalid.passport_draft.safety_actions = [];
     (invalid.passport_draft as unknown as { confirmation_questions: unknown[] }).confirmation_questions = [];
     const calls: Array<{ repairIssues?: readonly unknown[] }> = [];
-    await generatePassport(queued.job, { workerId: 'worker-1' }, { database: db, crypto, client: { complete: async (input) => { calls.push(input); return { content: JSON.stringify(calls.length === 1 ? invalid : FLOWPASS_SAMPLE), model: 'fixture', inputTokens: 1, outputTokens: 1 }; } }, clock: () => new Date(NOW) });
-    expect(calls).toHaveLength(2);
-    expect(JSON.stringify(calls[1]?.repairIssues)).toContain('public_without_destination_flow');
-    expect(JSON.stringify(calls[1]?.repairIssues)).toContain('missing_safety_action');
+    const result = await generatePassport(queued.job, { workerId: 'worker-1' }, { database: db, crypto, client: { complete: async (input) => { calls.push(input); return { content: JSON.stringify(invalid), model: 'fixture', inputTokens: 1, outputTokens: 1 }; } }, clock: () => new Date(NOW) });
+    expect(calls).toHaveLength(1);
+    expect(result.resultCode).toBe('AI_DRAFT_CREATED');
+    const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW) });
+    const stored = lifecycle.getForApplicant({ applicantId: IDS.applicant, caseId: created.case.id, versionId: result.passportVersionId });
+    expect(stored?.passport.safety_actions).toEqual(expect.arrayContaining([expect.objectContaining({ id: 'safety-confirm' })]));
+    expect(stored?.passport.nodes.some((node) => node.kind === 'destination')).toBe(false);
+  });
+
+  it('fills missing structural passport fields instead of asking the model to rewrite', async () => {
+    const crypto = cryptoForTests();
+    const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
+    const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'sparse-case' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'sparse-answers' });
+    const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
+    const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
+    const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
+    const sparse = structuredClone(FLOWPASS_SAMPLE) as { passport_draft: Record<string, unknown> };
+    delete sparse.passport_draft.administrative_hints;
+    delete sparse.passport_draft.audit;
+    const nodes = sparse.passport_draft.nodes as Array<Record<string, unknown>>;
+    const edges = sparse.passport_draft.edges as Array<Record<string, unknown>>;
+    for (const item of [...nodes, ...edges]) {
+      delete item.source_field;
+      delete item.source_excerpt;
+      delete item.confidence;
+      delete item.needs_confirmation;
+    }
+    const calls: unknown[] = [];
+    const result = await generatePassport(queued.job, { workerId: 'worker-1' }, {
+      database: db,
+      crypto,
+      client: { complete: async (input) => { calls.push(input); return { content: JSON.stringify(sparse), model: 'fixture', inputTokens: 1, outputTokens: 1 }; } },
+      clock: () => new Date(NOW),
+    });
+    expect(calls).toHaveLength(1);
+    expect(result.resultCode).toBe('AI_DRAFT_CREATED');
+    const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW) });
+    const stored = lifecycle.getForApplicant({ applicantId: IDS.applicant, caseId: created.case.id, versionId: result.passportVersionId });
+    expect(stored?.passport.nodes.every((node) => node.source_excerpt === '[not retained]')).toBe(true);
+    expect(stored?.passport.administrative_hints.subsidy_calculation).toBe('not_performed_by_ai');
+  });
+
+  it('coerces string safety actions and loose follow-up fields into the contract', async () => {
+    const crypto = cryptoForTests();
+    const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), requestIdGenerator: () => 'request' });
+    const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.cycle, idempotencyKey: 'coerce-case' });
+    cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '社團照片', aiPurpose: '使用 AI 修圖', sensitiveData: '可能有人像', destinationAndAudience: '公開於 IG', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'coerce-answers' });
+    const admission = { admit: () => ({ allowed: true, retryAfter: 0 }) } as never;
+    const ai = createAiDraftService({ database: db, crypto, modelId: 'fixture', admission, tokenCounter: () => 1, clock: () => new Date(NOW) });
+    const queued = ai.enqueue({ applicantId: IDS.applicant, caseId: created.case.id });
+    const loose = structuredClone(FLOWPASS_SAMPLE) as { passport_draft: Record<string, unknown> };
+    loose.passport_draft.safety_actions = ['發布前先確認人像同意'];
+    loose.passport_draft.follow_up_questions = [{
+      id: 'q1',
+      version: '1',
+      prompt: '資料可能包含哪些敏感內容？例如人臉或姓名。',
+      reason: '確認風險。',
+      answerSchema: { type: 'text', maxLength: 400 },
+      required: true,
+      priority: 'urgent',
+      status: 'pending',
+    }];
+    const result = await generatePassport(queued.job, { workerId: 'worker-1' }, {
+      database: db,
+      crypto,
+      client: { complete: async () => ({ content: JSON.stringify(loose), model: 'fixture', inputTokens: 1, outputTokens: 1 }) },
+      clock: () => new Date(NOW),
+    });
+    expect(result.resultCode).toBe('AI_DRAFT_CREATED');
+    const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW) });
+    const stored = lifecycle.getForApplicant({ applicantId: IDS.applicant, caseId: created.case.id, versionId: result.passportVersionId });
+    expect(stored?.passport.safety_actions[0]).toMatchObject({ action: '發布前先確認人像同意', status: 'required_confirmation' });
+    expect(stored?.passport.follow_up_questions[0]).toMatchObject({ version: 1, relatedNodeIds: [], priority: 'medium', status: 'open' });
   });
 
   it('creates an immutable child for a revise job even when model content is unchanged', async () => {
@@ -291,6 +358,29 @@ describe('generate passport worker boundary', () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.responseSchema).toBeDefined();
     expect((db.prepare('SELECT COUNT(*) AS count FROM passport_versions').get() as { count: number }).count).toBe(0);
+  });
+
+  it('drafts when thinking text contains a different verdict example', async () => {
+    const crypto = cryptoForTests();
+    const queued = enqueueDraft(crypto, 'screen-think', { material: '社團活動照片', aiPurpose: '用 AI 調色', sensitiveData: '人臉', destinationAndAudience: '社團雲端', requestedTool: 'ChatGPT', retentionDuration: '保留 30 天' });
+    let calls = 0;
+    const result = await generatePassport(queued.job, { workerId: 'worker-1' }, {
+      database: db,
+      crypto,
+      classifyInput: true,
+      client: {
+        complete: async (input) => {
+          calls += 1;
+          if (input.responseSchema) {
+            return { content: 'example {"verdict":"off_topic"} then {"verdict":"genuine"}', model: 'fixture', inputTokens: 1, outputTokens: 1 };
+          }
+          return { content: JSON.stringify(FLOWPASS_SAMPLE), model: 'fixture', inputTokens: 1, outputTokens: 1 };
+        },
+      },
+      clock: () => new Date(NOW),
+    });
+    expect(result.resultCode).toBe('AI_DRAFT_CREATED');
+    expect(calls).toBe(2);
   });
 
   it.each([

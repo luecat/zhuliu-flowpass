@@ -67,10 +67,12 @@ export type AiUsage = {
   dayKey: string;
   models: Array<{
     id: string;
-    rpm: { used: number; limit: number; remaining: number };
-    tpm: { used: number; limit: number; remaining: number };
-    rpd: { used: number; limit: number; remaining: number };
+    requestsThisMinute: number;
+    inputTokensThisMinute: number;
+    requestsToday: number;
+    inputTokensToday: number;
     recordedRuns: number;
+    averageDurationMs: number;
   }>;
 };
 

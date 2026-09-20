@@ -36,6 +36,7 @@ const PURCHASE: PurchaseDetails = {
   subscriptionEndDate: '2027-07-31',
   applicantName: '測試申請人',
   receiptBuyerName: '測試申請人',
+  receiptVendorName: null,
   birthDate: null,
   nationalId: null,
   householdAddress: null,

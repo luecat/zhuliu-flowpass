@@ -71,6 +71,13 @@ const purchaseDetailsBase = {
    * needs-review rather than a mismatch.
    */
   receiptBuyerName: z.string().trim().max(100).nullish().transform((value) => value?.trim() ? value.trim() : null),
+  /**
+   * Seller printed on the official vendor receipt, filled only by the OCR pass
+   * (see app/lib/ocr-field-extraction.ts) and never typed by the applicant —
+   * that is the point: it is the one vendor signal a retyped form field cannot
+   * launder. Null means "not read", not "no vendor".
+   */
+  receiptVendorName: z.string().trim().max(200).nullish().transform((value) => value?.trim() ? value.trim() : null),
   /** Applicant date of birth, for the age-eligibility rule. Optional: older rows predate this field. */
   birthDate: createCalendarDate('出生日期').nullish().transform((value) => value ?? null),
   /** Taiwan National ID (身分證字號). Legacy rows may omit. */

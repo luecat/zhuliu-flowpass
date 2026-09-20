@@ -5,8 +5,8 @@ import { createWorkerApp, defaultWorkerDependencyStatus } from './app';
 import { QueueDispatcher } from './queue-dispatcher';
 import { generatePassport } from './handlers/generate-passport';
 import { LmStudioClient } from '../adapters/lm-studio/lm-studio-client';
-import { GeminiClient } from '../adapters/gemini/gemini-client';
-import { DEFAULT_GEMINI_QUOTA_MODELS, GeminiQuotaRouter, buildGeminiKeyRoutedModels, geminiBaseModelId, geminiKeychainAccounts } from '../adapters/gemini/model-quota-router';
+import { AnthropicClient, anthropicEffort } from '../adapters/anthropic/anthropic-client';
+import { AnthropicUsageRecorder } from '../adapters/anthropic/usage-recorder';
 import { KeychainSecretProvider } from '../config/keychain';
 import { initializeFieldCryptoAtStartup } from '../crypto/keyring';
 import { JobRepository } from '../db/repositories/jobs';
@@ -47,38 +47,26 @@ if (process.env.FLOWPASS_WORKER_RUN === '1') {
       // Provider selection is env-driven so LM Studio remains available as a
       // fallback without any code revert.
       let client: Pick<LmStudioClient, 'complete'> | null = null;
-      let adapterName: 'gemini' | 'lm_studio' = 'lm_studio';
+      let adapterName: 'anthropic' | 'lm_studio' = 'lm_studio';
       const modelId = process.env.FLOWPASS_MODEL_ID?.trim();
-      if (modelId && runtimeConfig.modelProvider === 'gemini') {
-        const service = process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass';
-        const accounts = geminiKeychainAccounts();
-        const keys: Array<{ slot: string; apiKey: string }> = [];
-        for (const [index, account] of accounts.entries()) {
-          try {
-            const apiKey = await provider.get({ service, account });
-            if (apiKey?.trim()) keys.push({ slot: `k${index + 1}`, apiKey: apiKey.trim() });
-          } catch {
-            /* optional secondary key may be absent */
-          }
+      if (modelId && runtimeConfig.modelProvider === 'anthropic') {
+        let apiKey: string | null = null;
+        try {
+          apiKey = await provider.get({
+            service: process.env.FLOWPASS_KEYCHAIN_SERVICE ?? 'FlowPass',
+            account: process.env.FLOWPASS_ANTHROPIC_KEYCHAIN_ACCOUNT ?? 'anthropic-api-key',
+          });
+        } catch {
+          apiKey = null;
         }
-        if (keys.length > 0) {
-          const baseModels = DEFAULT_GEMINI_QUOTA_MODELS;
-          const models = buildGeminiKeyRoutedModels(keys.map((key) => key.slot), baseModels);
-          const keyBySlot = new Map(keys.map((key) => [key.slot, key.apiKey]));
-          const clients = new Map<string, GeminiClient>();
-          for (const model of models) {
-            const separator = model.id.indexOf(':');
-            const slot = separator === -1 ? 'k1' : model.id.slice(0, separator);
-            const apiKey = keyBySlot.get(slot);
-            if (!apiKey) continue;
-            clients.set(model.id, new GeminiClient({
-              modelId: geminiBaseModelId(model.id),
-              apiKey,
-              overallTimeoutMs: 120_000,
-            }));
-          }
-          client = new GeminiQuotaRouter(database, clients, models);
-          adapterName = 'gemini';
+        if (apiKey?.trim()) {
+          client = new AnthropicUsageRecorder(database, new AnthropicClient({
+            apiKey: apiKey.trim(),
+            modelId,
+            effort: anthropicEffort(process.env.FLOWPASS_ANTHROPIC_EFFORT),
+            overallTimeoutMs: 120_000,
+          }), modelId);
+          adapterName = 'anthropic';
         }
       } else if (modelId) {
         // Local OpenAI-compatible servers can intentionally run without a token.

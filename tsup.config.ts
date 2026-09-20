@@ -18,7 +18,9 @@ export default defineConfig({
   outDir: 'dist',
   outExtension: () => ({ js: '.mjs' }),
   external: ['better-sqlite3'],
-  noExternal: ['@hono/node-server', 'hono', 'uuid', 'zod'],
+  // The release image only ships better-sqlite3 in node_modules, so every other
+  // runtime dependency has to be bundled into the .mjs entry points.
+  noExternal: ['@hono/node-server', '@anthropic-ai/sdk', 'hono', 'uuid', 'zod'],
   onSuccess: async () => {
     mkdirSync('dist/server/migrations', { recursive: true });
     cpSync('server/db/migrations', 'dist/server/migrations', { recursive: true });

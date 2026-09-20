@@ -155,11 +155,9 @@ describe('canonical FlowPass passport validation', () => {
     expect(result).toMatchObject({ ok: false });
     if (result.ok) return;
     expect(result.errors.map((issue) => issue.path)).toEqual(
-      expect.arrayContaining([
-        '$.passport_draft.use_case',
-        '$.passport_draft.unexpected_raw_value',
-      ]),
+      expect.arrayContaining(['$.passport_draft.use_case']),
     );
+    expect(result.errors.map((issue) => issue.path)).not.toContain('$.passport_draft.unexpected_raw_value');
     expect(JSON.stringify(result.errors)).not.toContain(RAW_EXCERPT);
   });
 
@@ -249,8 +247,10 @@ describe('canonical FlowPass passport validation', () => {
       expect.arrayContaining([
         '$.passport_draft.follow_up_questions[0].answerSchema.maxLength',
         '$.passport_draft.follow_up_questions[1].answerSchema.choices',
-        '$.passport_draft.follow_up_questions[3].answerSchema.maxLength',
       ]),
+    );
+    expect(result.errors.map((issue) => issue.path)).not.toContain(
+      '$.passport_draft.follow_up_questions[3].answerSchema.maxLength',
     );
   });
 

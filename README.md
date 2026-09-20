@@ -320,7 +320,6 @@ npm run build:release
 | `ops:doctor` | 營運狀態檢查(`-- --offline` 跳過需要網路的項目) |
 | `line:rich_menu` | 佈建 LINE 圖文選單(預設 dry-run,`--apply` 才寫入,見 §9.1) |
 | `seed:demo` | 種入示範方案(需明確指定申請/購買起迄四個參數) |
-| `seed:demo-passports` | 種入可重播、去識別化的示範護照資料 |
 
 未在 `package.json` 中、但維運會用到的腳本以 `npx tsx scripts/<name>.ts` 執行:`release-rollback.ts`、`render-cloudflared-config.ts`、`preflight.ts`。
 
@@ -721,7 +720,7 @@ ai_drafting → follow_up_required → needs_applicant_confirmation → confirme
 | `subsidy-calculator.ts` | 補助金額:萬分比 rate(5000 bps = 50%)× 金額,套上限與取整(`floor`/`half_up`),輸入須為安全整數 |
 | `exchange-rate-rules.ts` | 官方收據 vs 銀行扣款交叉比對:TWD 收據須完全一致;外幣收據容許實付「高於」參考匯率試算(信用卡手續費只會往上加),低於試算逾 5%(`FX_TOLERANCE_RATIO = 0.05`)判定 `fail` 而非 `needs_review` |
 | `name-consistency-rules.ts` | 收據買受人姓名 vs 申請人身分一致性 |
-| `software-blacklist-rules.ts` | 購買工具是否在黑名單 |
+| `software-blacklist-rules.ts` | 購買工具或廠商是否在黑名單;命中即 `fail`,送件被拒絕(`SOFTWARE_BLACKLISTED`),不留下勾稽紀錄 |
 | `submission-checks.ts` | 送件前的完整檢核彙整 |
 | `contextual-risk-rules.ts` | 依個資、健康資料、公開目的地、插件、刪除期限、存取控制、去識別化產生風險標記(low/medium/high) |
 
@@ -746,6 +745,7 @@ ai_drafting → follow_up_required → needs_applicant_confirmation → confirme
   - 計費週期在年/月訊號同時出現時放棄
   - 訂閱期間只在收據印出明確起訖時才讀,**不從計費週期推算結束日**
   - 核准工具比對:短名稱(如 Pi、v0)須整行完全相符;多個互斥命中回 `null`
+  - 開立廠商(`receiptVendorName`)依序試「賣方/開立人/Sold by 標籤」→「台灣電子發票抬頭的 8 碼統編＋公司名」→「含法人字尾的行」,並排除買受人區塊;此欄由 OCR 專填、UI 不開放編輯,是唯一不經申請人手打的廠商來源,中港澳封鎖與軟體黑名單都比對它
 - 擷取結果是**候選值**,由申請人在 UI 逐項確認後才套用(`shared/purchase-details-contract.ts` 定義完整契約)。
 
 ### 12.7 其他

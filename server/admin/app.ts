@@ -20,7 +20,8 @@ import { createProgramRoutes } from './routes/programs';
 import { createIncidentRoutes } from './routes/incidents';
 import { createToolRoutes } from './routes/tools';
 import { createDataManagementRoutes } from './routes/data-management';
-import { DEFAULT_GEMINI_QUOTA_MODELS } from '../adapters/gemini/model-quota-router';
+import { usageDayKey, usageMinuteKey } from '../adapters/anthropic/usage-recorder';
+import { runtimeConfig } from '../config/runtime-config';
 
 export interface CloudflareAccessIdentity {
   email: string;
@@ -295,39 +296,39 @@ export function createAdminApp(database?: FlowPassDatabase, dependencies: AdminA
     if (!await requestBoundary(context, dependencies, false)) return context.json({ error: { code: 'UNAVAILABLE', message: '無法驗證此來源。' } }, 403);
     if (!authenticated(database, context)) return context.json({ error: { code: 'UNAUTHENTICATED', message: '請重新登入。' } }, 401);
     const now = new Date();
-    const minuteKey = now.toISOString().slice(0, 16);
-    const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-    const models = DEFAULT_GEMINI_QUOTA_MODELS.map((model) => {
-      // Dual-key routes store usage as `k1:model` / `k2:model`; also keep legacy bare ids.
+    const minuteKey = usageMinuteKey(now);
+    const dayKey = usageDayKey(now);
+    // Anthropic enforces rate limits account-side and answers 429 with
+    // `retry-after`, so there is no local per-model quota to subtract from.
+    // The panel reports what actually ran instead of a synthetic remaining.
+    const tracked = database.prepare(
+      `SELECT DISTINCT model_id FROM ai_model_quota_usage WHERE day_key = ?
+       UNION SELECT DISTINCT model_id FROM ai_runs WHERE created_at >= ?
+       ORDER BY model_id`,
+    ).all(dayKey, `${now.toISOString().slice(0, 10)}T00:00:00.000Z`) as Array<{ model_id: string }>;
+    const models = tracked.map((row) => {
       const minute = database.prepare(
         `SELECT COALESCE(SUM(request_count), 0) AS request_count, COALESCE(SUM(input_tokens), 0) AS input_tokens
-         FROM ai_model_quota_usage
-         WHERE minute_key = ? AND day_key = ? AND (model_id = ? OR model_id GLOB ?)`,
-      ).get(minuteKey, dayKey, model.id, `*:${model.id}`) as { request_count: number; input_tokens: number };
+         FROM ai_model_quota_usage WHERE minute_key = ? AND day_key = ? AND model_id = ?`,
+      ).get(minuteKey, dayKey, row.model_id) as { request_count: number; input_tokens: number };
       const daily = database.prepare(
-        `SELECT COALESCE(SUM(request_count), 0) AS request_count
-         FROM ai_model_quota_usage
-         WHERE day_key = ? AND (model_id = ? OR model_id GLOB ?)`,
-      ).get(dayKey, model.id, `*:${model.id}`) as { request_count: number };
-      const keySlots = database.prepare(
-        `SELECT COUNT(DISTINCT CASE WHEN instr(model_id, ':') > 0 THEN substr(model_id, 1, instr(model_id, ':') - 1) ELSE 'legacy' END) AS count
-         FROM ai_model_quota_usage
-         WHERE day_key = ? AND (model_id = ? OR model_id GLOB ?)`,
-      ).get(dayKey, model.id, `*:${model.id}`) as { count: number };
-      const multiplier = Math.max(1, keySlots.count);
-      const rpmLimit = model.rpm * multiplier;
-      const tpmLimit = model.tpm * multiplier;
-      const rpdLimit = model.rpd * multiplier;
-      const runs = database.prepare('SELECT COUNT(*) AS count FROM ai_runs WHERE model_id = ?').get(model.id) as { count: number };
+        `SELECT COALESCE(SUM(request_count), 0) AS request_count, COALESCE(SUM(input_tokens), 0) AS input_tokens
+         FROM ai_model_quota_usage WHERE day_key = ? AND model_id = ?`,
+      ).get(dayKey, row.model_id) as { request_count: number; input_tokens: number };
+      const runs = database.prepare(
+        'SELECT COUNT(*) AS count, COALESCE(AVG(duration_ms), 0) AS average_duration FROM ai_runs WHERE model_id = ?',
+      ).get(row.model_id) as { count: number; average_duration: number };
       return {
-        id: model.id,
-        rpm: { used: minute.request_count, limit: rpmLimit, remaining: Math.max(0, rpmLimit - minute.request_count) },
-        tpm: { used: minute.input_tokens, limit: tpmLimit, remaining: Math.max(0, tpmLimit - minute.input_tokens) },
-        rpd: { used: daily.request_count, limit: rpdLimit, remaining: Math.max(0, rpdLimit - daily.request_count) },
+        id: row.model_id,
+        requestsThisMinute: minute.request_count,
+        inputTokensThisMinute: minute.input_tokens,
+        requestsToday: daily.request_count,
+        inputTokensToday: daily.input_tokens,
         recordedRuns: runs.count,
+        averageDurationMs: Math.round(runs.average_duration),
       };
     });
-    return context.json({ data: { provider: 'gemini', minuteKey, dayKey, models } });
+    return context.json({ data: { provider: runtimeConfig.modelProvider, minuteKey, dayKey, models } });
   });
 
   app.get('/admin/v1/cases/:caseId/documents', (context) => {

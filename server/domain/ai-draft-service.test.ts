@@ -6,7 +6,7 @@ import { FieldCrypto, type Keyring } from '../crypto/field-crypto';
 import { openDatabase } from '../db/connection';
 import { migrateDatabase } from '../db/migrate';
 import { createCaseService } from './case-service';
-import { AI_INPUT_TOKEN_BUDGET, AI_PROMPT_VERSION, FIXED_AI_INSTRUCTION, GEMINI_AI_INPUT_TOKEN_BUDGET, aiInputTokenBudget, createAiDraftService, estimateInputTokens } from './ai-draft-service';
+import { AI_INPUT_TOKEN_BUDGET, AI_PROMPT_VERSION, FIXED_AI_INSTRUCTION, REMOTE_AI_INPUT_TOKEN_BUDGET, aiInputTokenBudget, createAiDraftService, estimateInputTokens } from './ai-draft-service';
 import { v7 as uuidv7 } from 'uuid';
 
 const IDS = { applicant: '0198f050-0000-7000-8000-000000000001', cycle: '0198f050-0000-7000-8000-000000000002', rule: '0198f050-0000-7000-8000-000000000003' };
@@ -32,8 +32,8 @@ describe('ai draft admission boundary', () => {
 
   it('exposes the reserved 11,264-token input budget and does not expose an answer payload in the job contract', () => {
     expect(AI_INPUT_TOKEN_BUDGET).toBe(11_264);
-    expect(GEMINI_AI_INPUT_TOKEN_BUDGET).toBe(27_648);
-    expect(aiInputTokenBudget('gemini')).toBe(GEMINI_AI_INPUT_TOKEN_BUDGET);
+    expect(REMOTE_AI_INPUT_TOKEN_BUDGET).toBe(27_648);
+    expect(aiInputTokenBudget('anthropic')).toBe(REMOTE_AI_INPUT_TOKEN_BUDGET);
     expect(aiInputTokenBudget('lm-studio')).toBe(AI_INPUT_TOKEN_BUDGET);
     const service = createAiDraftService({ database: {} as never, crypto: {} as never, modelId: 'fixture' });
     expect(service).toHaveProperty('enqueue');

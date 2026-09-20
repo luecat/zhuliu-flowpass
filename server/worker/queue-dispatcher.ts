@@ -3,6 +3,12 @@ import { concurrencyForJobType, DurableJobRunner } from './job-runner';
 
 export type QueueHandler = (job: DurableJob) => Promise<void>;
 
+/**
+ * Failures that the same input will reproduce on every attempt. Retrying them
+ * only spends model quota and keeps the applicant waiting through the backoff.
+ */
+const TERMINAL_ERROR_CODES = new Set(['AI_INPUT_INVALID', 'AI_OUTPUT_UNSAFE']);
+
 export interface QueueDispatcherOptions {
   database: ConstructorParameters<typeof DurableJobRunner>[0];
   workerId: string;
@@ -47,7 +53,7 @@ export class QueueDispatcher {
             const errorCode = error && typeof error === 'object' && 'code' in error && typeof (error as { code?: unknown }).code === 'string'
               ? (error as { code: string }).code
               : 'WORKER_HANDLER_FAILED';
-            this.runner.fail({ workerId: this.options.workerId, jobId: job.id, errorCode, now: this.clock().toISOString(), terminal: errorCode === 'AI_INPUT_INVALID' });
+            this.runner.fail({ workerId: this.options.workerId, jobId: job.id, errorCode, now: this.clock().toISOString(), terminal: TERMINAL_ERROR_CODES.has(errorCode) });
           })
           .finally(() => { this.active.set(jobType, Math.max(0, this.activeCount(jobType) - 1)); });
       }

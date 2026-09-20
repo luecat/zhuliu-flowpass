@@ -43,11 +43,11 @@ const PublicOriginSchema = z
   .refine(isAllowedPublicOrigin, 'must be the production origin or an explicit loopback test origin');
 
 /**
- * `lm-studio` keeps the original local-first inference path. `gemini` is an
- * explicit opt-in that sends the same redacted prompt to Google, so the
+ * `lm-studio` keeps the original local-first inference path. `anthropic` is an
+ * explicit opt-in that sends the same redacted prompt to Anthropic, so the
  * default must stay `lm-studio` for any environment that does not set it.
  */
-const ModelProviderSchema = z.enum(['lm-studio', 'gemini']);
+const ModelProviderSchema = z.enum(['lm-studio', 'anthropic']);
 
 const RuntimeConfigSchema = z.object({
   modelProvider: ModelProviderSchema.default('lm-studio'),

@@ -91,7 +91,9 @@ export async function PUT(
   }
   const parsed = PurchaseDetailsWriteSchema.safeParse(raw);
   if (!parsed.success) return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
-  if (isBlockedAiToolLabel(parsed.data.softwareName) || isBlockedAiToolLabel(parsed.data.companyName)) {
+  // receiptVendorName is OCR's own read of the seller, so it is screened here
+  // too: the applicant can retype the declared name, not the receipt.
+  if (isBlockedAiToolLabel(parsed.data.softwareName) || isBlockedAiToolLabel(parsed.data.companyName) || isBlockedAiToolLabel(parsed.data.receiptVendorName ?? '')) {
     return toJsonResponse(apiFailure(ApiErrorCode.INVALID_REQUEST, requestId));
   }
   const { caseId } = await context.params;

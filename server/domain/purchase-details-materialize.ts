@@ -48,6 +48,7 @@ export function materializePurchaseDetails(input: {
     subscriptionEndDate: write.subscriptionEndDate,
     applicantName: write.applicantName,
     receiptBuyerName: write.receiptBuyerName,
+    receiptVendorName: write.receiptVendorName,
     birthDate: write.birthDate,
     nationalId: write.nationalId,
     householdAddress: write.householdAddress,

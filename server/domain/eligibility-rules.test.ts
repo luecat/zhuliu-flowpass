@@ -9,4 +9,18 @@ describe('age eligibility', () => {
   it('fails one day before the birthday that would bring the applicant into range', () => { expect(evaluateAgeEligibility({ ...ageBase, submissionAt: '2026-09-18T00:00:00.000Z', minAge: 16, maxAge: 18 }).outcome).toBe('fail'); expect(evaluateAgeEligibility({ ...ageBase, submissionAt: '2026-09-19T00:00:00.000Z', minAge: 16, maxAge: 18 }).outcome).toBe('pass'); });
   it('reports missing when no birth date or no configured range is available', () => { expect(evaluateAgeEligibility({ ...ageBase, birthDate: null, minAge: 12, maxAge: 18 }).outcome).toBe('missing'); expect(evaluateAgeEligibility({ ...ageBase }).outcome).toBe('missing'); });
   it('fails outside an open-ended range', () => { expect(evaluateAgeEligibility({ ...ageBase, minAge: 20 }).outcome).toBe('fail'); expect(evaluateAgeEligibility({ ...ageBase, maxAge: 15 }).outcome).toBe('fail'); });
+  it('treats a birth-date cohort as inclusive on both ends', () => {
+    expect(evaluateAgeEligibility({ ...ageBase, birthDateFrom: '2010-09-19', birthDateTo: '2012-12-31' }).outcome).toBe('pass');
+    expect(evaluateAgeEligibility({ ...ageBase, birthDateFrom: '2008-01-01', birthDateTo: '2010-09-19' }).outcome).toBe('pass');
+    expect(evaluateAgeEligibility({ ...ageBase, birthDateFrom: '2010-09-20' }).outcome).toBe('fail');
+    expect(evaluateAgeEligibility({ ...ageBase, birthDateTo: '2010-09-18' }).reasonCode).toBe('outside_birth_date_range');
+  });
+  it('requires every configured bound to hold, and leaves the age bound the stated reason', () => {
+    expect(evaluateAgeEligibility({ ...ageBase, minAge: 12, maxAge: 18, birthDateFrom: '2012-01-01' }).reasonCode).toBe('outside_birth_date_range');
+    expect(evaluateAgeEligibility({ ...ageBase, minAge: 20, birthDateFrom: '2008-01-01' }).reasonCode).toBe('outside_age_range');
+  });
+  it('is configured once a birth-date bound alone is set', () => {
+    expect(evaluateAgeEligibility({ ...ageBase, birthDateFrom: '2008-01-01' }).outcome).toBe('pass');
+    expect(evaluateAgeEligibility({ ...ageBase, birthDateFrom: '2008-01-01' }).steps.map((step) => step.label)).toEqual(['出生日期', '資格出生區間']);
+  });
 });

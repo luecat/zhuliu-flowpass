@@ -45,3 +45,27 @@ export function expireDraftCaseIfStale(
   `).run(expiredAt, expiredAt, caseId, cutoffAt);
   return result.changes > 0;
 }
+
+/**
+ * Soft-deletes a draft that screening has disqualified, in the same way an
+ * idle draft is cleared: the case is marked deleted, so the applicant starts a
+ * new application instead of resubmitting the rejected one.
+ *
+ * Only a draft is touched. A case that has already been submitted belongs to a
+ * reviewer, and nothing here may remove it.
+ */
+export function deleteBlockedDraftCase(
+  database: FlowPassDatabase,
+  input: { caseId: string; applicantId: string; now?: Date },
+): boolean {
+  const deletedAt = (input.now ?? new Date()).toISOString();
+  const result = database.prepare(`
+    UPDATE cases
+    SET deleted_at = ?, updated_at = ?, row_version = row_version + 1
+    WHERE id = ?
+      AND applicant_id = ?
+      AND state = 'draft'
+      AND deleted_at IS NULL
+  `).run(deletedAt, deletedAt, input.caseId, input.applicantId);
+  return result.changes > 0;
+}

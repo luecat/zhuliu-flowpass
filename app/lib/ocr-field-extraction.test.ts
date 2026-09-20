@@ -4,6 +4,7 @@ import {
   extractBillingCycle,
   extractCardTransactionCandidates,
   extractDate,
+  extractReceiptVendorName,
   extractInvoiceNumber,
   extractOriginalAmount,
   extractReceiptBuyerName,
@@ -97,6 +98,7 @@ describe('extractVendorReceiptCandidates', () => {
       originalCurrency: 'USD',
       originalExpense: '20.00',
       receiptBuyerName: 'CHEN PEI-I',
+      receiptVendorName: null,
       billingCycle: 'annual',
       softwareName: 'ChatGPT',
       companyName: 'OpenAI',
@@ -145,5 +147,42 @@ describe('extractApprovedAiTool', () => {
   });
   it('does not guess from a short label hidden inside other words', () => {
     expect(extractApprovedAiTool([line('Opinion poll')])).toBeNull();
+  });
+});
+
+describe('extractReceiptVendorName', () => {
+  it('reads the seller from a Taiwan e-invoice header that prints 統一編號 before the company name', () => {
+    expect(extractReceiptVendorName([
+      line('電子發票開立資訊'),
+      line('42527414 Alibaba Cloud (Singapore) Private Limited'),
+      line('發票號碼 EK21388041'),
+    ])).toBe('Alibaba Cloud (Singapore) Private Limited');
+  });
+
+  it('prefers an explicit seller label over any later line', () => {
+    expect(extractReceiptVendorName([
+      line('賣方：Example Studio Ltd.'),
+      line('12345678 Another Vendor Inc.'),
+    ])).toBe('Example Studio Ltd.');
+  });
+
+  it('takes the value under a seller label on its own line', () => {
+    expect(extractReceiptVendorName([line('Sold by'), line('Example Vendor GmbH')])).toBe('Example Vendor GmbH');
+  });
+
+  it('falls back to a line naming a legal entity', () => {
+    expect(extractReceiptVendorName([line('收據'), line('範例股份有限公司'), line('金額 1,000')])).toBe('範例股份有限公司');
+  });
+
+  it('never reads the vendor out of the buyer block', () => {
+    expect(extractReceiptVendorName([line('買受人 Example Buyer Ltd.')])).toBeNull();
+  });
+
+  it('returns null on a low-confidence line rather than guessing a vendor', () => {
+    expect(extractReceiptVendorName([line('42527414 Alibaba Cloud Private Limited', 0.2)])).toBeNull();
+  });
+
+  it('returns null when the receipt names no seller', () => {
+    expect(extractReceiptVendorName([line('發票號碼 EK21388041'), line('金額 12.63')])).toBeNull();
   });
 });

@@ -3,11 +3,13 @@ import { ApiErrorCode, apiFailure, apiSuccess, parseQuotedEtag, toJsonResponse }
 import { SubmissionCommandError, createSubmissionService } from '../../../../../../server/domain/submission-service';
 import { isValidMutationKey, readApplicantMutation, reserveApplicantMutation, finalizeApplicantMutation, deleteApplicantMutationReservation } from '../../../../../../server/public/public-mutations';
 import { getPublicRuntime } from '../../../../../../server/public/runtime';
+import { screenVendorReceipt } from '../../../../../../server/domain/receipt-screening';
+import { deleteBlockedDraftCase } from '../../../../../../server/domain/draft-expiry';
 
 const BodySchema = z.object({ passportVersionId: z.string().min(1).max(128) }).strict();
 function cookie(request: Request, name: string): string | null { for (const part of (request.headers.get('cookie') ?? '').split(';')) { const [key, ...value] = part.trim().split('='); if (key === name) return value.join('=') || null; } return null; }
 function errorResponse(error: SubmissionCommandError, requestId: string): Response {
-  const code = error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'ETAG_MISMATCH' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : error.code === 'PASSPORT_NOT_READY' ? ApiErrorCode.PASSPORT_NOT_READY : error.code === 'DOCUMENT_NOT_READY' ? ApiErrorCode.DOCUMENT_NOT_READY : ApiErrorCode.INVALID_REQUEST;
+  const code = error.code === 'NOT_FOUND' ? ApiErrorCode.NOT_FOUND : error.code === 'ETAG_MISMATCH' ? ApiErrorCode.ETAG_MISMATCH : error.code === 'INVALID_STATE' ? ApiErrorCode.INVALID_STATE : error.code === 'PASSPORT_NOT_READY' ? ApiErrorCode.PASSPORT_NOT_READY : error.code === 'DOCUMENT_NOT_READY' ? ApiErrorCode.DOCUMENT_NOT_READY : error.code === 'SOFTWARE_BLACKLISTED' ? ApiErrorCode.SOFTWARE_BLACKLISTED : ApiErrorCode.INVALID_REQUEST;
   return toJsonResponse(apiFailure(code, requestId));
 }
 
@@ -37,12 +39,26 @@ export async function POST(request: Request, context: { params: Promise<{ caseId
   if (reservation.kind === 'conflict') return toJsonResponse(apiFailure(ApiErrorCode.IDEMPOTENCY_KEY_REUSED, requestId));
   if (reservation.kind === 'replay') { try { return toJsonResponse(JSON.parse(reservation.body), { status: reservation.status }); } catch { return toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId)); } }
   try {
+    // Server-side receipt screening: the browser runs the same scan, but this
+    // is the pass that decides, because it reads the stored file rather than
+    // any field the applicant can edit.
+    if (runtime.documentVault && runtime.ocrEngine) {
+      const blocked = await screenVendorReceipt({ database: runtime.database, documentVault: runtime.documentVault, ocrEngine: runtime.ocrEngine, applicantId: csrf.applicantId, caseId });
+      if (blocked) throw new SubmissionCommandError('SOFTWARE_BLACKLISTED');
+    }
     const result = createSubmissionService({ database: runtime.database, crypto: runtime.crypto, clock: runtime.clock, requestIdGenerator: runtime.requestIdGenerator }).submit({ applicantId: csrf.applicantId, caseId, passportVersionId: parsed.data.passportVersionId, ifMatch });
     const response = apiSuccess(result, requestId, result.case.rowVersion);
     if (!finalizeApplicantMutation({ database: runtime.database, crypto: runtime.crypto, reservation, idempotencyKey: key, status: 201, publicBody: JSON.stringify(response), now })) throw new Error('idempotency finalization failed');
     return toJsonResponse(response, { status: 201, headers: { ETag: response.meta.etag ?? '', 'Cache-Control': 'no-store' } });
   } catch (error) {
     deleteApplicantMutationReservation({ database: runtime.database, crypto: runtime.crypto, reservation, idempotencyKey: key });
+    // A denylisted purchase is not a correctable mistake, so the draft is
+    // cleared rather than left for the applicant to submit again. This runs
+    // after the submission transaction has rolled back, which is why it is
+    // here and not inside the service.
+    if (error instanceof SubmissionCommandError && error.code === 'SOFTWARE_BLACKLISTED') {
+      deleteBlockedDraftCase(runtime.database, { caseId, applicantId: csrf.applicantId, now });
+    }
     return error instanceof SubmissionCommandError ? errorResponse(error, requestId) : toJsonResponse(apiFailure(ApiErrorCode.DEPENDENCY_UNAVAILABLE, requestId));
   }
 }

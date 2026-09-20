@@ -287,13 +287,15 @@ export function PassportReviewPanel({ caseId: suppliedCaseId }: { caseId?: strin
         }
       } catch { /* retain the original submission error */ }
       await load(caseId);
-      setMessage(error instanceof PublicApiError && error.code === 'DOCUMENT_NOT_READY'
-        ? '必備附件尚未補齊，請確認後再送出。'
-        : error instanceof PublicApiError && error.code === 'PASSPORT_NOT_READY'
-          ? '請先完成護照確認，再送出申請。'
-          : error instanceof PublicApiError && error.code === 'ETAG_MISMATCH'
-            ? '申請內容已更新，請重新確認。'
-            : '送出失敗，請稍後再試。');
+      setMessage(error instanceof PublicApiError && error.code === 'SOFTWARE_BLACKLISTED'
+        ? '申報的軟體或廠商屬於不予補助對象，無法送出申請。'
+        : error instanceof PublicApiError && error.code === 'DOCUMENT_NOT_READY'
+          ? '必備附件尚未補齊，請確認後再送出。'
+          : error instanceof PublicApiError && error.code === 'PASSPORT_NOT_READY'
+            ? '請先完成護照確認，再送出申請。'
+            : error instanceof PublicApiError && error.code === 'ETAG_MISMATCH'
+              ? '申請內容已更新，請重新確認。'
+              : '送出失敗，請稍後再試。');
     } finally { setBusy(false); }
   }
 

@@ -43,6 +43,33 @@ describe('approved AI tools', () => {
     expect(isBlockedAiToolLabel('Claude')).toBe(false);
   });
 
+  it('blocks traditional-character vendor names, which is what a Taiwanese receipt prints', () => {
+    for (const label of ['騰訊混元', '通義千問', '阿里雲', '訊飛星火', '零一萬物', '華為盤古', '字節跳動']) {
+      expect(isBlockedAiToolLabel(label)).toBe(true);
+    }
+  });
+
+  it('blocks the vendor on the receipt that started this rule', () => {
+    expect(isBlockedAiToolLabel('Alibaba Cloud (Singapore) Private Limited')).toBe(true);
+  });
+
+  it('blocks relay shops, shared-quota resale and token packages', () => {
+    for (const label of ['Token Plan Individual', 'OpenAI API 中轉站', 'ChatGPT 拼車', '代充 Claude Pro', 'api2d']) {
+      expect(isBlockedAiToolLabel(label)).toBe(true);
+    }
+  });
+
+  it('leaves ordinary western purchases alone', () => {
+    for (const label of ['ChatGPT Plus', 'Claude Pro', 'Cursor', 'Notion AI', 'Adobe Firefly', 'GitHub Copilot']) {
+      expect(isBlockedAiToolLabel(label)).toBe(false);
+    }
+  });
+
+  it('judges against the list it is given, so a program own denylist governs', () => {
+    expect(isBlockedAiToolLabel('DeepSeek', [])).toBe(false);
+    expect(isBlockedAiToolLabel('Example Vendor', ['example vendor'])).toBe(true);
+  });
+
   it('filters blocked choices and recognizes the other option', () => {
     expect(filterAllowedChoiceLabels(['ChatGPT', 'DeepSeek', 'Kimi'])).toEqual(['ChatGPT']);
     expect(isOtherChoiceLabel(APPROVED_AI_TOOL_OTHER_LABEL)).toBe(true);

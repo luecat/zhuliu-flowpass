@@ -27,4 +27,11 @@ export interface DocumentOcrResponseData {
     engineId: string;
     durationMs: number;
   } | null;
+  /**
+   * The denylist verdict for this document, decided on the server against the
+   * program's own softwareBlacklist. The screen renders it; it never re-judges
+   * the text itself, so the applicant and the submission check are answering to
+   * the same list. Null means nothing on the list appeared.
+   */
+  blocked: { term: string; matched: string } | null;
 }

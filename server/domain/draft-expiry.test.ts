@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openDatabase } from '../db/connection';
 import { migrateDatabase } from '../db/migrate';
-import { DRAFT_IDLE_TTL_MS, expireDraftCaseIfStale, expireStaleDrafts } from './draft-expiry';
+import { DRAFT_IDLE_TTL_MS, deleteBlockedDraftCase, expireDraftCaseIfStale, expireStaleDrafts } from './draft-expiry';
 
 const IDS = {
   applicant: '0198f050-0000-7000-8000-000000000001',
@@ -60,5 +60,20 @@ describe('draft expiry', () => {
     insertCase(IDS.draft, 'draft', staleAt);
     expect(expireDraftCaseIfStale(db, IDS.draft, new Date(NOW))).toBe(true);
     expect(expireDraftCaseIfStale(db, IDS.draft, new Date(NOW))).toBe(false);
+  });
+
+  it('clears a blocked draft regardless of how recently it was edited', () => {
+    insertCase(IDS.draft, 'draft', NOW);
+    expect(deleteBlockedDraftCase(db, { caseId: IDS.draft, applicantId: IDS.applicant, now: new Date(NOW) })).toBe(true);
+    expect((db.prepare('SELECT deleted_at FROM cases WHERE id = ?').get(IDS.draft) as { deleted_at: string | null }).deleted_at).toBe(NOW);
+    expect(deleteBlockedDraftCase(db, { caseId: IDS.draft, applicantId: IDS.applicant, now: new Date(NOW) })).toBe(false);
+  });
+
+  it('never clears a submitted case, or one belonging to someone else', () => {
+    insertCase(IDS.submitted, 'submitted', NOW);
+    insertCase(IDS.draft, 'draft', NOW);
+    expect(deleteBlockedDraftCase(db, { caseId: IDS.submitted, applicantId: IDS.applicant, now: new Date(NOW) })).toBe(false);
+    expect(deleteBlockedDraftCase(db, { caseId: IDS.draft, applicantId: '0198f050-0000-7000-8000-0000000000ff', now: new Date(NOW) })).toBe(false);
+    expect((db.prepare('SELECT deleted_at FROM cases WHERE id = ?').get(IDS.draft) as { deleted_at: string | null }).deleted_at).toBeNull();
   });
 });

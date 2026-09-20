@@ -1,5 +1,8 @@
 /** Curated AI tools allowed for FlowPass subsidy selection. Excludes PRC / HK / Macau products. */
 
+import { containsBlockedTerm } from './blocked-terms';
+import { DEFAULT_BLOCKED_VENDORS } from './default-blocked-vendors';
+
 export type ApprovedAiToolCategory =
   | 'chat_search'
   | 'coding'
@@ -148,35 +151,19 @@ export function approvedAiToolChoiceOptions(): Array<{
   ];
 }
 
-/** Product names / aliases commonly associated with PRC, Hong Kong, or Macau AI services. */
-const BLOCKED_AI_PATTERNS: RegExp[] = [
-  /文心|ernie|百度|baidu/i,
-  /通义|tongyi|千问|qwen|阿里云|alibaba\s*cloud/i,
-  /豆包|doubao|字节|bytedance|火山引擎/i,
-  /混元|hunyuan|腾讯|tencent/i,
-  /讯飞|星火|iflytek|xunfei/i,
-  /智谱|chatglm|zhipu|glm-?\d/i,
-  /月之暗面|kimi|moonshot/i,
-  /百川|baichuan/i,
-  /minimax|海螺/i,
-  /商汤|sensetime|sensechat/i,
-  /deepseek/i,
-  /阶跃|stepfun|step-?\d/i,
-  /零一万物|yi-?\d|01\.ai/i,
-  /讯飞星火|sparkdesk/i,
-  /紫东太初|天工|tiangong/i,
-  /香港|hong\s*kong|澳門|澳门|macau|macao/i,
-  /中国|中國|mainland\s*china|prc\b/i,
-];
-
-export function isBlockedAiToolLabel(value: string): boolean {
-  const text = value.normalize('NFKC').trim();
-  if (!text) return false;
-  return BLOCKED_AI_PATTERNS.some((pattern) => pattern.test(text));
+/**
+ * Screening delegates to the denylist: the terms live in
+ * default-blocked-vendors.ts (and, once seeded, in the program's own
+ * softwareBlacklist), and matching lives in blocked-terms.ts. Callers that
+ * know which program cycle they are serving pass that cycle's stored list;
+ * the rest fall back to the shipped seed.
+ */
+export function isBlockedAiToolLabel(value: string, terms: readonly string[] = DEFAULT_BLOCKED_VENDORS): boolean {
+  return containsBlockedTerm(value, terms);
 }
 
-export function filterAllowedChoiceLabels(choices: string[]): string[] {
-  return choices.filter((choice) => !isBlockedAiToolLabel(choice));
+export function filterAllowedChoiceLabels(choices: string[], terms?: readonly string[]): string[] {
+  return choices.filter((choice) => !isBlockedAiToolLabel(choice, terms));
 }
 
 export function isOtherChoiceLabel(value: string): boolean {

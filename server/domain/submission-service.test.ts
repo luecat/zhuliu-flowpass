@@ -14,7 +14,7 @@ import type { FlowPassPassport } from '../../shared/passport-contract';
 import { upsertPurchaseDetailsForApplicant } from '../db/repositories/purchase-details';
 import type { DocumentRequirementKey, PurchaseDetails } from '../../shared/purchase-details-contract';
 
-const IDS = { applicant: '0198f050-0000-7000-8000-000000000001', cycle: '0198f050-0000-7000-8000-000000000002', rule: '0198f050-0000-7000-8000-000000000003', docsCycle: '0198f050-0000-7000-8000-000000000004', docsRule: '0198f050-0000-7000-8000-000000000005' };
+const IDS = { applicant: '0198f050-0000-7000-8000-000000000001', cycle: '0198f050-0000-7000-8000-000000000002', rule: '0198f050-0000-7000-8000-000000000003', docsCycle: '0198f050-0000-7000-8000-000000000004', docsRule: '0198f050-0000-7000-8000-000000000005', blockedCycle: '0198f050-0000-7000-8000-000000000006', blockedRule: '0198f050-0000-7000-8000-000000000007' };
 const NOW = '2026-08-30T00:00:00.000Z';
 
 function cryptoForTests(): FieldCrypto { const keyring: Keyring = { activeKeyId: 'test-v1', getMasterKey: (id) => id === 'test-v1' ? Buffer.alloc(32, 0x44) : undefined }; return new FieldCrypto(keyring); }
@@ -38,6 +38,7 @@ const PURCHASE_DETAILS: PurchaseDetails = {
   subscriptionEndDate: '2027-07-31',
   applicantName: '測試申請人',
   receiptBuyerName: '測試申請人',
+  receiptVendorName: null,
   birthDate: null,
   nationalId: null,
   householdAddress: null,
@@ -117,6 +118,28 @@ describe('submission service', () => {
     expect(fingerprint.outcome).toBe('pass');
     expect((db.prepare('SELECT calculated_amount_twd FROM subsidy_calculations WHERE case_id=?').get(created.case.id) as { calculated_amount_twd: number }).calculated_amount_twd).toBe(500);
     expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: confirmed.version.id, ifMatch: '"4"' })).toThrowError(SubmissionCommandError);
+  });
+
+  it('rejects the submission when the vendor read from the receipt is denylisted', () => {
+    const crypto = cryptoForTests();
+    db.prepare('INSERT INTO program_cycles (id,code,name,year,status,retention_policy_json,created_at,updated_at,row_version) VALUES (?,?,?,?,?,?,?,?,?)').run(IDS.blockedCycle, 'BLOCK', '黑名單示範', 2026, 'active', '{}', NOW, NOW, 1);
+    db.prepare('INSERT INTO program_rule_versions (id,program_cycle_id,version_no,status,application_start_at,application_end_at,purchase_start_at,purchase_end_at,subsidy_rate_bps,per_case_cap_twd,rounding_mode,required_documents_json,rules_json,published_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(IDS.blockedRule, IDS.blockedCycle, 1, 'published', NOW, '2026-12-31T00:00:00.000Z', NOW, '2026-12-31T00:00:00.000Z', 5000, 10000, 'floor', '[]', JSON.stringify({ softwareBlacklist: ['Blocked Vendor'] }), NOW, NOW);
+    const cases = createCaseService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'req' });
+    const created = cases.create({ applicantId: IDS.applicant, programCycleId: IDS.blockedCycle, idempotencyKey: 'case' });
+    const answer = cases.saveAnswers({ applicantId: IDS.applicant, caseId: created.case.id, answers: { material: '照片', aiPurpose: '整理', sensitiveData: '姓名', destinationAndAudience: '團隊', applicantName: '測試申請人' }, ifMatch: '"1"', idempotencyKey: 'answers' });
+    const lifecycle = createPassportLifecycle({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}` });
+    const draft = lifecycle.createVersion({ caseId: created.case.id, answerVersionId: answer.answerVersion.id, passport: passport(), origin: 'ai_draft', actorType: 'system', actorId: 'worker' });
+    const confirmed = lifecycle.confirmVersion({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: draft.version.id, ifMatch: '"1"', declarations: [{ confirmationType: 'passport', targetKey: 'confirm', value: true }] });
+    savePurchaseDetails(db, crypto, created.case.id, { ...PURCHASE_DETAILS, companyName: 'Blocked Vendor Inc.' });
+    for (const requirementKey of ['vendor_receipt', 'card_transaction', 'identity_front', 'identity_back', 'passbook_cover', 'affidavit'] as const) {
+      insertReadyDocument(db, created.case.id, `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requirementKey);
+    }
+    const service = createSubmissionService({ database: db, crypto, clock: () => new Date(NOW), idGenerator: () => `0198f050-0000-7000-8000-${String(ids++).padStart(12, '0')}`, requestIdGenerator: () => 'submit-request' });
+    const currentVersion = (db.prepare('SELECT row_version FROM cases WHERE id = ?').get(created.case.id) as { row_version: number }).row_version;
+    expect(() => service.submit({ applicantId: IDS.applicant, caseId: created.case.id, passportVersionId: confirmed.id, ifMatch: `"${currentVersion}"` }))
+      .toThrowError(expect.objectContaining({ code: 'SOFTWARE_BLACKLISTED' }));
+    expect((db.prepare('SELECT state FROM cases WHERE id=?').get(created.case.id) as { state: string }).state).toBe('draft');
+    expect((db.prepare('SELECT COUNT(*) AS count FROM rule_evaluations WHERE case_id=?').get(created.case.id) as { count: number }).count).toBe(0);
   });
 
   it('rejects submission when passport is not confirmed or the case ETag is stale', () => {

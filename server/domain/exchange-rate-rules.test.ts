@@ -10,7 +10,7 @@ function purchase(partial: Partial<PurchaseDetails> & Pick<PurchaseDetails, 'ori
     softwareName: 'ChatGPT', companyName: 'OpenAI', purchaseDate: '2026-08-30', payerType: 'self_card',
     otherCurrency: null, specialStatus: false, invoiceNumber: null, paymentSourceFingerprint: null,
     subscriptionStartDate: '2026-08-01', subscriptionEndDate: '2027-07-31',
-    applicantName: '測試申請人', receiptBuyerName: null, birthDate: null, nationalId: null, householdAddress: null,
+    applicantName: '測試申請人', receiptBuyerName: null, receiptVendorName: null, birthDate: null, nationalId: null, householdAddress: null,
     ...partial,
   };
 }

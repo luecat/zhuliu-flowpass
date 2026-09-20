@@ -15,6 +15,7 @@ import {
   isBlockedAiToolLabel,
   type ApprovedAiTool,
 } from '../../../shared/approved-ai-tools';
+import type { BlockedTermMatch } from '../../../shared/blocked-terms';
 import { PublicApiClient, PublicApiError } from '../../lib/public-api';
 import { ChoiceList } from './choice-list';
 import {
@@ -29,7 +30,7 @@ interface UploadWithOcr {
   ocr?: { lines: OcrLine[]; engineId: string; durationMs: number } | null;
 }
 
-type OcrFillableField = 'invoiceNumber' | 'purchaseDate' | 'originalCurrency' | 'originalExpense' | 'receiptBuyerName' | 'convertedTwd' | 'billingCycle' | 'softwareName' | 'companyName' | 'subscriptionStartDate' | 'subscriptionEndDate';
+type OcrFillableField = 'invoiceNumber' | 'purchaseDate' | 'originalCurrency' | 'originalExpense' | 'receiptBuyerName' | 'receiptVendorName' | 'convertedTwd' | 'billingCycle' | 'softwareName' | 'companyName' | 'subscriptionStartDate' | 'subscriptionEndDate';
 
 interface FieldSuggestion {
   field: OcrFillableField;
@@ -91,6 +92,8 @@ interface PurchaseDetailsDraft {
   subscriptionEndDate: string;
   applicantName: string;
   receiptBuyerName: string;
+  /** OCR-only: the seller read off the receipt. Never rendered as an input. */
+  receiptVendorName: string;
   birthDate: string;
   nationalId: string;
   householdAddress: string;
@@ -171,6 +174,7 @@ const EMPTY_DETAILS: PurchaseDetailsDraft = {
   subscriptionEndDate: '',
   applicantName: '',
   receiptBuyerName: '',
+  receiptVendorName: '',
   birthDate: '',
   nationalId: '',
   householdAddress: '',
@@ -233,6 +237,7 @@ function draftFromDetails(details: PublicPurchaseDetails): PurchaseDetailsDraft 
     subscriptionEndDate: details.subscriptionEndDate ?? '',
     applicantName: details.applicantName ?? '',
     receiptBuyerName: details.receiptBuyerName ?? '',
+    receiptVendorName: details.receiptVendorName ?? '',
     birthDate: details.birthDate ?? '',
     nationalId: details.nationalId ?? '',
     householdAddress: details.householdAddress ?? '',
@@ -263,6 +268,7 @@ function parseDraft(draft: PurchaseDetailsDraft, options: { deferPaymentSource?:
     subscriptionEndDate: draft.subscriptionEndDate.trim() || null,
     applicantName: draft.applicantName.trim() || null,
     receiptBuyerName: draft.receiptBuyerName.trim() || null,
+    receiptVendorName: draft.receiptVendorName.trim() || null,
     birthDate: draft.birthDate.trim() || null,
     nationalId: draft.nationalId.trim() || null,
     householdAddress: draft.householdAddress.trim() || null,
@@ -290,6 +296,7 @@ function publicComparable(details: {
   subscriptionEndDate: string | null;
   applicantName: string | null;
   receiptBuyerName: string | null;
+  receiptVendorName: string | null;
   birthDate: string | null;
   nationalId: string | null;
   householdAddress: string | null;
@@ -313,6 +320,7 @@ function publicComparable(details: {
     subscriptionEndDate: details.subscriptionEndDate,
     applicantName: details.applicantName,
     receiptBuyerName: details.receiptBuyerName,
+    receiptVendorName: details.receiptVendorName,
     birthDate: details.birthDate,
     nationalId: details.nationalId,
     householdAddress: details.householdAddress,
@@ -420,6 +428,7 @@ function ocrFieldCurrentValue(draft: PurchaseDetailsDraft, field: OcrFillableFie
     case 'originalCurrency': return draft.originalCurrency;
     case 'originalExpense': return draft.originalExpense.trim();
     case 'receiptBuyerName': return draft.receiptBuyerName.trim();
+    case 'receiptVendorName': return draft.receiptVendorName.trim();
     case 'convertedTwd': return draft.convertedTwd.trim();
     case 'billingCycle': return draft.billingCycle;
     case 'softwareName': return draft.softwareName.trim();
@@ -458,6 +467,7 @@ function assignOcrValue(draft: PurchaseDetailsDraft, suggestion: FieldSuggestion
     case 'purchaseDate':
     case 'originalExpense':
     case 'receiptBuyerName':
+    case 'receiptVendorName':
     case 'convertedTwd':
     case 'subscriptionStartDate':
     case 'subscriptionEndDate':
@@ -480,6 +490,18 @@ function assignOcrValue(draft: PurchaseDetailsDraft, suggestion: FieldSuggestion
   return next;
 }
 
+const VENDOR_RECEIPT_OCR_FIELDS: readonly OcrFillableField[] = [
+  'invoiceNumber', 'purchaseDate', 'originalCurrency', 'originalExpense', 'receiptBuyerName',
+  'receiptVendorName', 'billingCycle', 'softwareName', 'companyName', 'subscriptionStartDate', 'subscriptionEndDate',
+];
+const CARD_TRANSACTION_OCR_FIELDS: readonly OcrFillableField[] = ['convertedTwd'];
+
+function ocrFieldsForRequirement(requirementKey: DocumentRequirementKey): readonly OcrFillableField[] {
+  if (requirementKey === 'vendor_receipt') return VENDOR_RECEIPT_OCR_FIELDS;
+  if (requirementKey === 'card_transaction') return CARD_TRANSACTION_OCR_FIELDS;
+  return [];
+}
+
 function suggestionsFromOcr(requirementKey: DocumentRequirementKey, lines: OcrLine[]): FieldSuggestion[] {
   if (requirementKey === 'vendor_receipt') {
     const candidates = extractVendorReceiptCandidates(lines);
@@ -491,6 +513,7 @@ function suggestionsFromOcr(requirementKey: DocumentRequirementKey, lines: OcrLi
     }
     if (candidates.originalExpense) suggestions.push({ field: 'originalExpense', label: '原始費用', value: candidates.originalExpense });
     if (candidates.receiptBuyerName) suggestions.push({ field: 'receiptBuyerName', label: '官方收據上的買受人姓名', value: candidates.receiptBuyerName });
+    if (candidates.receiptVendorName) suggestions.push({ field: 'receiptVendorName', label: '收據開立廠商', value: candidates.receiptVendorName });
     if (candidates.billingCycle) suggestions.push({ field: 'billingCycle', label: '繳費制度', value: candidates.billingCycle });
     if (candidates.softwareName) suggestions.push({ field: 'softwareName', label: '軟體名稱', value: candidates.softwareName });
     if (candidates.companyName) suggestions.push({ field: 'companyName', label: '軟體公司名稱', value: candidates.companyName });
@@ -523,6 +546,17 @@ function applyOcrHits(
   return { draft: next, applied };
 }
 
+/**
+ * Copy for a purchase this program cannot fund. What matched is quoted back as
+ * the receipt spells it: a term read off the document is not something the
+ * applicant can put right by choosing another option, so naming it is the only
+ * way the message explains itself. The verdict itself is the server's — this
+ * screen never decides, it reports (see shared/ocr-contract.ts).
+ */
+function blockedNotice(match: BlockedTermMatch): string {
+  return `收據上出現「${match.matched}」，屬於本方案的不予補助清單，無法受理此筆申請。`;
+}
+
 function uniqueLabels(labels: string[]): string[] {
   return [...new Set(labels)];
 }
@@ -552,8 +586,11 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [step, setStep] = useState<ReviewStep>('ocr');
   const [pendingFilePreview, setPendingFilePreview] = useState<Partial<Record<DocumentRequirementKey, { name: string; size: number }>>>({});
-  const [ocrAppliedLabels, setOcrAppliedLabels] = useState<string[]>([]);
   const [ocrFilledSnapshot, setOcrFilledSnapshot] = useState<Array<{ field: string; label: string; value: string }>>([]);
+  const ocrAppliedLabels = useMemo(() => uniqueLabels(ocrFilledSnapshot.map((entry) => entry.label)), [ocrFilledSnapshot]);
+  // Set once OCR reads a vendor this program cannot fund: the form stops here
+  // rather than letting the applicant fill in a purchase that cannot be sent.
+  const [blockedHit, setBlockedHit] = useState<BlockedTermMatch | null>(null);
   const [recognizingRequirements, setRecognizingRequirements] = useState<Set<DocumentRequirementKey>>(new Set());
   const ocrTokenByKeyRef = useRef<Partial<Record<DocumentRequirementKey, number>>>({});
 
@@ -620,6 +657,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
         if (!active) return;
         setSavedDetails(detailsResult.details);
         let nextDraft = detailsResult.details ? draftFromDetails(detailsResult.details) : draftForApprovedTool(prefilledTool);
+        let blockedOnLoad: BlockedTermMatch | null = null;
         const docs = documentResult.documents;
         const hasPayment = Boolean(detailsResult.details?.paymentSourceRegistered);
         const applied: FieldSuggestion[] = [];
@@ -634,6 +672,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
               const result = applyOcrHits(nextDraft, spec.key, lines, false);
               nextDraft = result.draft;
               applied.push(...result.applied);
+              blockedOnLoad = blockedOnLoad ?? recognized.blocked;
             } catch {
               /* OCR is best-effort; the gap form covers misses. */
             }
@@ -641,7 +680,7 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
         }
         if (!active) return;
         setDraft(nextDraft);
-        setOcrAppliedLabels(uniqueLabels(applied.map((item) => item.label)));
+        if (blockedOnLoad) setBlockedHit(blockedOnLoad);
         setOcrFilledSnapshot(applied.map((item) => ({ field: item.field, label: item.label, value: item.value })));
         setDocuments(docs);
         setCaseEtag(caseResult.etag ?? null);
@@ -811,19 +850,19 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
           const lines = recognized.ocr?.lines ? Array.from(recognized.ocr.lines) : [];
           const hits = suggestionsFromOcr(spec.key, lines);
           setDraft((current) => applyOcrHits(current, spec.key, lines, true).draft);
-          if (hits.length > 0) {
-            setOcrAppliedLabels((previous) => uniqueLabels([...previous, ...hits.map((item) => item.label)]));
-            setOcrFilledSnapshot((previous) => {
-              const next = [...previous];
-              for (const hit of hits) {
-                const index = next.findIndex((entry) => entry.field === hit.field);
-                const entry = { field: hit.field, label: hit.label, value: hit.value };
-                if (index >= 0) next[index] = entry;
-                else next.push(entry);
-              }
-              return next;
-            });
+          // Surfaced the moment the receipt is recognized, rather than waiting
+          // for the save that would reject it anyway.
+          if (recognized.blocked) {
+            setBlockedHit(recognized.blocked);
+            setMessage(blockedNotice(recognized.blocked));
           }
+          // Re-uploading replaces this requirement's earlier hits outright, so a
+          // field the new file no longer contains stops showing a stale label.
+          const staleFields = ocrFieldsForRequirement(spec.key);
+          setOcrFilledSnapshot((previous) => [
+            ...previous.filter((entry) => !staleFields.includes(entry.field as OcrFillableField)),
+            ...hits.map((hit) => ({ field: hit.field, label: hit.label, value: hit.value })),
+          ]);
         } catch {
           if (ocrTokenByKeyRef.current[spec.key] !== ocrToken) return;
         } finally {
@@ -1024,6 +1063,32 @@ export function DocumentReview({ suppliedCaseId, onSubmit, submitting = false, p
 
   if (!caseId) return null;
   if (loading) return <p className="pending-note" role="status">附件載入中…</p>;
+
+  if (blockedHit) {
+    return (
+      <section className="document-review attachment-step" aria-labelledby="blocked-vendor-title">
+        <header className="attachment-step-header">
+          <p className="eyebrow">第 2 部分</p>
+          <h2 id="blocked-vendor-title">這筆購買無法申請補助</h2>
+        </header>
+        <div className="form-error-summary" role="alert">
+          <strong>{blockedNotice(blockedHit)}</strong>
+          <p>本方案不受理中港澳開發之 AI 工具，也不受理 API 中轉站、代充、拼車與額度轉售。這筆購買無法繼續填寫，也無法送件。</p>
+        </div>
+        <p className="field-hint">若是辨識錯誤，或你上傳到了別的檔案，可以重新上傳正確的官方收據再試一次。</p>
+        <button
+          type="button"
+          className="secondary-action"
+          onClick={() => {
+            setBlockedHit(null);
+            setMessage('');
+            setDraft((current) => ({ ...current, receiptVendorName: '' }));
+            setStep('ocr');
+          }}
+        >重新上傳官方收據</button>
+      </section>
+    );
+  }
 
   return (
     <section className="document-review attachment-step" aria-labelledby="documents-title">

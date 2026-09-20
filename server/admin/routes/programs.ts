@@ -8,6 +8,11 @@ import {
   publishProgramRuleVersionForAdmin,
 } from '../../db/repositories/programs';
 import { ADMIN_CSRF_COOKIE, ADMIN_SESSION_COOKIE, authenticateAdmin, verifyAdminCsrf } from '../auth/admin-session';
+import {
+  applyProgramRuleSettings,
+  normalizeProgramRuleSettings,
+  readProgramRuleSettings,
+} from '../../domain/program-rules-config';
 
 function cookie(value: string | undefined, name: string): string | null {
   return value?.split(';').map((part) => part.trim()).map((part) => part.split('=')).find(([key]) => key === name)?.slice(1).join('=') ?? null;
@@ -22,6 +27,14 @@ function authorized(database: FlowPassDatabase, context: { req: { header(name: s
     return { error: 'CSRF_FAILED' as const };
   }
   return { auth };
+}
+
+/**
+ * A case pins the highest-version published rule at creation time (see
+ * case-service), so that row is the one the settings screen reads and edits.
+ */
+function currentPublishedRule(database: FlowPassDatabase, adminId: string, cycleId: string) {
+  return listProgramRuleVersionsForAdmin(database, { adminId }, cycleId).find((rule) => rule.status === 'published');
 }
 
 export function createProgramRoutes(database: FlowPassDatabase): Hono {
@@ -75,6 +88,45 @@ export function createProgramRoutes(database: FlowPassDatabase): Hono {
         publishedAt: new Date().toISOString(),
       });
       return context.json({ data: rule }, 201);
+    } catch {
+      return context.json({ error: { code: 'INVALID_STATE' } }, 409);
+    }
+  });
+
+  app.get('/admin/v1/program-cycles/:cycleId/settings', (context) => {
+    const auth = authenticateAdmin(database, cookie(context.req.header('cookie'), ADMIN_SESSION_COOKIE));
+    if (!auth) return context.json({ error: { code: 'UNAUTHENTICATED' } }, 401);
+    const rule = currentPublishedRule(database, auth.adminId, context.req.param('cycleId'));
+    if (!rule) return context.json({ error: { code: 'NOT_FOUND' } }, 404);
+    return context.json({ data: { ruleVersionId: rule.id, versionNo: rule.versionNo, publishedAt: rule.publishedAt, settings: readProgramRuleSettings(rule.rulesJson) } });
+  });
+
+  /**
+   * Published rule versions are immutable, so a settings save is a new version
+   * rather than an update: the draft is created from the current published row
+   * and published in the same transaction, leaving the previous settings intact
+   * as an audit trail. Cases already created keep the rule version they pinned.
+   */
+  app.put('/admin/v1/program-cycles/:cycleId/settings', async (context) => {
+    const access = authorized(database, context);
+    if ('error' in access) return context.json({ error: { code: access.error } }, access.error === 'UNAUTHENTICATED' ? 401 : 403);
+    const body = await context.req.json().catch(() => null) as unknown;
+    const normalized = normalizeProgramRuleSettings(body);
+    if (!normalized.ok) return context.json({ error: { code: 'INVALID_REQUEST', message: normalized.reason } }, 400);
+    const scope = { adminId: access.auth.adminId };
+    const source = currentPublishedRule(database, access.auth.adminId, context.req.param('cycleId'));
+    if (!source) return context.json({ error: { code: 'NOT_FOUND' } }, 404);
+    try {
+      const published = database.transaction(() => {
+        const draft = createDraftProgramRuleVersionForAdmin(database, scope, {
+          sourceRuleVersionId: source.id,
+          id: uuidv7(),
+          createdAt: new Date().toISOString(),
+          rulesJson: applyProgramRuleSettings(source.rulesJson, normalized.settings),
+        });
+        return publishProgramRuleVersionForAdmin(database, scope, { ruleVersionId: draft.id, adminId: access.auth.adminId, publishedAt: new Date().toISOString() });
+      })();
+      return context.json({ data: { ruleVersionId: published.id, versionNo: published.versionNo, publishedAt: published.publishedAt, settings: readProgramRuleSettings(published.rulesJson) } });
     } catch {
       return context.json({ error: { code: 'INVALID_STATE' } }, 409);
     }

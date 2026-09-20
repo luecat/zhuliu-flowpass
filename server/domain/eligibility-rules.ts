@@ -19,12 +19,19 @@ function ageOnDate(birthDate: string, onDate: string): number | null {
   return age;
 }
 
-/** minAge/maxAge come from the published rule version's rules_json; either bound is optional. */
+/**
+ * Bounds come from the published rule version's rules_json and are all optional:
+ * minAge/maxAge are measured at submission time, while birthDateFrom/birthDateTo
+ * pin a fixed birth cohort ("民國 95 至 100 年出生"). Whichever bounds are
+ * configured must all hold; with none configured the rule reports 'missing'.
+ */
 export function evaluateAgeEligibility(input: {
   birthDate: string | null;
   submissionAt: string;
   minAge?: number;
   maxAge?: number;
+  birthDateFrom?: string;
+  birthDateTo?: string;
   ruleVersionId: string;
   inputSnapshotHash: string;
   evaluatedAt: string;
@@ -33,26 +40,39 @@ export function evaluateAgeEligibility(input: {
   if (!input.birthDate) {
     return { ...base, outcome: 'missing', reasonCode: 'birth_date_missing', explanation: '出生日期尚未填寫。', steps: [{ label: '出生日期', value: '待確認' }] };
   }
-  if (input.minAge === undefined && input.maxAge === undefined) {
+  if (input.minAge === undefined && input.maxAge === undefined && !input.birthDateFrom && !input.birthDateTo) {
     return { ...base, outcome: 'missing', reasonCode: 'age_range_not_configured', explanation: '本方案尚未設定年齡資格區間。', steps: [{ label: '出生日期', value: input.birthDate }] };
   }
   const age = ageOnDate(input.birthDate, input.submissionAt);
   if (age === null) {
     return { ...base, outcome: 'fail', reasonCode: 'invalid_birth_date', explanation: '出生日期格式無法確認。', steps: [{ label: '出生日期', value: input.birthDate }] };
   }
-  const steps: RuleStep[] = [
-    { label: '出生日期', value: input.birthDate },
-    { label: '送件時年齡', value: `${age} 歲` },
-    { label: '資格區間', value: `${input.minAge ?? '不限'} 至 ${input.maxAge ?? '不限'} 歲` },
-  ];
+  const steps: RuleStep[] = [{ label: '出生日期', value: input.birthDate }];
+  if (input.minAge !== undefined || input.maxAge !== undefined) {
+    steps.push({ label: '送件時年齡', value: `${age} 歲` });
+    steps.push({ label: '資格年齡區間', value: `${input.minAge ?? '不限'} 至 ${input.maxAge ?? '不限'} 歲` });
+  }
+  if (input.birthDateFrom || input.birthDateTo) {
+    steps.push({ label: '資格出生區間', value: `${input.birthDateFrom ?? '不限'} 至 ${input.birthDateTo ?? '不限'}` });
+  }
   const withinMin = input.minAge === undefined || age >= input.minAge;
   const withinMax = input.maxAge === undefined || age <= input.maxAge;
-  const ok = withinMin && withinMax;
+  // Lexicographic comparison is exact for zero-padded YYYY-MM-DD and keeps both
+  // bounds inclusive, which is how a published 出生區間 reads.
+  const afterFrom = !input.birthDateFrom || input.birthDate >= input.birthDateFrom;
+  const beforeTo = !input.birthDateTo || input.birthDate <= input.birthDateTo;
+  const withinAge = withinMin && withinMax;
+  const withinBirthWindow = afterFrom && beforeTo;
+  const ok = withinAge && withinBirthWindow;
   return {
     ...base,
     outcome: ok ? 'pass' : 'fail',
-    reasonCode: ok ? 'within_age_range' : 'outside_age_range',
-    explanation: ok ? '年齡符合本方案資格區間。' : `送件時年齡 ${age} 歲，不在本方案資格區間內。`,
+    reasonCode: ok ? 'within_age_range' : withinAge ? 'outside_birth_date_range' : 'outside_age_range',
+    explanation: ok
+      ? '年齡符合本方案資格區間。'
+      : withinAge
+        ? `出生日期 ${input.birthDate} 不在本方案資格出生區間內。`
+        : `送件時年齡 ${age} 歲，不在本方案資格區間內。`,
     steps,
   };
 }
